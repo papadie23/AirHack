@@ -19,11 +19,11 @@ function heatColor(count: number, limit: number) {
 
 /* ── flights / route ── */
 const FLIGHTS = [
-  { id: "1", gate: "14", flight: "RO 321",  dest: "București OTP", departs: "23:15", color: "var(--success)" },
-  { id: "2", gate: "7",  flight: "W6 4102", dest: "Londra LTN",    departs: "23:45", color: "var(--info)"    },
-  { id: "3", gate: "11", flight: "LH 1407", dest: "Frankfurt FRA", departs: "00:10", color: "var(--warning)" },
+  { id: "1", gate: "4",  flight: "RO 321",  dest: "București OTP", departs: "23:15", color: "var(--success)" },
+  { id: "2", gate: "2",  flight: "W6 4102", dest: "Londra LTN",    departs: "23:45", color: "var(--info)"    },
+  { id: "3", gate: "T3", flight: "LH 1407", dest: "Frankfurt FRA", departs: "00:10", color: "var(--warning)" },
   { id: "4", gate: "5",  flight: "FR 8821", dest: "Milano BGY",    departs: "00:30", color: "var(--brand)"   },
-  { id: "5", gate: "12", flight: "AF 1234", dest: "Paris CDG",     departs: "06:45", color: "var(--danger)"  },
+  { id: "5", gate: "T3", flight: "AF 1234", dest: "Paris CDG",     departs: "06:45", color: "var(--danger)"  },
 ];
 
 // Coordonate calibrate pe harta reală T4 Iași (% din dimensiunea imaginii)
@@ -222,27 +222,44 @@ function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   );
 }
 
-/* ── Route center — hartă JPEG + overlay SVG ── */
+// SVG waypoints în spațiul viewBox="0 0 1200 600" al hărții Gemini
+// Nivel 0: check-in (210,490) → securitate (510,430) → acces etaj (640,400)
+// Nivel 1: porți T4 sus (1-6), culoar T3 dreapta
+const GATE_SVG: Record<string, { x: number; y: number }> = {
+  "1":  { x: 150, y: 230 }, "2":  { x: 320, y: 230 }, "3":  { x: 490, y: 230 },
+  "4":  { x: 660, y: 230 }, "5":  { x: 830, y: 230 }, "6":  { x: 1000, y: 230 },
+  "T3": { x: 1050, y: 430 },
+};
+
+const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
+  "1":  [{x:210,y:490},{x:210,y:400},{x:380,y:400},{x:150,y:300},{x:150,y:230}],
+  "2":  [{x:210,y:490},{x:210,y:400},{x:380,y:400},{x:320,y:300},{x:320,y:230}],
+  "3":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:490,y:300},{x:490,y:230}],
+  "4":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:660,y:300},{x:660,y:230}],
+  "5":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:830,y:300},{x:830,y:230}],
+  "6":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:1000,y:300},{x:1000,y:230}],
+  "T3": [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:960,y:400},{x:1050,y:430}],
+};
+
 function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [selFlight, setSelFlight] = useState<string|null>(null);
-  const [userPct, setUserPct] = useState<{x:number;y:number}>(USER_START);
+  const [userPos, setUserPos] = useState<{x:number;y:number}>({x:210,y:490});
   const [locLoading, setLocLoading] = useState(false);
-  const [hasMap, setHasMap] = useState(true); // optimistic; fallback to SVG if 404
   const animRef = useRef<ReturnType<typeof setTimeout>|null>(null);
 
   const flight = FLIGHTS.find(f => f.id === selFlight) ?? null;
-  const pts = flight ? ROUTE_WAYPOINTS[flight.gate] : null;
+  const pts = flight ? ROUTE_SVG[flight.gate] : null;
+  const gatePos = flight ? GATE_SVG[flight.gate] : null;
 
-  // animate user dot along route
   useEffect(() => {
     if (animRef.current) clearTimeout(animRef.current);
-    if (!pts) { setUserPct(USER_START); return; }
+    if (!pts) { setUserPos({x:210,y:490}); return; }
     let i = 0;
     const step = () => {
-      if (i < pts.length) { setUserPct(pts[i]); i++; animRef.current = setTimeout(step, 450); }
+      if (i < pts.length) { setUserPos(pts[i]); i++; animRef.current = setTimeout(step, 500); }
     };
-    setUserPct(pts[0]);
-    animRef.current = setTimeout(step, 300);
+    setUserPos(pts[0]);
+    animRef.current = setTimeout(step, 400);
     return () => { if (animRef.current) clearTimeout(animRef.current); };
   }, [selFlight]);
 
@@ -256,15 +273,12 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     finally { setLocLoading(false); }
   };
 
-  const gate = flight ? GATE_POSITIONS[flight.gate] : null;
-
-  // polyline string for SVG overlay (percentages → SVG 100×100 viewBox)
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
   return (
     <>
       <div className="map-header">
-        <div className="map-title">My Route — Terminal LRIA</div>
+        <div className="map-title">My Route — Terminal T4 Iași</div>
         <div className="badges">
           <div className="badge badge-live"><span className="dot red pulse-red" /> Live</div>
           <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
@@ -273,95 +287,111 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         </div>
       </div>
 
-      {/* ── Hartă cu overlay SVG ── */}
-      <div className="map-container" style={{ position:"relative", flex:1, overflow:"hidden", borderRadius:"var(--radius-md)", border:"1px solid var(--border-color)" }}>
-        {/* Imaginea hărții aeroportului */}
-        {hasMap ? (
-          <img
-            src="/terminal-map.jpg"
-            alt="Terminal LRIA"
-            onError={() => setHasMap(false)}
-            style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", opacity:0.85 }}
-          />
-        ) : (
-          /* Fallback SVG plan simplificat T4 */
-          <svg viewBox="0 0 100 100" style={{ width:"100%", height:"100%", background:"var(--bg-body)" }} preserveAspectRatio="none">
-            {/* Corp terminal */}
-            <rect x="3" y="25" width="94" height="55" rx="2" fill="#26262d" stroke="var(--border-color)" strokeWidth="0.5"/>
-            {/* Zona check-in */}
-            <rect x="4" y="35" width="22" height="20" rx="1" fill="#1c1c21" stroke="var(--border-color)" strokeWidth="0.3"/>
-            <text x="15" y="46" textAnchor="middle" fill="var(--text-muted)" fontSize="3">Check-in</text>
-            {/* Securitate */}
-            <rect x="27" y="35" width="12" height="20" rx="1" fill="rgba(255,167,38,0.15)" stroke="var(--warning)" strokeWidth="0.4"/>
-            <text x="33" y="46" textAnchor="middle" fill="var(--warning)" fontSize="2.8">Securit.</text>
-            {/* Zona Schengen porți 5-10 */}
-            <rect x="44" y="60" width="46" height="14" rx="1" fill="rgba(66,165,245,0.1)" stroke="var(--info)" strokeWidth="0.3"/>
-            <text x="67" y="70" textAnchor="middle" fill="var(--info)" fontSize="3">Schengen — Porți 5–10</text>
-            {/* Zona Non-Schengen porți 11-15 */}
-            <rect x="60" y="26" width="36" height="14" rx="1" fill="rgba(102,187,106,0.1)" stroke="var(--success)" strokeWidth="0.3"/>
-            <text x="78" y="34" textAnchor="middle" fill="var(--success)" fontSize="3">Non-Schengen 11–15</text>
-            {/* Gate dots */}
-            {([["5",52,74],["6",59,74],["7",65,74],["8",71,74],["9",77,74],["10",83,74],["11",68,33],["12",76,33],["14",87,33],["15",95,33]] as [string,number,number][]).map(([id,gx,gy])=>(
-              <g key={id}>
-                <circle cx={gx} cy={gy} r={flight?.gate===id?2.5:1.5}
-                  fill={flight?.gate===id?"var(--brand)":"var(--border-color)"}
-                  stroke={flight?.gate===id?"var(--brand)":"var(--text-muted)"} strokeWidth="0.4"/>
-                <text x={gx} y={gy+(flight?.gate===id?-3.5:+4.5)} textAnchor="middle"
-                  fill={flight?.gate===id?"var(--brand)":"var(--text-muted)"} fontSize="2.8" fontWeight={flight?.gate===id?"700":"400"}>{id}</text>
-              </g>
-            ))}
-            {/* Intrare */}
-            <rect x="3" y="55" width="6" height="10" rx="1" fill="var(--info-bg)" stroke="var(--info)" strokeWidth="0.4"/>
-            <text x="6" y="61" textAnchor="middle" fill="var(--info)" fontSize="2.5">IN</text>
-          </svg>
-        )}
+      <div className="map-container">
+        <svg viewBox="0 0 1200 600" xmlns="http://www.w3.org/2000/svg" style={{ width:"100%", height:"100%" }}>
+          <defs>
+            <linearGradient id="grad-gates" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1E293B"/>
+              <stop offset="100%" stopColor="#0F172A"/>
+            </linearGradient>
+            <linearGradient id="grad-checkin" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#1E3A8A" stopOpacity="0.5"/>
+              <stop offset="100%" stopColor="#172554" stopOpacity="0.5"/>
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
 
-        {/* SVG overlay transparent — rută + dot utilizator */}
-        <svg
-          viewBox="0 0 100 100"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none" }}
-          preserveAspectRatio="none"
-        >
-          {/* Ruta */}
+          {/* Background */}
+          <rect x="40" y="100" width="1120" height="460" rx="16" fill="#0B1120" stroke="#334155" strokeWidth="2"/>
+
+          {/* ── Zona porți (sus) ── */}
+          <rect x="60" y="120" width="1080" height="190" rx="12" fill="url(#grad-gates)" stroke="#475569" strokeWidth="1.5"/>
+          <text x="80" y="150" fill="#64748B" fontSize="11" fontWeight="600" letterSpacing="1">ZONA DE ÎMBARCARE — DEPARTURES</text>
+
+          {/* Porți 1–6 */}
+          {([
+            ["1",80],["2",250],["3",420],["4",590],["5",760],["6",930]
+          ] as [string,number][]).map(([id,gx]) => {
+            const isTarget = flight?.gate === id;
+            const isOpen = id === "4";
+            return (
+              <g key={id}>
+                <rect x={gx} y="170" width="140" height="110" rx="8"
+                  fill={isTarget ? "rgba(56,189,248,0.15)" : isOpen ? "#064E3B" : "#0F172A"}
+                  stroke={isTarget ? "#38BDF8" : isOpen ? "#10B981" : "#38BDF8"}
+                  strokeWidth={isTarget ? 2.5 : 1}
+                />
+                <text x={gx+70} y="228" fill={isTarget?"#38BDF8":isOpen?"#10B981":"#FFFFFF"} fontSize="16" fontWeight="600" textAnchor="middle">
+                  Poarta {id}
+                </text>
+                {isOpen && <text x={gx+70} y="248" fill="#6EE7B7" fontSize="11" textAnchor="middle">Zbor deschis</text>}
+                {isTarget && <text x={gx+70} y="248" fill="#38BDF8" fontSize="11" textAnchor="middle">← Destinația ta</text>}
+              </g>
+            );
+          })}
+
+          {/* ── Check-in ── */}
+          <rect x="60" y="350" width="300" height="190" rx="12" fill="url(#grad-checkin)" stroke="#3B82F6" strokeWidth="1.5" strokeDasharray="4 2"/>
+          <text x="210" y="435" fill="#FFFFFF" fontSize="17" fontWeight="500" textAnchor="middle">Check-in T4</text>
+          <text x="210" y="458" fill="#93C5FD" fontSize="12" textAnchor="middle">~120 pasageri</text>
+
+          {/* ── Securitate ── */}
+          <rect x="390" y="350" width="230" height="190" rx="12" fill="#451A03" stroke="#F59E0B" strokeWidth="2"/>
+          <text x="505" y="435" fill="#FBBF24" fontSize="17" fontWeight="600" textAnchor="middle">Control Securitate</text>
+          <text x="505" y="458" fill="#FDE68A" fontSize="12" textAnchor="middle">⚠ Aglomerat (~210 pax)</text>
+
+          {/* ── Duty Free ── */}
+          <rect x="650" y="350" width="270" height="190" rx="12" fill="#064E3B" stroke="#10B981" strokeWidth="1.5"/>
+          <text x="785" y="435" fill="#6EE7B7" fontSize="17" fontWeight="500" textAnchor="middle">Duty Free &amp; Lounge</text>
+          <text x="785" y="458" fill="#A7F3D0" fontSize="12" textAnchor="middle">Flux normal</text>
+
+          {/* ── T3 Non-Schengen ── */}
+          <rect x="950" y="350" width="200" height="190" rx="12" fill="#312E81" stroke="#6366F1" strokeWidth="1.5"/>
+          <text x="1050" y="425" fill="#C7D2FE" fontSize="15" fontWeight="500" textAnchor="middle">Culoar T3</text>
+          <text x="1050" y="448" fill="#A5B4FC" fontSize="12" textAnchor="middle">Non-Schengen</text>
+          <text x="1050" y="468" fill="#818CF8" fontSize="12" textAnchor="middle">Control Pașapoarte</text>
+
+          {/* ── Ruta animată ── */}
           {pts && (
             <polyline
               points={polyline}
               fill="none"
-              stroke="var(--brand)"
-              strokeWidth="1.2"
-              strokeDasharray="3 1.5"
+              stroke="#38BDF8"
+              strokeWidth="4"
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeDasharray="12 12"
+              style={{ animation:"moveDash 1.5s linear infinite", filter:"drop-shadow(0 0 6px rgba(56,189,248,0.8))" }}
             />
           )}
 
-          {/* Poarta destinație */}
-          {gate && (
+          {/* ── Poarta destinație beacon ── */}
+          {gatePos && (
             <g>
-              <circle cx={gate.x} cy={gate.y} r="3" fill="var(--brand)" opacity="0.9"/>
-              <circle cx={gate.x} cy={gate.y} r="5" fill="none" stroke="var(--brand)" strokeWidth="0.8" opacity="0.5"/>
-              <text x={gate.x} y={gate.y-5} textAnchor="middle" fill="var(--brand)" fontSize="3.5" fontWeight="700">{gate.label}</text>
+              <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
+              <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981" filter="url(#glow)"/>
             </g>
           )}
 
-          {/* User dot */}
-          <g style={{ filter:"drop-shadow(0 0 2px #ff6600)" }}>
-            <circle cx={userPct.x} cy={userPct.y} r="3.5" fill="rgba(255,102,0,0.25)"/>
-            <circle cx={userPct.x} cy={userPct.y} r="2.2" fill="var(--brand)"/>
-            <circle cx={userPct.x} cy={userPct.y} r="0.9" fill="#fff"/>
+          {/* ── User dot ── */}
+          <g>
+            <circle cx={userPos.x} cy={userPos.y} r="14" fill="none" stroke="#38BDF8" strokeWidth="2" opacity="0.5" style={{animation:"pulse 2s infinite"}}/>
+            <circle cx={userPos.x} cy={userPos.y} r="7" fill="#38BDF8" filter="url(#glow)"/>
+            <text x={userPos.x} y={userPos.y+26} fill="#E0F2FE" fontSize="12" textAnchor="middle">Tu ești aici</text>
           </g>
-
-          {/* Start label */}
-          <text x={USER_START.x} y={USER_START.y - 5} textAnchor="middle" fill="var(--info)" fontSize="3.5">Tu ești aici</text>
         </svg>
-
-        {/* Hint dacă nu e poza */}
-        {!hasMap && (
-          <div style={{ position:"absolute", bottom:8, left:0, right:0, textAlign:"center", fontSize:11, color:"var(--text-muted)" }}>
-            Adaugă <code style={{color:"var(--brand)"}}>public/terminal-map.jpg</code> pentru harta reală
-          </div>
-        )}
       </div>
+
+      <style>{`
+        @keyframes moveDash { to { stroke-dashoffset: -200; } }
+        @keyframes pulse {
+          0%,100% { transform: scale(0.9); opacity:1; }
+          50% { transform: scale(1.3); opacity:0.7; }
+        }
+      `}</style>
     </>
   );
 }
