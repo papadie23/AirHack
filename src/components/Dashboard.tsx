@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 
 type Feature = "weather" | "route" | "heatmap";
 
@@ -11,35 +12,34 @@ const FLIGHTS = [
   { id: "5", gate: "T3", flight: "AF 1234", dest: "Paris CDG",     departs: "06:45", color: "var(--danger)"  },
 ];
 
-// Coordonate calibrate pe harta reală T4 Iași (% din dimensiunea imaginii)
-// Nivel 0: intrare → check-in → control securitate → acces etaj
-// Nivel 1: Schengen porți 5-10 (jos), Non-Schengen porți 11-15 (sus)
-const GATE_POSITIONS: Record<string, { x: number; y: number; label: string }> = {
-  "5":  { x: 52, y: 78, label: "Poarta 5"  },
-  "6":  { x: 59, y: 78, label: "Poarta 6"  },
-  "7":  { x: 65, y: 78, label: "Poarta 7"  },
-  "8":  { x: 71, y: 78, label: "Poarta 8"  },
-  "9":  { x: 77, y: 78, label: "Poarta 9"  },
-  "10": { x: 83, y: 78, label: "Poarta 10" },
-  "11": { x: 68, y: 28, label: "Poarta 11" },
-  "12": { x: 76, y: 28, label: "Poarta 12" },
-  "14": { x: 87, y: 28, label: "Poarta 14" },
-  "15": { x: 95, y: 28, label: "Poarta 15" },
+// Waypoints în pixel-space al imaginii "Plan parter fluxuri ON.jpg"
+// Ruta: intrare T4 → check-in → baza scări → poartă (etaj)
+// Coordonatele % sunt relative la IMG_W x IMG_H pentru SVG overlay
+const pct = (px: number, dim: number) => (px / dim) * 100;
+
+const PT = {
+  intrare:   { x: pct(LOCATIONS.intrare.x,   IMG_W), y: pct(LOCATIONS.intrare.y,   IMG_H) },
+  checkin1:  { x: pct(LOCATIONS.checkin1.x,  IMG_W), y: pct(LOCATIONS.checkin1.y,  IMG_H) },
+  checkin5:  { x: pct(LOCATIONS.checkin5.x,  IMG_W), y: pct(LOCATIONS.checkin5.y,  IMG_H) },
+  checkin10: { x: pct(LOCATIONS.checkin10.x, IMG_W), y: pct(LOCATIONS.checkin10.y, IMG_H) },
+  securit:   { x: pct(LOCATIONS.securitate.x,IMG_W), y: pct(LOCATIONS.securitate.y,IMG_H) },
+  bazaScari: { x: pct(LOCATIONS.bazaScari.x, IMG_W), y: pct(LOCATIONS.bazaScari.y, IMG_H) },
 };
 
-const USER_START = { x: 8, y: 82 };
+// Porți etaj — pozitionate estimativ pe axa dreptei terminale (etajul nu e în poza parter)
+// Vor fi afișate ca destinații finale deasupra hărții parter
+const GATE_LABELS: Record<string, string> = {
+  "1":"Poarta 1","2":"Poarta 2","3":"Poarta 3","4":"Poarta 4","5":"Poarta 5","6":"Poarta 6","T3":"T3 Non-Schengen"
+};
 
-const ROUTE_WAYPOINTS: Record<string, { x: number; y: number }[]> = {
-  "5":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:52,y:72},{x:52,y:78}],
-  "6":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:59,y:72},{x:59,y:78}],
-  "7":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:65,y:72},{x:65,y:78}],
-  "8":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:71,y:72},{x:71,y:78}],
-  "9":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:77,y:72},{x:77,y:78}],
-  "10": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:83,y:72},{x:83,y:78}],
-  "11": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:68,y:35},{x:68,y:28}],
-  "12": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:76,y:35},{x:76,y:28}],
-  "14": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:87,y:35},{x:87,y:28}],
-  "15": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:95,y:35},{x:95,y:28}],
+// Ruta comună parter: intrare → check-in → securitate → baza scări
+const COMMON: { x:number; y:number }[] = [
+  PT.intrare, PT.checkin1, PT.checkin5, PT.checkin10, PT.securit, PT.bazaScari
+];
+
+// Toate zborurile au aceeași rută pe parter (diferența e la etaj — marcat separat)
+const ROUTE_PX: Record<string, { x:number; y:number }[]> = {
+  "1": COMMON, "2": COMMON, "3": COMMON, "4": COMMON, "5": COMMON, "T3": COMMON,
 };
 
 /* ═══════════════════════════ DASHBOARD ═══════════════════════════ */
@@ -404,13 +404,20 @@ const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
 function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [selFlight, setSelFlight] = useState<string|null>(null);
   const [userPos, setUserPos] = useState<{x:number;y:number}>({x:210,y:490});
+  const [userGps, setUserGps] = useState<{lat:number;lng:number}|null>(null);
   const [locLoading, setLocLoading] = useState(false);
+  const [mapMode, setMapMode] = useState<"floor"|"satellite">("floor");
+  const gmapRef = useRef<HTMLDivElement>(null);
+  const gmapInstance = useRef<google.maps.Map|null>(null);
+  const markerRef = useRef<google.maps.Marker|null>(null);
   const animRef = useRef<ReturnType<typeof setTimeout>|null>(null);
 
   const flight = FLIGHTS.find(f => f.id === selFlight) ?? null;
   const pts = flight ? ROUTE_SVG[flight.gate] : null;
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
+  const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
+  // Animate user dot along SVG route
   useEffect(() => {
     if (animRef.current) clearTimeout(animRef.current);
     if (!pts) { setUserPos({x:210,y:490}); return; }
@@ -423,135 +430,173 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     return () => { if (animRef.current) clearTimeout(animRef.current); };
   }, [selFlight]);
 
+  // Init Google Maps satellite view
+  useEffect(() => {
+    if (mapMode !== "satellite") return;
+    const key = (window as any).__GOOGLE_MAPS_KEY__;
+    if (!key || !gmapRef.current) return;
+    if (gmapInstance.current) return; // already init
+
+    const loader = new (require("@googlemaps/js-api-loader").Loader)({ apiKey: key, version: "weekly" });
+    loader.load().then(() => {
+      if (!gmapRef.current) return;
+      const map = new google.maps.Map(gmapRef.current, {
+        center: { lat: 47.1744, lng: 27.6193 },
+        zoom: 18,
+        mapTypeId: "satellite",
+        disableDefaultUI: true,
+        zoomControl: true,
+        tilt: 0,
+      });
+      gmapInstance.current = map;
+      markerRef.current = new google.maps.Marker({
+        map,
+        position: { lat: 47.1744, lng: 27.6193 },
+        title: "Tu ești aici",
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
+      });
+    }).catch(() => {});
+  }, [mapMode]);
+
+  // Update marker when GPS changes
+  useEffect(() => {
+    if (!userGps || !markerRef.current) return;
+    markerRef.current.setPosition(userGps);
+    gmapInstance.current?.panTo(userGps);
+  }, [userGps]);
+
   const getLocation = async () => {
     setLocLoading(true);
     try {
-      const r = await fetch("/api/location", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ phoneNumber:"+99012345678" }) });
+      const r = await fetch("/api/location", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ phoneNumber: "+99012345678" }),
+      });
       const d = await r.json();
-      onLog(`Orange Location · lat ${d.location?.latitude?.toFixed(3)} lon ${d.location?.longitude?.toFixed(3)}`);
+      const lat = d.location?.latitude;
+      const lng = d.location?.longitude;
+      if (lat && lng) {
+        setUserGps({ lat, lng });
+        // Convert GPS → floor plan pixel → SVG %
+        const px = gpsToPixel({ lat, lng });
+        const svgX = (px.x / IMG_W) * 1200;
+        const svgY = (px.y / IMG_H) * 600;
+        setUserPos({ x: svgX, y: svgY });
+        onLog(`Orange Location · lat ${lat.toFixed(4)} lng ${lng.toFixed(4)}`);
+      }
     } catch { onLog("Eroare Orange Location API", false); }
     finally { setLocLoading(false); }
   };
 
-  const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
+  // Floor plan image crop — zoom to terminal area
+  // Image is 13500x5000px, terminal starts around x=7500
+  const cropLeft = 55; // % from left to crop (zoom into terminal)
 
   return (
     <>
       <div className="map-header">
-        <div className="map-title">My Route — Terminal T4 Iași</div>
+        <div>
+          <div className="map-title">My Route — Terminal T4 Iași</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
+            {userGps ? `GPS: ${userGps.lat.toFixed(5)}, ${userGps.lng.toFixed(5)}` : "Locație neprimită încă"}
+          </div>
+        </div>
         <div className="badges">
-          <div className="badge badge-live"><span className="dot red pulse-red" /> Live</div>
+          <button
+            onClick={() => setMapMode(m => m === "floor" ? "satellite" : "floor")}
+            style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}
+          >
+            <i className={`ti ${mapMode === "floor" ? "ti-satellite" : "ti-map"}`}/> {mapMode === "floor" ? "Satelit" : "Plan"}
+          </button>
           <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
-            <i className={`ti ti-navigation${locLoading?" spin":""}`} /> Orange Location
+            <i className={`ti ti-navigation${locLoading?" spin":""}`}/> Orange Location
           </button>
         </div>
       </div>
 
-      <div className="map-container">
-        <svg viewBox="0 0 1200 600" xmlns="http://www.w3.org/2000/svg" style={{ width:"100%", height:"100%" }}>
+      {/* ── Floor plan view ── */}
+      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", display: mapMode === "floor" ? "flex" : "none" }}>
+        {/* Harta reală JPEG */}
+        <img
+          src="/Plan%20parter%20fluxuri%20ON.jpg"
+          alt="Plan parter T4"
+          style={{ width:"100%", height:"100%", objectFit:"cover", objectPosition:`${cropLeft}% 50%`, display:"block", opacity:0.75, filter:"brightness(0.9) contrast(1.1)" }}
+        />
+        {/* SVG overlay calibrat — rută + dots */}
+        <svg
+          viewBox="0 0 1200 600"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none" }}
+          preserveAspectRatio="xMidYMid meet"
+        >
           <defs>
-            <linearGradient id="grad-gates" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1E293B"/>
-              <stop offset="100%" stopColor="#0F172A"/>
-            </linearGradient>
-            <linearGradient id="grad-checkin" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#1E3A8A" stopOpacity="0.5"/>
-              <stop offset="100%" stopColor="#172554" stopOpacity="0.5"/>
-            </linearGradient>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="3" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
+            <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
 
-          {/* Background */}
-          <rect x="40" y="100" width="1120" height="460" rx="16" fill="#0B1120" stroke="#334155" strokeWidth="2"/>
+          {/* Zone labels calibrate */}
+          {[
+            { label: "Intrare T4",     x: 210, y: 510 },
+            { label: "Check-in 1-5",   x: 210, y: 370 },
+            { label: "Check-in 10-15", x: 380, y: 370 },
+            { label: "Securitate",     x: 510, y: 410 },
+            { label: "Baza Scări",     x: 215, y: 490 },
+          ].map(l => (
+            <text key={l.label} x={l.x} y={l.y} fill="rgba(255,255,255,0.6)" fontSize="11" textAnchor="middle">{l.label}</text>
+          ))}
 
-          {/* ── Zona porți (sus) ── */}
-          <rect x="60" y="120" width="1080" height="190" rx="12" fill="url(#grad-gates)" stroke="#475569" strokeWidth="1.5"/>
-          <text x="80" y="150" fill="#64748B" fontSize="11" fontWeight="600" letterSpacing="1">ZONA DE ÎMBARCARE — DEPARTURES</text>
-
-          {/* Porți 1–6 */}
-          {([
-            ["1",80],["2",250],["3",420],["4",590],["5",760],["6",930]
-          ] as [string,number][]).map(([id,gx]) => {
-            const isTarget = flight?.gate === id;
-            const isOpen = id === "4";
-            return (
-              <g key={id}>
-                <rect x={gx} y="170" width="140" height="110" rx="8"
-                  fill={isTarget ? "rgba(56,189,248,0.15)" : isOpen ? "#064E3B" : "#0F172A"}
-                  stroke={isTarget ? "#38BDF8" : isOpen ? "#10B981" : "#38BDF8"}
-                  strokeWidth={isTarget ? 2.5 : 1}
-                />
-                <text x={gx+70} y="228" fill={isTarget?"#38BDF8":isOpen?"#10B981":"#FFFFFF"} fontSize="16" fontWeight="600" textAnchor="middle">
-                  Poarta {id}
-                </text>
-                {isOpen && <text x={gx+70} y="248" fill="#6EE7B7" fontSize="11" textAnchor="middle">Zbor deschis</text>}
-                {isTarget && <text x={gx+70} y="248" fill="#38BDF8" fontSize="11" textAnchor="middle">← Destinația ta</text>}
-              </g>
-            );
-          })}
-
-          {/* ── Check-in ── */}
-          <rect x="60" y="350" width="300" height="190" rx="12" fill="url(#grad-checkin)" stroke="#3B82F6" strokeWidth="1.5" strokeDasharray="4 2"/>
-          <text x="210" y="435" fill="#FFFFFF" fontSize="17" fontWeight="500" textAnchor="middle">Check-in T4</text>
-          <text x="210" y="458" fill="#93C5FD" fontSize="12" textAnchor="middle">~120 pasageri</text>
-
-          {/* ── Securitate ── */}
-          <rect x="390" y="350" width="230" height="190" rx="12" fill="#451A03" stroke="#F59E0B" strokeWidth="2"/>
-          <text x="505" y="435" fill="#FBBF24" fontSize="17" fontWeight="600" textAnchor="middle">Control Securitate</text>
-          <text x="505" y="458" fill="#FDE68A" fontSize="12" textAnchor="middle">⚠ Aglomerat (~210 pax)</text>
-
-          {/* ── Duty Free ── */}
-          <rect x="650" y="350" width="270" height="190" rx="12" fill="#064E3B" stroke="#10B981" strokeWidth="1.5"/>
-          <text x="785" y="435" fill="#6EE7B7" fontSize="17" fontWeight="500" textAnchor="middle">Duty Free &amp; Lounge</text>
-          <text x="785" y="458" fill="#A7F3D0" fontSize="12" textAnchor="middle">Flux normal</text>
-
-          {/* ── T3 Non-Schengen ── */}
-          <rect x="950" y="350" width="200" height="190" rx="12" fill="#312E81" stroke="#6366F1" strokeWidth="1.5"/>
-          <text x="1050" y="425" fill="#C7D2FE" fontSize="15" fontWeight="500" textAnchor="middle">Culoar T3</text>
-          <text x="1050" y="448" fill="#A5B4FC" fontSize="12" textAnchor="middle">Non-Schengen</text>
-          <text x="1050" y="468" fill="#818CF8" fontSize="12" textAnchor="middle">Control Pașapoarte</text>
-
-          {/* ── Ruta animată ── */}
+          {/* Ruta animată */}
           {pts && (
             <polyline
               points={polyline}
-              fill="none"
-              stroke="#38BDF8"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="12 12"
+              fill="none" stroke="#38BDF8" strokeWidth="4"
+              strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
               style={{ animation:"moveDash 1.5s linear infinite", filter:"drop-shadow(0 0 6px rgba(56,189,248,0.8))" }}
             />
           )}
 
-          {/* ── Poarta destinație beacon ── */}
+          {/* Gate destination */}
           {gatePos && (
-            <g>
+            <g filter="url(#glow2)">
               <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
-              <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981" filter="url(#glow)"/>
+              <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
+              <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">
+                {flight ? GATE_LABELS[flight.gate] : ""}
+              </text>
             </g>
           )}
 
-          {/* ── User dot ── */}
-          <g>
+          {/* User dot */}
+          <g filter="url(#glow2)">
             <circle cx={userPos.x} cy={userPos.y} r="14" fill="none" stroke="#38BDF8" strokeWidth="2" opacity="0.5" style={{animation:"pulse 2s infinite"}}/>
-            <circle cx={userPos.x} cy={userPos.y} r="7" fill="#38BDF8" filter="url(#glow)"/>
-            <text x={userPos.x} y={userPos.y+26} fill="#E0F2FE" fontSize="12" textAnchor="middle">Tu ești aici</text>
+            <circle cx={userPos.x} cy={userPos.y} r="7" fill="#38BDF8"/>
+            <circle cx={userPos.x} cy={userPos.y} r="3" fill="#fff"/>
           </g>
+          <text x={userPos.x} y={userPos.y+26} fill="#E0F2FE" fontSize="11" textAnchor="middle">Tu ești aici</text>
         </svg>
+
+        <style>{`
+          @keyframes moveDash { to { stroke-dashoffset: -200; } }
+          @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
+        `}</style>
       </div>
 
-      <style>{`
-        @keyframes moveDash { to { stroke-dashoffset: -200; } }
-        @keyframes pulse {
-          0%,100% { transform: scale(0.9); opacity:1; }
-          50% { transform: scale(1.3); opacity:0.7; }
-        }
-      `}</style>
+      {/* ── Satellite view ── */}
+      <div
+        ref={gmapRef}
+        style={{ flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", display: mapMode === "satellite" ? "block" : "none", minHeight:200 }}
+      />
+
+      {/* Info strip */}
+      {flight && (
+        <div className="fade-in" style={{ marginTop:10, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid var(--brand)`, background:"rgba(255,102,0,0.1)", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <i className="ti ti-plane" style={{color:"var(--brand)",fontSize:20}}/>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:14}}>{flight.flight} → {flight.dest}</div>
+            <div style={{fontSize:12,color:"var(--text-muted)"}}>
+              {GATE_LABELS[flight.gate]} · Decolare {flight.departs} · Urci la etaj după securitate
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
