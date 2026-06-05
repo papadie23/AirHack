@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+:root {
+  --font-mono-aviat: "JetBrains Mono", "Fira Code", ui-monospace, "SFMono-Regular", monospace;
+}
+
 * {
   box-sizing: border-box;
 }

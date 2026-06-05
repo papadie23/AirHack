@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirFlow Nexus Dashboard</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+    
+    <style>
+        :root {
+            /* Paleta de culori Modern Dark Theme */
+            --bg-body: #101014;
+            --bg-card: #1c1c21;
+            --bg-hover: #26262d;
+            
+            --border-color: #2f2f38;
+            
+            --text-main: #f3f3f6;
+            --text-muted: #9595a1;
+            
+            --brand: #ff6600;
+            --danger: #ef5350;
+            --danger-bg: rgba(239, 83, 80, 0.15);
+            --warning: #ffa726;
+            --warning-bg: rgba(255, 167, 38, 0.15);
+            --success: #66bb6a;
+            --success-bg: rgba(102, 187, 106, 0.15);
+            --info: #42a5f5;
+            --info-bg: rgba(66, 165, 245, 0.15);
+            
+            --radius-lg: 16px;
+            --radius-md: 10px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: var(--bg-body); 
+            color: var(--text-main); 
+            height: 100vh;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Layout Principal */
+        .dashboard-grid { 
+            display: grid; 
+            grid-template-columns: 300px 1fr 300px; 
+            grid-template-rows: 1fr auto; 
+            gap: 16px; 
+            flex: 1;
+            min-height: 0;
+        }
+
+        .card { 
+            background: var(--bg-card); 
+            border: 1px solid var(--border-color); 
+            border-radius: var(--radius-lg); 
+            padding: 20px; 
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Bar / Header */
+        .brand-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border-color); }
+        .brand-icon { width: 40px; height: 40px; background: var(--brand); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+        .brand-icon i { color: #fff; font-size: 24px; }
+        .brand-title { font-size: 16px; font-weight: 600; }
+        .brand-sub { font-size: 12px; color: var(--text-muted); }
+
+        .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+
+        /* Left Sidebar - API Cards */
+        .api-list { display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; }
+        .api-card { border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; cursor: pointer; transition: 0.2s; }
+        .api-card:hover { background: var(--bg-hover); border-color: #444; }
+        .api-card-header { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+        .api-card-header i { font-size: 16px; }
+        .api-val { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 4px; }
+        .api-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+
+        /* Status Dots & Badges */
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot.green { background: var(--success); }
+        .dot.orange { background: var(--warning); }
+        .dot.blue { background: var(--info); }
+        
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(102, 187, 106, 0); } 100% { box-shadow: 0 0 0 0 rgba(102, 187, 106, 0); } }
+        .pulse-green { animation: pulse 2s infinite; }
+
+        .alert-box { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: var(--radius-md); padding: 12px; margin-top: auto; }
+        .alert-title { font-size: 13px; font-weight: 600; color: var(--danger); display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+        .alert-desc { font-size: 12px; color: var(--danger); opacity: 0.9; }
+
+        /* Center Map Area */
+        .main-map { grid-column: 2; grid-row: 1 / 3; position: relative; justify-content: flex-start; }
+        .map-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .map-title { font-size: 15px; font-weight: 600; }
+        .badges { display: flex; gap: 8px; }
+        .badge { font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+        .badge-live { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(239, 83, 80, 0.3); }
+        .badge-time { background: var(--info-bg); color: var(--info); border: 1px solid rgba(66, 165, 245, 0.3); }
+        
+        .map-container { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; min-height: 300px; }
+        svg { width: 100%; height: 100%; max-height: 500px; }
+
+        /* Right Sidebar - Stats */
+        .chart-container { height: 140px; width: 100%; margin-bottom: 24px; position: relative; }
+        .stats-list { display: flex; flex-direction: column; gap: 12px; }
+        .stat-item { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+        .stat-item:last-child { border-bottom: none; }
+        .stat-label { font-size: 13px; color: var(--text-muted); }
+        .stat-value { font-size: 15px; font-weight: 600; }
+
+        /* Bottom Controls */
+        .bottom-bar { grid-column: 1 / 4; grid-row: 3; display: flex; gap: 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 12px; }
+        .btn-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; background: transparent; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-muted); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: 0.2s; }
+        .btn-tab:hover { background: var(--bg-hover); color: var(--text-main); }
+        .btn-tab.active { background: var(--bg-hover); color: var(--text-main); border-color: #555; }
+        .btn-tab i { font-size: 18px; }
+
+    </style>
+</head>
+<body>
+
+<div class="dashboard-grid">
+    <div class="card sidebar-left">
+        <div class="brand-header">
+            <div class="brand-icon"><i class="ti ti-wifi"></i></div>
+            <div>
+                <div class="brand-title">AirFlow Nexus</div>
+                <div class="brand-sub">powered by Orange APIs</div>
+            </div>
+        </div>
+
+        <div class="section-title">Status API-uri</div>
+        
+        <div class="api-list">
+            <div class="api-card">
+                <div class="api-card-header"><i class="ti ti-map-pin"></i> Device Location API</div>
+                <div class="api-val">342 dispozitive</div>
+                <div class="api-status"><span class="dot green pulse-green"></span> Activ · zona securitate</div>
+            </div>
+
+            <div class="api-card">
+                <div class="api-card-header"><i class="ti ti-id-badge"></i> Number Verification API</div>
+                <div class="api-val">12 verificări / oră</div>
+                <div class="api-status"><span class="dot orange"></span> Moderat</div>
+            </div>
+
+            <div class="api-card">
+                <div class="api-card-header"><i class="ti ti-bolt"></i> Quality on Demand API</div>
+                <div class="api-val">2 sesiuni active</div>
+                <div class="api-status"><span class="dot blue"></span> Prioritate mentenanță</div>
+            </div>
+        </div>
+
+        <div class="alert-box">
+            <div class="alert-title"><i class="ti ti-alert-triangle"></i> Alertă activă</div>
+            <div class="alert-desc">Aglomerație poarta C3 — bandă QoD alocată camerelor video.</div>
+        </div>
+    </div>
+
+    <div class="card main-map">
+        <div class="map-header">
+            <div class="map-title">Terminal A — vedere de sus</div>
+            <div class="badges">
+                <div class="badge badge-live"><span class="dot green" style="background:var(--danger)"></span> Live</div>
+                <div class="badge badge-time">Actualizat acum 12s</div>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <svg viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet">
+                
+                <rect x="20" y="20" width="160" height="130" rx="12" fill="var(--danger-bg)" stroke="var(--danger)" stroke-width="2"/>
+                <text x="100" y="80" text-anchor="middle" fill="var(--danger)" font-size="16" font-weight="600">Securitate</text>
+                <text x="100" y="105" text-anchor="middle" fill="var(--danger)" font-size="13" opacity="0.8">~210 pax</text>
+
+                <rect x="200" y="20" width="160" height="130" rx="12" fill="var(--warning-bg)" stroke="var(--warning)" stroke-width="2"/>
+                <text x="280" y="80" text-anchor="middle" fill="var(--warning)" font-size="16" font-weight="600">Check-in</text>
+                <text x="280" y="105" text-anchor="middle" fill="var(--warning)" font-size="13" opacity="0.8">~85 pax</text>
+
+                <rect x="380" y="20" width="200" height="130" rx="12" fill="var(--success-bg)" stroke="var(--success)" stroke-width="2"/>
+                <text x="480" y="80" text-anchor="middle" fill="var(--success)" font-size="16" font-weight="600">Porți C1–C6</text>
+                <text x="480" y="105" text-anchor="middle" fill="var(--success)" font-size="13" opacity="0.8">~47 pax</text>
+
+                <text x="300" y="205" text-anchor="middle" fill="var(--text-muted)" font-size="14">Culoar principal de acces</text>
+
+                <rect x="20" y="250" width="130" height="120" rx="12" fill="var(--info-bg)" stroke="var(--info)" stroke-width="2"/>
+                <text x="85" y="305" text-anchor="middle" fill="var(--info)" font-size="15" font-weight="600">Lounge</text>
+                <text x="85" y="325" text-anchor="middle" fill="var(--info)" font-size="13" opacity="0.8">~22 pax</text>
+
+                <rect x="170" y="250" width="150" height="120" rx="12" fill="var(--success-bg)" stroke="var(--success)" stroke-width="2"/>
+                <text x="245" y="305" text-anchor="middle" fill="var(--success)" font-size="15" font-weight="600">Duty free</text>
+                <text x="245" y="325" text-anchor="middle" fill="var(--success)" font-size="13" opacity="0.8">~33 pax</text>
+
+                <rect x="340" y="250" width="240" height="120" rx="12" fill="var(--danger-bg)" stroke="var(--danger)" stroke-width="2" stroke-dasharray="6 4"/>
+                <text x="460" y="295" text-anchor="middle" fill="var(--danger)" font-size="15" font-weight="600">Poarta C3</text>
+                <text x="460" y="315" text-anchor="middle" fill="var(--danger)" font-size="12">ALERTĂ aglomerație</text>
+                <text x="460" y="335" text-anchor="middle" fill="var(--danger)" font-size="12" opacity="0.8">~89 pax · limită 60</text>
+                
+            </svg>
+        </div>
+    </div>
+
+    <div class="card sidebar-right">
+        <div class="section-title">Flux pasageri (60 min)</div>
+        
+        <div class="chart-container">
+            <canvas id="trafficChart"></canvas>
+        </div>
+
+        <div class="section-title" style="margin-top: 10px;">Statistici Live</div>
+        <div class="stats-list">
+            <div class="stat-item">
+                <span class="stat-label">Total pasageri</span>
+                <span class="stat-value">481</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Zbor întârziat</span>
+                <span class="stat-value" style="color: var(--danger)">2</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Porți active</span>
+                <span class="stat-value">6 / 9</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Nevoi speciale</span>
+                <span class="stat-value" style="color: var(--info)">3 pasageri</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-bar">
+        <button class="btn-tab active"><i class="ti ti-building"></i> Operator aeroport</button>
+        <button class="btn-tab"><i class="ti ti-users"></i> Pasageri (anonim)</button>
+        <button class="btn-tab"><i class="ti ti-settings"></i> Setări API</button>
+        <button class="btn-tab"><i class="ti ti-sitemap"></i> Arhitectură</button>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('trafficChart').getContext('2d');
+    
+    // Gradient pentru grafic
+    const gradient = ctx.createLinearGradient(0, 0, 0, 140);
+    gradient.addColorStop(0, 'rgba(255, 102, 0, 0.4)');
+    gradient.addColorStop(1, 'rgba(255, 102, 0, 0.0)');
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: ['-60m', '-50m', '-40m', '-30m', '-20m', '-10m', 'acum'],
+            datasets: [{
+                data: [150, 180, 160, 210, 250, 320, 481],
+                borderColor: '#ff6600',
+                borderWidth: 2,
+                backgroundColor: gradient,
+                fill: true,
+                pointRadius: 3,
+                pointBackgroundColor: '#ff6600',
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: true } },
+            scales: {
+                x: { display: false },
+                y: { display: false, min: 100 }
+            },
+            layout: { padding: 0 }
+        }
+    });
+</script>
+
+</body>
+</html>

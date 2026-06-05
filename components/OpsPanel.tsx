@@ -11,7 +11,7 @@ interface Props {
 
 export default function OpsPanel({ verifyResult, locationResult, log, demoState }: Props) {
   return (
-    <div className="flex flex-col h-full bg-[#080c18] border-l border-white/10">
+    <div className="flex flex-col flex-1 min-h-0 bg-[#080c18]">
       {/* Header */}
       <div className="border-b border-white/10 px-4 py-3 flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-orange-500" />
