@@ -19,30 +19,42 @@ function heatColor(count: number, limit: number) {
 
 /* ── flights / route ── */
 const FLIGHTS = [
-  { id: "1", gate: "14", flight: "RO 321", dest: "București",  departs: "23:15", color: "var(--success)" },
-  { id: "2", gate: "7",  flight: "BA 882", dest: "Londra",     departs: "23:45", color: "var(--info)"    },
-  { id: "3", gate: "3",  flight: "LH 1407",dest: "Frankfurt",  departs: "00:10", color: "var(--warning)" },
-  { id: "4", gate: "11", flight: "AF 1234",dest: "Paris CDG",  departs: "00:30", color: "var(--danger)"  },
+  { id: "1", gate: "14", flight: "RO 321",  dest: "București OTP", departs: "23:15", color: "var(--success)" },
+  { id: "2", gate: "7",  flight: "W6 4102", dest: "Londra LTN",    departs: "23:45", color: "var(--info)"    },
+  { id: "3", gate: "11", flight: "LH 1407", dest: "Frankfurt FRA", departs: "00:10", color: "var(--warning)" },
+  { id: "4", gate: "5",  flight: "FR 8821", dest: "Milano BGY",    departs: "00:30", color: "var(--brand)"   },
+  { id: "5", gate: "12", flight: "AF 1234", dest: "Paris CDG",     departs: "06:45", color: "var(--danger)"  },
 ];
 
-// Poarta 14 e în dreapta jos pe harta LRIA — coordonate overlay (%) pe imagine
-// Ajustează după ce pui poza reală
+// Coordonate calibrate pe harta reală T4 Iași (% din dimensiunea imaginii)
+// Nivel 0: intrare → check-in → control securitate → acces etaj
+// Nivel 1: Schengen porți 5-10 (jos), Non-Schengen porți 11-15 (sus)
 const GATE_POSITIONS: Record<string, { x: number; y: number; label: string }> = {
-  "14": { x: 82, y: 72, label: "Poarta 14" },
-  "7":  { x: 55, y: 68, label: "Poarta 7"  },
-  "3":  { x: 32, y: 68, label: "Poarta 3"  },
-  "11": { x: 70, y: 72, label: "Poarta 11" },
+  "5":  { x: 52, y: 78, label: "Poarta 5"  },
+  "6":  { x: 59, y: 78, label: "Poarta 6"  },
+  "7":  { x: 65, y: 78, label: "Poarta 7"  },
+  "8":  { x: 71, y: 78, label: "Poarta 8"  },
+  "9":  { x: 77, y: 78, label: "Poarta 9"  },
+  "10": { x: 83, y: 78, label: "Poarta 10" },
+  "11": { x: 68, y: 28, label: "Poarta 11" },
+  "12": { x: 76, y: 28, label: "Poarta 12" },
+  "14": { x: 87, y: 28, label: "Poarta 14" },
+  "15": { x: 95, y: 28, label: "Poarta 15" },
 };
 
-// Punctul de start (intrare terminal) în %
-const USER_START = { x: 12, y: 50 };
+const USER_START = { x: 8, y: 82 };
 
-// Ruta simplificată ca waypoints în % (x, y) pe imaginea hărții
 const ROUTE_WAYPOINTS: Record<string, { x: number; y: number }[]> = {
-  "14": [{ x:12,y:50 },{ x:25,y:50 },{ x:40,y:50 },{ x:60,y:55 },{ x:75,y:60 },{ x:82,y:72 }],
-  "7":  [{ x:12,y:50 },{ x:25,y:50 },{ x:40,y:50 },{ x:55,y:68 }],
-  "3":  [{ x:12,y:50 },{ x:25,y:50 },{ x:32,y:68 }],
-  "11": [{ x:12,y:50 },{ x:25,y:50 },{ x:40,y:50 },{ x:55,y:55 },{ x:70,y:72 }],
+  "5":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:52,y:72},{x:52,y:78}],
+  "6":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:59,y:72},{x:59,y:78}],
+  "7":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:65,y:72},{x:65,y:78}],
+  "8":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:71,y:72},{x:71,y:78}],
+  "9":  [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:77,y:72},{x:77,y:78}],
+  "10": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:42,y:65},{x:83,y:72},{x:83,y:78}],
+  "11": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:68,y:35},{x:68,y:28}],
+  "12": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:76,y:35},{x:76,y:28}],
+  "14": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:87,y:35},{x:87,y:28}],
+  "15": [{x:8,y:82},{x:8,y:62},{x:18,y:58},{x:28,y:52},{x:42,y:52},{x:55,y:45},{x:95,y:35},{x:95,y:28}],
 };
 
 /* ═══════════════════════════ DASHBOARD ═══════════════════════════ */
@@ -272,29 +284,35 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
             style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", opacity:0.85 }}
           />
         ) : (
-          /* Fallback SVG plan simplificat */
+          /* Fallback SVG plan simplificat T4 */
           <svg viewBox="0 0 100 100" style={{ width:"100%", height:"100%", background:"var(--bg-body)" }} preserveAspectRatio="none">
-            {/* Terminal body */}
-            <rect x="5" y="30" width="90" height="40" rx="2" fill="#26262d" stroke="var(--border-color)" strokeWidth="0.5"/>
-            {/* Gates strip */}
-            <rect x="5" y="60" width="90" height="15" rx="1" fill="#1c1c21" stroke="var(--border-color)" strokeWidth="0.3"/>
-            {/* Gate labels */}
-            {[3,7,11,14].map((g,i) => {
-              const gx = 15 + i*22;
-              return (
-                <g key={g}>
-                  <rect x={gx-6} y="62" width="12" height="10" rx="1"
-                    fill={flight?.gate===String(g)?"rgba(255,102,0,0.3)":"#2f2f38"}
-                    stroke={flight?.gate===String(g)?"var(--brand)":"var(--border-color)"} strokeWidth="0.4"/>
-                  <text x={gx} y="69.5" textAnchor="middle" fill={flight?.gate===String(g)?"var(--brand)":"var(--text-muted)"} fontSize="3.5" fontWeight="600">{g}</text>
-                </g>
-              );
-            })}
-            {/* Check-in area */}
-            <text x="50" y="48" textAnchor="middle" fill="var(--text-muted)" fontSize="4">Check-in / Securitate / Duty Free</text>
+            {/* Corp terminal */}
+            <rect x="3" y="25" width="94" height="55" rx="2" fill="#26262d" stroke="var(--border-color)" strokeWidth="0.5"/>
+            {/* Zona check-in */}
+            <rect x="4" y="35" width="22" height="20" rx="1" fill="#1c1c21" stroke="var(--border-color)" strokeWidth="0.3"/>
+            <text x="15" y="46" textAnchor="middle" fill="var(--text-muted)" fontSize="3">Check-in</text>
+            {/* Securitate */}
+            <rect x="27" y="35" width="12" height="20" rx="1" fill="rgba(255,167,38,0.15)" stroke="var(--warning)" strokeWidth="0.4"/>
+            <text x="33" y="46" textAnchor="middle" fill="var(--warning)" fontSize="2.8">Securit.</text>
+            {/* Zona Schengen porți 5-10 */}
+            <rect x="44" y="60" width="46" height="14" rx="1" fill="rgba(66,165,245,0.1)" stroke="var(--info)" strokeWidth="0.3"/>
+            <text x="67" y="70" textAnchor="middle" fill="var(--info)" fontSize="3">Schengen — Porți 5–10</text>
+            {/* Zona Non-Schengen porți 11-15 */}
+            <rect x="60" y="26" width="36" height="14" rx="1" fill="rgba(102,187,106,0.1)" stroke="var(--success)" strokeWidth="0.3"/>
+            <text x="78" y="34" textAnchor="middle" fill="var(--success)" fontSize="3">Non-Schengen 11–15</text>
+            {/* Gate dots */}
+            {([["5",52,74],["6",59,74],["7",65,74],["8",71,74],["9",77,74],["10",83,74],["11",68,33],["12",76,33],["14",87,33],["15",95,33]] as [string,number,number][]).map(([id,gx,gy])=>(
+              <g key={id}>
+                <circle cx={gx} cy={gy} r={flight?.gate===id?2.5:1.5}
+                  fill={flight?.gate===id?"var(--brand)":"var(--border-color)"}
+                  stroke={flight?.gate===id?"var(--brand)":"var(--text-muted)"} strokeWidth="0.4"/>
+                <text x={gx} y={gy+(flight?.gate===id?-3.5:+4.5)} textAnchor="middle"
+                  fill={flight?.gate===id?"var(--brand)":"var(--text-muted)"} fontSize="2.8" fontWeight={flight?.gate===id?"700":"400"}>{id}</text>
+              </g>
+            ))}
             {/* Intrare */}
-            <rect x="5" y="43" width="8" height="14" rx="1" fill="var(--info-bg)" stroke="var(--info)" strokeWidth="0.4"/>
-            <text x="9" y="51.5" textAnchor="middle" fill="var(--info)" fontSize="3">IN</text>
+            <rect x="3" y="55" width="6" height="10" rx="1" fill="var(--info-bg)" stroke="var(--info)" strokeWidth="0.4"/>
+            <text x="6" y="61" textAnchor="middle" fill="var(--info)" fontSize="2.5">IN</text>
           </svg>
         )}
 
