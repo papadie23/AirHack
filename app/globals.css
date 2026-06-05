@@ -1,15 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 :root {
-  --font-mono-aviat: "JetBrains Mono", "Fira Code", ui-monospace, "SFMono-Regular", monospace;
+  --bg-body:    #101014;
+  --bg-card:    #1c1c21;
+  --bg-hover:   #26262d;
+  --border-color: #2f2f38;
+  --text-main:  #f3f3f6;
+  --text-muted: #9595a1;
+  --brand:      #ff6600;
+  --danger:     #ef5350;
+  --danger-bg:  rgba(239, 83, 80, 0.15);
+  --warning:    #ffa726;
+  --warning-bg: rgba(255, 167, 38, 0.15);
+  --success:    #66bb6a;
+  --success-bg: rgba(102, 187, 106, 0.15);
+  --info:       #42a5f5;
+  --info-bg:    rgba(66, 165, 245, 0.15);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: #0b0f1a;
-  color: #f1f5f9;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', sans-serif;
+  background: var(--bg-body);
+  color: var(--text-main);
+  height: 100vh;
+  overflow: hidden;
 }
