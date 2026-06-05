@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import type { ActiveCard, DemoState, VerifyResult } from "@/app/page";
 import type { MetarResponse } from "@/app/api/metar/route";
 import { flightCategoryColor } from "@/lib/metar";
@@ -12,13 +13,10 @@ interface Props {
   demoState: DemoState;
 }
 
-function cardClass(isActive: boolean): string {
-  return [
-    "border rounded-[10px] p-3 cursor-pointer transition-all duration-200",
-    isActive
-      ? "border-[#ff6600] bg-[#26262d] shadow-[0_0_12px_rgba(255,102,0,0.2)]"
-      : "border-[#2f2f38] hover:bg-[#26262d] hover:border-[#444]",
-  ].join(" ");
+function cardStyle(isActive: boolean): React.CSSProperties {
+  return isActive
+    ? { borderColor: "#ff6600", background: "rgba(255,102,0,0.07)", boxShadow: "0 0 12px rgba(255,102,0,0.2)" }
+    : { borderColor: "var(--border-color)", background: "transparent" };
 }
 
 export default function LeftSidebar({
@@ -32,9 +30,12 @@ export default function LeftSidebar({
   }
 
   return (
-    <div className="bg-[#1c1c21] border border-[#2f2f38] rounded-2xl p-5 flex flex-col overflow-hidden">
+    <div
+      className="rounded-2xl border p-5 flex flex-col overflow-hidden"
+      style={{ background: "var(--bg-card)", borderColor: "var(--border-color)" }}
+    >
       {/* Brand header */}
-      <div className="flex items-center gap-3 mb-5 pb-4 border-b border-[#2f2f38]">
+      <div className="flex items-center gap-3 mb-5 pb-4 border-b" style={{ borderColor: "var(--border-color)" }}>
         <div className="w-10 h-10 bg-[#ff6600] rounded-xl flex items-center justify-center shrink-0">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
@@ -44,33 +45,33 @@ export default function LeftSidebar({
           </svg>
         </div>
         <div>
-          <div className="text-base font-semibold text-[#f3f3f6]">AirFlow Nexus</div>
-          <div className="text-xs text-[#9595a1]">powered by Orange APIs</div>
+          <div className="text-base font-semibold text-[var(--text-main)]">AirFlow Nexus</div>
+          <div className="text-xs text-[var(--text-muted)]">powered by Orange APIs</div>
         </div>
       </div>
 
       {/* Section title */}
-      <p className="text-[11px] font-semibold text-[#9595a1] uppercase tracking-[1px] mb-3">
+      <p className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-[1px] mb-3">
         API Status
       </p>
 
       {/* Card list */}
       <div className="flex flex-col gap-2.5 flex-1 overflow-y-auto">
         {/* Card 1 — Weather & METAR */}
-        <div className={cardClass(activeCard === "weather")} onClick={() => toggle("weather")}>
-          <div className="flex items-center gap-2 text-xs text-[#9595a1] mb-1.5">
+        <div className="border rounded-[10px] p-3 cursor-pointer transition-all duration-200 hover:opacity-90" style={cardStyle(activeCard === "weather")} onClick={() => toggle("weather")}>
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-1.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>
             </svg>
             Weather &amp; METAR
           </div>
-          <div className="text-[15px] font-semibold text-[#f3f3f6] mb-1">
-            {metar
+          <div className="text-[15px] font-semibold text-[var(--text-main)] mb-1">
+            {metar?.temperature
               ? `${metar.temperature.tempC >= 0 ? "+" : ""}${metar.temperature.tempC}°C · ${metar.wind.speedKt} kt`
               : "Loading…"}
           </div>
-          <div className="flex items-center gap-2 text-xs text-[#9595a1]">
-            {metar ? (
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+            {metar?.temperature ? (
               <>
                 <span
                   className={`w-2 h-2 rounded-full ${
@@ -88,7 +89,7 @@ export default function LeftSidebar({
                 >
                   {metar.flightCategory}
                 </span>
-                <span className="text-[#9595a1]">LRIA</span>
+                <span className="text-[var(--text-muted)]">LRIA</span>
               </>
             ) : (
               <span className="w-2 h-2 rounded-full bg-[#9595a1]" />
@@ -97,26 +98,26 @@ export default function LeftSidebar({
         </div>
 
         {/* Card 2 — Terminal Heatmap */}
-        <div className={cardClass(activeCard === "heatmap")} onClick={() => toggle("heatmap")}>
-          <div className="flex items-center gap-2 text-xs text-[#9595a1] mb-1.5">
+        <div className="border rounded-[10px] p-3 cursor-pointer transition-all duration-200 hover:opacity-90" style={cardStyle(activeCard === "heatmap")} onClick={() => toggle("heatmap")}>
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-1.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
               <circle cx="12" cy="10" r="3"/>
             </svg>
             Terminal Heatmap
           </div>
-          <div className="text-[15px] font-semibold text-[#f3f3f6] mb-1">
+          <div className="text-[15px] font-semibold text-[var(--text-main)] mb-1">
             481 passengers
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-[#9595a1]">
+          <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
             <span className="w-2 h-2 rounded-full bg-[#ffa726]" />
             Live · Gate C3 alert
           </div>
         </div>
 
         {/* Card 3 — SMS / Identity Verification */}
-        <div className={cardClass(activeCard === "sms")} onClick={() => toggle("sms")}>
-          <div className="flex items-center gap-2 text-xs text-[#9595a1] mb-1.5">
+        <div className="border rounded-[10px] p-3 cursor-pointer transition-all duration-200 hover:opacity-90" style={cardStyle(activeCard === "sms")} onClick={() => toggle("sms")}>
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-1.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
@@ -128,12 +129,12 @@ export default function LeftSidebar({
                 ? "text-[#66bb6a]"
                 : verifyResult?.decision === "BLOCK"
                 ? "text-[#ef5350]"
-                : "text-[#f3f3f6]"
+                : "text-[var(--text-main)]"
             }`}
           >
             {verifyResult?.decision ?? "Idle"}
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-[#9595a1]">
+          <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
             <span className="w-2 h-2 rounded-full bg-[#ffa726]" />
             CAMARA API ready
           </div>
