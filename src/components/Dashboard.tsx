@@ -2,21 +2,6 @@ import { useState, useEffect, useRef } from "react";
 
 type Feature = "weather" | "route" | "heatmap";
 
-/* ── heatmap zones ── */
-const ZONES = [
-  { id: "security", label: "Securitate",  x: 20,  y: 20,  w: 160, h: 130, base: 210, limit: 150, dash: false },
-  { id: "checkin",  label: "Check-in",    x: 200, y: 20,  w: 155, h: 130, base: 85,  limit: 120, dash: false },
-  { id: "gates",    label: "Porți C1–C6", x: 375, y: 20,  w: 205, h: 130, base: 47,  limit: 200, dash: false },
-  { id: "lounge",   label: "Lounge",      x: 20,  y: 255, w: 130, h: 120, base: 22,  limit: 40,  dash: false },
-  { id: "dutyfree", label: "Duty Free",   x: 165, y: 255, w: 155, h: 120, base: 33,  limit: 60,  dash: false },
-  { id: "gateC3",   label: "Poarta C3",   x: 340, y: 255, w: 245, h: 120, base: 89,  limit: 60,  dash: true  },
-];
-function randZ(base: number) { return Math.round(base * (0.85 + Math.random() * 0.3)); }
-function heatColor(count: number, limit: number) {
-  const r = count / limit;
-  return r < 0.55 ? "var(--success)" : r < 0.85 ? "var(--warning)" : "var(--danger)";
-}
-
 /* ── flights / route ── */
 const FLIGHTS = [
   { id: "1", gate: "4",  flight: "RO 321",  dest: "București OTP", departs: "23:15", color: "var(--success)" },
@@ -571,43 +556,193 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   );
 }
 
-/* ── Heatmap center ── */
+/* ── Heatmap center — Google Maps + Orange Population Density ── */
+
+// LRIA airport center
+const LRIA_CENTER = { lat: 47.1729, lng: 27.6240 };
+
+// Zone labels mapped to geohash approximate positions on the T4 terminal
+// Used for the SVG overlay on top of the map
+const TERMINAL_ZONES = [
+  { id: "security", label: "Securitate",  lat: 47.1732, lng: 27.6215, base: 210, limit: 150 },
+  { id: "checkin",  label: "Check-in",    lat: 47.1729, lng: 27.6225, base: 85,  limit: 120 },
+  { id: "dutyfree", label: "Duty Free",   lat: 47.1735, lng: 27.6250, base: 47,  limit: 80  },
+  { id: "gateC3",   label: "Poarta C3",   lat: 47.1726, lng: 27.6265, base: 89,  limit: 60  },
+];
+
+interface DensityCell {
+  geohash: string;
+  dataType: string;
+  pplDensity?: number;
+  minPplDensity?: number;
+  maxPplDensity?: number;
+}
+interface DensityResponse {
+  timedPopulationDensityData: { startTime: string; endTime: string; cellPopulationDensityData: DensityCell[] }[];
+  status: string;
+  fromFixture?: boolean;
+}
+
+// Decode geohash → {lat, lng} (simple base32 decode, precision 7)
+function decodeGeohash(hash: string): { lat: number; lng: number } {
+  const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
+  let lat = [-90, 90], lng = [-180, 180];
+  let isLng = true;
+  for (const c of hash) {
+    const v = BASE32.indexOf(c);
+    for (let i = 4; i >= 0; i--) {
+      const bit = (v >> i) & 1;
+      if (isLng) { const mid = (lng[0] + lng[1]) / 2; lng[bit ? 0 : 1] = mid; }
+      else        { const mid = (lat[0] + lat[1]) / 2; lat[bit ? 0 : 1] = mid; }
+      isLng = !isLng;
+    }
+  }
+  return { lat: (lat[0] + lat[1]) / 2, lng: (lng[0] + lng[1]) / 2 };
+}
+
+function heatColor(density: number): string {
+  if (density > 150) return "var(--danger)";
+  if (density > 60)  return "var(--warning)";
+  return "var(--success)";
+}
+
 function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const [zones, setZones] = useState(() => ZONES.map(z => ({ ...z, count: randZ(z.base) })));
+  const mapRef = useRef<HTMLDivElement>(null);
+  const googleMapRef = useRef<google.maps.Map | null>(null);
+  const heatmapLayerRef = useRef<google.maps.visualization.HeatmapLayer | null>(null);
+  const [densityData, setDensityData] = useState<DensityCell[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [fromFixture, setFromFixture] = useState(false);
+  const [hasGoogleKey, setHasGoogleKey] = useState(true);
   const [tick, setTick] = useState(0);
+
+  const fetchDensity = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/population-density", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const d: DensityResponse = await r.json();
+      const cells = d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? [];
+      setDensityData(cells);
+      setFromFixture(!!d.fromFixture);
+      setTick(p => p + 1);
+      onLog(`Population Density · ${cells.length} celule · Orange API${d.fromFixture ? " (fixture)" : ""}`);
+    } catch { onLog("Eroare Population Density API", false); }
+    finally { setLoading(false); }
+  };
+
+  // Init Google Maps
   useEffect(() => {
-    const t = setInterval(() => { setZones(ZONES.map(z => ({ ...z, count: randZ(z.base) }))); setTick(p=>p+1); }, 8000);
+    const apiKey = (window as any).__GOOGLE_MAPS_KEY__ as string | undefined;
+    if (!apiKey) { setHasGoogleKey(false); return; }
+
+    const loader = new (require("@googlemaps/js-api-loader").Loader)({
+      apiKey,
+      version: "weekly",
+      libraries: ["visualization"],
+    });
+    loader.load().then(() => {
+      if (!mapRef.current) return;
+      const map = new google.maps.Map(mapRef.current, {
+        center: LRIA_CENTER,
+        zoom: 16,
+        mapTypeId: "satellite",
+        disableDefaultUI: true,
+        zoomControl: true,
+        styles: [{ featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] }],
+      });
+      googleMapRef.current = map;
+      heatmapLayerRef.current = new google.maps.visualization.HeatmapLayer({ map, radius: 40 });
+      setMapReady(true);
+    }).catch(() => setHasGoogleKey(false));
+  }, []);
+
+  // Update heatmap layer when density data changes
+  useEffect(() => {
+    if (!mapReady || !heatmapLayerRef.current || !densityData.length) return;
+    const points = densityData
+      .filter(c => c.dataType === "DENSITY_ESTIMATION" && c.pplDensity)
+      .map(c => {
+        const { lat, lng } = decodeGeohash(c.geohash);
+        return { location: new google.maps.LatLng(lat, lng), weight: c.pplDensity! };
+      });
+    heatmapLayerRef.current.setData(points);
+  }, [tick, mapReady]);
+
+  // Auto-refresh 30s
+  useEffect(() => {
+    fetchDensity();
+    const t = setInterval(fetchDensity, 30000);
     return () => clearInterval(t);
   }, []);
-  useEffect(() => { onLog(`Heatmap actualizat · ${new Date().toLocaleTimeString("ro")}`); }, [tick]);
+
+  const totalPpl = Math.round(densityData.filter(c => c.pplDensity).reduce((s,c) => s + (c.pplDensity ?? 0), 0));
 
   return (
     <>
       <div className="map-header">
-        <div className="map-title">Terminal A — vedere de sus</div>
+        <div>
+          <div className="map-title">Heatmap Terminal T4 — LRIA</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
+            Orange Population Density API · geohash precision 7
+            {fromFixture && <span style={{ color:"var(--warning)", marginLeft:8 }}>· fixture</span>}
+          </div>
+        </div>
         <div className="badges">
-          <div className="badge badge-live"><span className="dot red pulse-red" /> Live</div>
-          <div className="badge badge-time">Auto-refresh 8s</div>
+          <div className="badge badge-live"><span className="dot red pulse-red"/>Live</div>
+          <button onClick={fetchDensity} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>
+            <i className={`ti ti-refresh${loading?" spin":""}`}/>
+          </button>
         </div>
       </div>
-      <div className="map-container">
-        <svg viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet">
-          <text x="300" y="205" textAnchor="middle" fill="var(--text-muted)" fontSize="13">Culoar principal de acces</text>
-          {zones.map(z => {
-            const c = heatColor(z.count, z.limit);
-            return (
-              <g key={z.id}>
-                <rect x={z.x} y={z.y} width={z.w} height={z.h} rx="12"
-                  fill={`${c === "var(--danger)" ? "rgba(239,83,80" : c === "var(--warning)" ? "rgba(255,167,38" : "rgba(102,187,106"},0.15)`}
-                  stroke={c} strokeWidth="2" strokeDasharray={z.dash ? "6 4" : undefined}
-                />
-                <text x={z.x+z.w/2} y={z.y+z.h/2-8} textAnchor="middle" fill={c} fontSize="15" fontWeight="600">{z.label}</text>
-                <text x={z.x+z.w/2} y={z.y+z.h/2+12} textAnchor="middle" fill={c} fontSize="13" opacity="0.85">~{z.count} pax</text>
-                {z.dash && <text x={z.x+z.w/2} y={z.y+z.h/2+28} textAnchor="middle" fill={c} fontSize="11" opacity="0.8">⚠ limită {z.limit}</text>}
-              </g>
-            );
-          })}
-        </svg>
+
+      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
+        {/* Google Maps div */}
+        <div ref={mapRef} style={{ width:"100%", height:"100%", display: hasGoogleKey ? "block" : "none" }}/>
+
+        {/* Fallback SVG când nu e Google Maps key */}
+        {!hasGoogleKey && (
+          <svg viewBox="0 0 600 400" style={{ width:"100%", height:"100%", background:"#0B1120" }} preserveAspectRatio="xMidYMid meet">
+            <text x="300" y="205" textAnchor="middle" fill="var(--text-muted)" fontSize="13">Culoar principal de acces</text>
+            {/* Zone colorate din date Orange */}
+            {TERMINAL_ZONES.map((z, i) => {
+              const cell = densityData[i];
+              const density = cell?.pplDensity ?? z.base;
+              const color = heatColor(density);
+              const positions = [
+                { x:20,  y:20,  w:160, h:130 },
+                { x:200, y:20,  w:155, h:130 },
+                { x:165, y:255, w:155, h:120 },
+                { x:340, y:255, w:245, h:120 },
+              ];
+              const p = positions[i];
+              return (
+                <g key={z.id}>
+                  <rect x={p.x} y={p.y} width={p.w} height={p.h} rx="12"
+                    fill={`${color === "var(--danger)" ? "rgba(239,83,80" : color === "var(--warning)" ? "rgba(255,167,38" : "rgba(102,187,106"},0.18)`}
+                    stroke={color} strokeWidth="2"
+                  />
+                  <text x={p.x+p.w/2} y={p.y+p.h/2-8}  textAnchor="middle" fill={color} fontSize="14" fontWeight="600">{z.label}</text>
+                  <text x={p.x+p.w/2} y={p.y+p.h/2+12} textAnchor="middle" fill={color} fontSize="12" opacity="0.85">~{Math.round(density)} pax/km²</text>
+                </g>
+              );
+            })}
+          </svg>
+        )}
+
+        {/* Badge total */}
+        {totalPpl > 0 && (
+          <div style={{ position:"absolute", top:10, left:10, background:"rgba(11,17,32,0.85)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"6px 12px", fontSize:12, color:"var(--text-main)", backdropFilter:"blur(4px)" }}>
+            <span style={{ color:"var(--text-muted)" }}>Densitate totală: </span>
+            <span style={{ fontWeight:700, color:"var(--brand)" }}>{totalPpl.toLocaleString()} pax/km²</span>
+          </div>
+        )}
+
+        {!hasGoogleKey && (
+          <div style={{ position:"absolute", bottom:8, left:0, right:0, textAlign:"center", fontSize:11, color:"var(--text-muted)" }}>
+            Adaugă <code style={{color:"var(--brand)"}}>GOOGLE_MAPS_API_KEY</code> în <code>.env</code> pentru harta satelit
+          </div>
+        )}
       </div>
     </>
   );
@@ -767,41 +902,92 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 }
 
 function HeatmapRight() {
-  const [zones, setZones] = useState(() => ZONES.map(z => ({ ...z, count: randZ(z.base) })));
+  const [cells, setCells] = useState<DensityCell[]>([]);
+  const [updatedAt, setUpdatedAt] = useState<string>("");
+
   useEffect(() => {
-    const t = setInterval(() => setZones(ZONES.map(z => ({ ...z, count: randZ(z.base) }))), 8000);
+    const load = () =>
+      fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" })
+        .then(r => r.json())
+        .then((d: DensityResponse) => {
+          setCells(d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? []);
+          setUpdatedAt(new Date().toLocaleTimeString("ro"));
+        }).catch(() => {});
+    load();
+    const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, []);
-  const total = zones.reduce((s,z) => s+z.count, 0);
+
+  const estimation = cells.filter(c => c.dataType === "DENSITY_ESTIMATION");
+  const maxDensity = Math.max(...estimation.map(c => c.pplDensity ?? 0), 1);
+  const totalDensity = Math.round(estimation.reduce((s,c) => s+(c.pplDensity??0),0));
+  const alertCells = estimation.filter(c => (c.pplDensity??0) > 150);
+
   return (
     <>
-      <div className="section-title">Statistici Live</div>
-      <div className="stats-list" style={{marginBottom:16}}>
-        <div className="stat-item"><span className="stat-label">Total pasageri</span><span className="stat-value">{total}</span></div>
-        <div className="stat-item"><span className="stat-label">Zbor întârziat</span><span className="stat-value" style={{color:"var(--danger)"}}>2</span></div>
-        <div className="stat-item"><span className="stat-label">Porți active</span><span className="stat-value">6 / 9</span></div>
-        <div className="stat-item"><span className="stat-label">Nevoi speciale</span><span className="stat-value" style={{color:"var(--info)"}}>3 pax</span></div>
+      <div className="section-title">Densitate Populație</div>
+      <div className="stats-list" style={{ marginBottom:12 }}>
+        <div className="stat-item">
+          <span className="stat-label">Total celule</span>
+          <span className="stat-value">{cells.length}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Cu estimare</span>
+          <span className="stat-value">{estimation.length}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Densitate max</span>
+          <span className="stat-value" style={{ color: maxDensity > 150 ? "var(--danger)" : "var(--text-main)" }}>
+            {maxDensity > 1 ? `${Math.round(maxDensity)} /km²` : "—"}
+          </span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Zone alertă</span>
+          <span className="stat-value" style={{ color: alertCells.length > 0 ? "var(--danger)" : "var(--success)" }}>
+            {alertCells.length}
+          </span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Actualizat</span>
+          <span className="stat-value" style={{ fontSize:12, color:"var(--text-muted)" }}>{updatedAt || "—"}</span>
+        </div>
       </div>
-      <div className="section-title">Aglomerație zone</div>
-      <div style={{flex:1,overflowY:"auto"}}>
-        {zones.map(z => {
-          const c = heatColor(z.count, z.limit);
-          const pct = Math.min(Math.round(z.count/z.limit*100),100);
+
+      <div className="section-title">Celule Geohash</div>
+      <div style={{ flex:1, overflowY:"auto" }}>
+        {estimation.map(c => {
+          const color = heatColor(c.pplDensity ?? 0);
+          const pct = Math.min(Math.round((c.pplDensity ?? 0) / maxDensity * 100), 100);
           return (
-            <div key={z.id} className="zone-row">
-              <span className="zone-name">{z.label}</span>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div className="zone-bar-wrap"><div className="zone-bar" style={{width:`${pct}%`,background:c}}/></div>
-                <span style={{fontSize:13,fontWeight:600,color:c,width:36,textAlign:"right"}}>{z.count}</span>
+            <div key={c.geohash} className="zone-row">
+              <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <div className="zone-bar-wrap">
+                  <div className="zone-bar" style={{ width:`${pct}%`, background:color }}/>
+                </div>
+                <span style={{ fontSize:12, fontWeight:600, color, width:50, textAlign:"right" }}>
+                  {Math.round(c.pplDensity ?? 0)}/km²
+                </span>
               </div>
             </div>
           );
         })}
+        {cells.filter(c => c.dataType !== "DENSITY_ESTIMATION").map(c => (
+          <div key={c.geohash} className="zone-row">
+            <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
+            <span style={{ fontSize:11, color:"var(--text-muted)" }}>LOW_DENSITY</span>
+          </div>
+        ))}
       </div>
-      <div className="alert-box" style={{marginTop:12}}>
-        <div className="alert-title"><i className="ti ti-alert-triangle"/> Alertă C3</div>
-        <div className="alert-desc">~89 pax · limită 60 — QoD activ</div>
-      </div>
+
+      {alertCells.length > 0 && (
+        <div className="alert-box" style={{ marginTop:12 }}>
+          <div className="alert-title"><i className="ti ti-alert-triangle"/> {alertCells.length} zone aglomerate</div>
+          <div className="alert-desc">
+            {alertCells.map(c => `${c.geohash}: ${Math.round(c.pplDensity??0)}/km²`).join(" · ")}
+          </div>
+        </div>
+      )}
     </>
   );
 }

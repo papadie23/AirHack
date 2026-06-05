@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import Dashboard from "../components/Dashboard";
+const googleMapsKey = import.meta.env.GOOGLE_MAPS_API_KEY ?? "";
 ---
 <!doctype html>
 <html lang="ro">
@@ -11,6 +12,9 @@ import Dashboard from "../components/Dashboard";
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
     <title>AirFlow Nexus — Iași Airport</title>
+    <script define:vars={{ googleMapsKey }}>
+      window.__GOOGLE_MAPS_KEY__ = googleMapsKey;
+    </script>
   </head>
   <body>
     <Dashboard client:load />
