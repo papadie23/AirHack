@@ -80,9 +80,13 @@ export default function Home() {
       setMetarLoading(true);
       try {
         const res = await fetch(`/api/metar?provider=${metarProvider}`);
-        const data: MetarResponse = await res.json();
-        setMetarData(data);
-        setLastUpdated(new Date());
+        const data = await res.json();
+        // Only update if the response looks like a valid MetarResponse
+        if (res.ok && data && data.temperature && data.wind) {
+          setMetarData(data as MetarResponse);
+          setLastUpdated(new Date());
+        }
+        // On 503/error responses (e.g. missing API key) keep the previous valid METAR
       } catch {
         // keep previous data on failure
       } finally {
@@ -206,8 +210,6 @@ export default function Home() {
       />
 
       <RightSidebar
-        log={log}
-        demoState={demoState}
         weatherData={weatherData}
         weatherLoading={weatherLoading}
         weatherProvider={weatherProvider}

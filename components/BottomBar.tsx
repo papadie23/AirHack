@@ -59,20 +59,19 @@ export default function BottomBar({ activeTab, onSelectTab }: Props) {
 
   return (
     <div
-      className="bg-[#1c1c21] border border-[#2f2f38] rounded-2xl p-3 flex gap-3"
-      style={{ gridColumn: "1 / 4" }}
+      className="rounded-2xl border p-3 flex gap-3"
+      style={{ gridColumn: "1 / 4", background: "var(--bg-card)", borderColor: "var(--border-color)" }}
     >
       {tabs.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onSelectTab(tab.id)}
-          className={[
-            "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-[10px]",
-            "border text-sm font-medium transition-all duration-200 cursor-pointer",
+          className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-[10px] border text-sm font-medium transition-all duration-200 cursor-pointer"
+          style={
             tab.id === activeTab
-              ? "bg-[#26262d] text-[#f3f3f6] border-[#555]"
-              : "bg-transparent text-[#9595a1] border-[#2f2f38] hover:bg-[#26262d] hover:text-[#f3f3f6]",
-          ].join(" ")}
+              ? { background: "var(--bg-hover)", color: "var(--text-main)", borderColor: "#555" }
+              : { background: "transparent", color: "var(--text-muted)", borderColor: "var(--border-color)" }
+          }
         >
           {tab.icon}
           {tab.label}

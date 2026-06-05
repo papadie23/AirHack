@@ -38,8 +38,8 @@ export default function CenterPanel(props: Props) {
 
   return (
     <div
-      className="bg-[#1c1c21] border border-[#2f2f38] rounded-2xl flex flex-col overflow-hidden"
-      style={{ gridColumn: "2", gridRow: "1 / 3" }}
+      className="rounded-2xl border flex flex-col overflow-hidden"
+      style={{ gridColumn: "2", gridRow: "1 / 3", background: "var(--bg-card)", borderColor: "var(--border-color)" }}
     >
       <CenterHeader
         activeCard={activeCard}
@@ -50,19 +50,19 @@ export default function CenterPanel(props: Props) {
 
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {activeTab !== "operator" ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-[#9595a1]">
+          <div className="flex-1 flex flex-col items-center justify-center text-[var(--text-muted)]">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-3 opacity-30">
               <circle cx="12" cy="12" r="10"/>
               <line x1="12" y1="8" x2="12" y2="12"/>
               <line x1="12" y1="16" x2="12.01" y2="16"/>
             </svg>
             <p className="text-sm font-medium">Coming soon</p>
-            <p className="text-xs text-[#9595a1]/50 mt-1">This section is under construction.</p>
+            <p className="text-xs text-[var(--text-muted)]/50 mt-1">This section is under construction.</p>
           </div>
         ) : activeCard === "weather" ? (
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <WeatherDisplay data={weatherData} loading={weatherLoading} />
-            <div className="flex-1 min-h-0 overflow-y-auto border-t border-[#2f2f38]">
+            <div className="flex-1 min-h-0 overflow-y-auto border-t" style={{ borderColor: "var(--border-color)" }}>
               <MetarPanel
                 metar={metar}
                 isLoading={metarLoading}
@@ -114,8 +114,8 @@ function CenterHeader({
     : "Terminal A — Top View";
 
   return (
-    <div className="flex justify-between items-center px-5 py-4 border-b border-[#2f2f38] shrink-0">
-      <span className="text-[15px] font-semibold text-[#f3f3f6]">{title}</span>
+    <div className="flex justify-between items-center px-5 py-4 border-b shrink-0" style={{ borderColor: "var(--border-color)" }}>
+      <span className="text-[15px] font-semibold text-[var(--text-main)]">{title}</span>
       <div className="flex items-center gap-2">
         {/* Theme toggle */}
         <button
@@ -283,8 +283,8 @@ function WeatherDisplay({ data, loading }: { data: WeatherResponse | null; loadi
 
   return (
     <div
-      className="shrink-0 relative overflow-hidden flex flex-col items-center justify-center px-6 py-5 gap-1"
-      style={{ background: gradient, minHeight: 210 }}
+      className="shrink-0 relative overflow-hidden flex flex-col items-center justify-center px-8 py-7 gap-1"
+      style={{ background: gradient, minHeight: 220 }}
     >
       {/* Decorative large circle in background */}
       <div
@@ -297,22 +297,26 @@ function WeatherDisplay({ data, loading }: { data: WeatherResponse | null; loadi
       />
 
       {/* Content */}
-      <div className="relative flex items-center gap-8 w-full max-w-lg">
+      <div className="relative flex items-center gap-10 w-full px-2">
         {/* Icon + temp */}
-        <div className="flex flex-col items-center gap-1">
-          <WeatherIcon code={data.weatherCode} size={72} />
-          <span className="text-5xl font-bold text-white leading-none mt-1">
+        <div className="flex flex-col items-center gap-2 shrink-0">
+          <WeatherIcon code={data.weatherCode} size={76} />
+          <span className="text-6xl font-bold leading-none" style={{ color: "rgba(255,255,255,0.97)", textShadow: "0 2px 12px rgba(0,0,0,0.25)" }}>
             {tempRounded >= 0 ? "+" : ""}{tempRounded}°
           </span>
         </div>
 
         {/* Right info */}
-        <div className="flex flex-col gap-1 flex-1">
-          <p className="text-xl font-semibold text-white leading-snug">{data.weatherDescription}</p>
-          <p className="text-sm text-white/70 font-medium">Iași International (LRIA)</p>
+        <div className="flex flex-col gap-2 flex-1 min-w-0">
+          <p className="text-2xl font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.95)", textShadow: "0 1px 8px rgba(0,0,0,0.2)" }}>
+            {data.weatherDescription}
+          </p>
+          <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>
+            Iași International Airport (LRIA)
+          </p>
 
           {/* Stats row */}
-          <div className="flex flex-wrap gap-3 mt-2">
+          <div className="flex flex-wrap gap-5 mt-1">
             <WeatherStat label="Feels like" value={`${feelsRounded >= 0 ? "+" : ""}${feelsRounded}°C`} />
             <WeatherStat label="Humidity" value={`${data.humidity}%`} />
             <WeatherStat label="Wind" value={`${data.windSpeedKt.toFixed(1)} kt`} />
@@ -336,9 +340,9 @@ function WeatherDisplay({ data, loading }: { data: WeatherResponse | null; loadi
 
 function WeatherStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col">
-      <span className="text-[10px] text-white/55 uppercase tracking-wider">{label}</span>
-      <span className="text-sm font-semibold text-white">{value}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.6)" }}>{label}</span>
+      <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.95)" }}>{value}</span>
     </div>
   );
 }
@@ -423,10 +427,10 @@ function VerifyView({
       />
       {(verifyResult || locationResult) && (
         <div className="w-full max-w-sm">
-          <p className="text-[10px] text-[#9595a1] font-mono uppercase tracking-widest mb-2">
+          <p className="text-[10px] text-[var(--text-muted)] font-mono uppercase tracking-widest mb-2">
             API Response (raw)
           </p>
-          <pre className="text-[10px] font-mono text-[#9595a1] bg-black/40 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all border border-[#2f2f38]">
+          <pre className="text-[10px] font-mono text-[var(--text-muted)] bg-black/40 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all border border-[var(--border-color)]">
             {JSON.stringify(verifyResult ?? locationResult, null, 2)}
           </pre>
         </div>

@@ -2,21 +2,31 @@
 @import "tailwindcss";
 
 :root {
-  --bg-body:    #101014;
-  --bg-card:    #1c1c21;
-  --bg-hover:   #26262d;
+  --bg-body:      #101014;
+  --bg-card:      #1c1c21;
+  --bg-hover:     #26262d;
   --border-color: #2f2f38;
-  --text-main:  #f3f3f6;
-  --text-muted: #9595a1;
-  --brand:      #ff6600;
-  --danger:     #ef5350;
-  --danger-bg:  rgba(239, 83, 80, 0.15);
-  --warning:    #ffa726;
-  --warning-bg: rgba(255, 167, 38, 0.15);
-  --success:    #66bb6a;
-  --success-bg: rgba(102, 187, 106, 0.15);
-  --info:       #42a5f5;
-  --info-bg:    rgba(66, 165, 245, 0.15);
+  --text-main:    #f3f3f6;
+  --text-muted:   #9595a1;
+  --brand:        #ff6600;
+  --danger:       #ef5350;
+  --danger-bg:    rgba(239, 83, 80, 0.15);
+  --warning:      #ffa726;
+  --warning-bg:   rgba(255, 167, 38, 0.15);
+  --success:      #66bb6a;
+  --success-bg:   rgba(102, 187, 106, 0.15);
+  --info:         #42a5f5;
+  --info-bg:      rgba(66, 165, 245, 0.15);
+}
+
+/* Light theme — only override the CSS variables */
+[data-theme="light"] {
+  --bg-body:      #dde3ef;
+  --bg-card:      #f5f7fc;
+  --bg-hover:     #e8ecf6;
+  --border-color: #cad0e0;
+  --text-main:    #1a2030;
+  --text-muted:   #5c6882;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -28,33 +38,3 @@ body {
   height: 100vh;
   overflow: hidden;
 }
-
-/* ── Light theme overrides ──────────────────────────────────────────────── */
-[data-theme="light"] body { background: #dde4ef; }
-
-[data-theme="light"] .bg-\[\#101014\] { background-color: #dde4ef !important; }
-[data-theme="light"] .bg-\[\#1c1c21\] { background-color: #f4f6fa !important; }
-[data-theme="light"] .bg-\[\#26262d\] { background-color: #e4e9f3 !important; }
-[data-theme="light"] .bg-\[\#07090f\] { background-color: #eef1f8 !important; }
-
-[data-theme="light"] .border-\[\#2f2f38\] { border-color: #c8d0e0 !important; }
-[data-theme="light"] .border-b.border-\[\#2f2f38\] { border-bottom-color: #c8d0e0 !important; }
-[data-theme="light"] .divide-\[\#2f2f38\] > * + * { border-color: #c8d0e0 !important; }
-
-[data-theme="light"] .text-\[\#f3f3f6\]  { color: #1a2030 !important; }
-[data-theme="light"] .text-\[\#9595a1\]  { color: #5a6882 !important; }
-
-[data-theme="light"] .hover\:bg-\[\#26262d\]:hover { background-color: #e4e9f3 !important; }
-[data-theme="light"] .hover\:text-\[\#f3f3f6\]:hover { color: #1a2030 !important; }
-
-[data-theme="light"] .border-\[\#444\] { border-color: #8fa0b8 !important; }
-[data-theme="light"] .hover\:border-\[\#444\]:hover { border-color: #8fa0b8 !important; }
-
-[data-theme="light"] .bg-black\/40 { background-color: rgba(0,0,0,0.06) !important; }
-[data-theme="light"] .bg-black\/60 { background-color: rgba(0,0,0,0.06) !important; }
-[data-theme="light"] .border-white\/10 { border-color: rgba(0,0,0,0.1) !important; }
-[data-theme="light"] .bg-white\/5    { background-color: rgba(0,0,0,0.05) !important; }
-[data-theme="light"] .divide-white\/5 > * + * { border-color: rgba(0,0,0,0.06) !important; }
-
-[data-theme="light"] .text-\[\#66bb6a\] { color: #2e7d32 !important; }
-[data-theme="light"] .text-green-600   { color: #2e7d32 !important; }

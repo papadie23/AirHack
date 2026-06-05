@@ -25,29 +25,29 @@ const PROVIDERS: { id: MetarProvider; label: string; sublabel: string }[] = [
 
 export default function MetarPanel({ metar, isLoading, provider, onProviderChange }: Props) {
   return (
-    <div className="flex flex-col h-full overflow-y-auto bg-[#07090f]">
+    <div className="flex flex-col h-full overflow-y-auto" style={{ background: "var(--bg-card)" }}>
       {/* Panel header */}
-      <div className="border-b border-white/10 px-5 py-3 flex items-center gap-3 shrink-0">
+      <div className="border-b border-[var(--border-color)] px-5 py-3 flex items-center gap-3 shrink-0">
         <span className={`w-2 h-2 rounded-full shrink-0 ${isLoading ? "bg-[#ff6600] animate-pulse" : "bg-cyan-500"}`} />
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-mono text-[#9595a1] uppercase tracking-widest">
+          <p className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">
             Meteorological — LRIA / Iași
           </p>
-          <p className="text-sm font-semibold text-[#f3f3f6] truncate">
+          <p className="text-sm font-semibold text-[var(--text-main)] truncate">
             {metar?.station ?? "LRIA"} — Iași International Airport
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {metar && <FlightCategoryBadge category={metar.flightCategory} />}
-          <span className="text-[11px] font-mono text-[#9595a1]">
+          <span className="text-[11px] font-mono text-[var(--text-muted)]">
             {metar ? formatObsTime(metar.observedAt) : "——"}
           </span>
         </div>
       </div>
 
       {/* Provider switcher */}
-      <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2 shrink-0">
-        <span className="text-[10px] font-mono text-[#9595a1] uppercase tracking-widest mr-1">
+      <div className="px-5 py-3 border-b border-[var(--border-color)] flex items-center gap-2 shrink-0">
+        <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest mr-1">
           Source:
         </span>
         {PROVIDERS.map((p) => (
@@ -59,7 +59,7 @@ export default function MetarPanel({ metar, isLoading, provider, onProviderChang
               "text-[11px] font-mono px-2.5 py-1 rounded border transition-all duration-150 cursor-pointer",
               provider === p.id
                 ? "border-[#ff6600] bg-[#ff6600]/15 text-[#ff6600]"
-                : "border-[#2f2f38] text-[#9595a1] hover:border-[#444] hover:text-[#f3f3f6]",
+                : "border-[var(--border-color)] text-[var(--text-muted)] hover:border-[#444] hover:text-[var(--text-main)]",
             ].join(" ")}
           >
             {p.label}
@@ -80,9 +80,9 @@ export default function MetarPanel({ metar, isLoading, provider, onProviderChang
       {isLoading && !metar && <SkeletonLoader />}
 
       {metar && (
-        <div className="flex flex-col divide-y divide-white/5">
+        <div className="flex flex-col divide-y divide-[var(--border-color)]">
           {/* Wind + Visibility */}
-          <div className="grid grid-cols-2 divide-x divide-white/5">
+          <div className="grid grid-cols-2 divide-x divide-[var(--border-color)]">
             <WindDisplay wind={metar.wind} />
             <VisibilityDisplay
               meters={metar.visibility.meters}
@@ -92,7 +92,7 @@ export default function MetarPanel({ metar, isLoading, provider, onProviderChang
           </div>
 
           {/* Temp / Dewpoint / QNH */}
-          <div className="grid grid-cols-3 divide-x divide-white/5">
+          <div className="grid grid-cols-3 divide-x divide-[var(--border-color)]">
             <MetarCell label="Temperature">
               <span className="text-2xl font-mono font-bold text-cyan-300">
                 {formatTemp(metar.temperature.tempC)}
@@ -102,15 +102,15 @@ export default function MetarPanel({ metar, isLoading, provider, onProviderChang
               <span className="text-2xl font-mono font-bold text-sky-400">
                 {formatTemp(metar.temperature.dewpointC)}
               </span>
-              <span className="text-[10px] text-[#9595a1] font-mono mt-0.5">
+              <span className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">
                 Spread: {metar.temperature.tempC - metar.temperature.dewpointC}°C
               </span>
             </MetarCell>
             <MetarCell label="QNH">
-              <span className="text-sm font-mono font-semibold text-[#f3f3f6]">
+              <span className="text-sm font-mono font-semibold text-[var(--text-main)]">
                 {metar.altimeter.qnhHpa} hPa
               </span>
-              <span className="text-[10px] text-[#9595a1] font-mono mt-0.5">
+              <span className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">
                 {(metar.altimeter.qnhHpa * 0.02953).toFixed(2)} inHg
               </span>
             </MetarCell>
@@ -123,7 +123,7 @@ export default function MetarPanel({ metar, isLoading, provider, onProviderChang
           {metar.trend && metar.trend.type !== "NOSIG" && <TrendBlock trend={metar.trend} />}
           {metar.trend?.type === "NOSIG" && (
             <section className="px-5 py-3">
-              <span className="text-[11px] font-mono text-[#9595a1] bg-[#26262d] border border-[#2f2f38] rounded px-2 py-1">
+              <span className="text-[11px] font-mono text-[var(--text-muted)] bg-[#26262d] border border-[var(--border-color)] rounded px-2 py-1">
                 NOSIG — No significant change expected
               </span>
             </section>
@@ -160,16 +160,16 @@ function WindDisplay({ wind }: { wind: MetarWind }) {
           ↑
         </span>
         <div className="flex flex-col">
-          <span className="text-lg font-mono font-bold text-[#f3f3f6]">
+          <span className="text-lg font-mono font-bold text-[var(--text-main)]">
             {wind.isVariable ? "VRB" : `${wind.directionDeg.toString().padStart(3, "0")}°`}{" "}
             {wind.speedKt} KT
             {wind.gustKt != null && <span className="text-amber-400"> G{wind.gustKt}</span>}
           </span>
-          <span className="text-[11px] font-mono text-[#9595a1]">
+          <span className="text-[11px] font-mono text-[var(--text-muted)]">
             {wind.isVariable ? "Variable" : windDirectionLabel(wind.directionDeg)}
           </span>
           {wind.variableFrom != null && wind.variableTo != null && (
-            <span className="text-[10px] font-mono text-[#9595a1]/60">
+            <span className="text-[10px] font-mono text-[var(--text-muted)]/60">
               Var {wind.variableFrom}°–{wind.variableTo}°
             </span>
           )}
@@ -184,7 +184,7 @@ function VisibilityDisplay({ meters, unlimited, phenomena }: {
 }) {
   return (
     <MetarCell label="Visibility">
-      <span className="text-2xl font-mono font-bold text-[#f3f3f6]">
+      <span className="text-2xl font-mono font-bold text-[var(--text-main)]">
         {formatVisibility(meters, unlimited)}
       </span>
       {phenomena.length > 0 && (
@@ -197,7 +197,7 @@ function VisibilityDisplay({ meters, unlimited, phenomena }: {
         </div>
       )}
       {phenomena.length === 0 && (
-        <span className="text-[10px] font-mono text-[#9595a1]/50">No significant wx</span>
+        <span className="text-[10px] font-mono text-[var(--text-muted)]/50">No significant wx</span>
       )}
     </MetarCell>
   );
@@ -208,7 +208,7 @@ function CloudLayers({ clouds }: { clouds: MetarCloud[] }) {
     return (
       <section className="px-5 py-4">
         <SectionLabel>Cloud Layers</SectionLabel>
-        <p className="text-[11px] font-mono text-[#9595a1]/50">SKC — Sky clear</p>
+        <p className="text-[11px] font-mono text-[var(--text-muted)]/50">SKC — Sky clear</p>
       </section>
     );
   }
@@ -221,19 +221,19 @@ function CloudLayers({ clouds }: { clouds: MetarCloud[] }) {
           const isCB = cloud.type === "CB" || cloud.type === "TCU";
           return (
             <div key={i} className="flex items-center gap-3">
-              <div className="w-28 h-3 bg-white/5 rounded-full overflow-hidden shrink-0">
+              <div className="w-28 h-3 bg-[var(--bg-hover)] rounded-full overflow-hidden shrink-0">
                 <div className={`h-full rounded-full ${isCB ? "bg-amber-500" : "bg-sky-600"}`} style={{ width: `${pct}%` }} />
               </div>
-              <span className={`text-[11px] font-mono font-semibold w-8 ${isCB ? "text-amber-400" : "text-[#f3f3f6]"}`}>
+              <span className={`text-[11px] font-mono font-semibold w-8 ${isCB ? "text-amber-400" : "text-[var(--text-main)]"}`}>
                 {cloud.cover}
               </span>
-              <span className="text-[11px] font-mono text-[#9595a1]">{cloud.baseFt.toLocaleString()} ft</span>
+              <span className="text-[11px] font-mono text-[var(--text-muted)]">{cloud.baseFt.toLocaleString()} ft</span>
               {cloud.type && (
                 <span className="text-[10px] font-mono bg-amber-900/40 border border-amber-600/40 text-amber-300 px-1.5 py-0.5 rounded">
                   {cloud.type}
                 </span>
               )}
-              <span className="text-[10px] text-[#9595a1]/40 font-mono ml-auto">{cloudCoverLabel(cloud.cover)}</span>
+              <span className="text-[10px] text-[var(--text-muted)]/40 font-mono ml-auto">{cloudCoverLabel(cloud.cover)}</span>
             </div>
           );
         })}
@@ -288,7 +288,7 @@ function RawMetarBox({ raw }: { raw: string }) {
   return (
     <section className="px-5 py-4">
       <SectionLabel>Raw METAR</SectionLabel>
-      <pre className="mt-2 bg-black/60 border border-white/10 rounded-lg p-3 text-[11px] font-mono text-[#66bb6a] tracking-wide whitespace-pre-wrap break-all leading-relaxed">
+      <pre className="mt-2 bg-black/10 border border-[var(--border-color)] rounded-lg p-3 text-[11px] font-mono text-[#66bb6a] tracking-wide whitespace-pre-wrap break-all leading-relaxed">
         {raw}
       </pre>
     </section>
@@ -305,13 +305,13 @@ function MetarCell({ label, children }: { label: string; children: React.ReactNo
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[10px] font-mono text-[#9595a1] uppercase tracking-widest">{children}</p>;
+  return <p className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">{children}</p>;
 }
 
 function TrendRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-2">
-      <span className="text-[#9595a1]/60 w-14 shrink-0">{label}</span>
+      <span className="text-[var(--text-muted)]/60 w-14 shrink-0">{label}</span>
       <span>{children}</span>
     </div>
   );
@@ -321,7 +321,7 @@ function SkeletonLoader() {
   return (
     <div className="flex flex-col gap-4 p-5 animate-pulse">
       {[80, 60, 90, 50, 70].map((w, i) => (
-        <div key={i} className="h-4 bg-white/5 rounded" style={{ width: `${w}%` }} />
+        <div key={i} className="h-4 bg-[var(--bg-hover)] rounded" style={{ width: `${w}%` }} />
       ))}
     </div>
   );
