@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx:*)",
+      "Bash(cp -r airhack-demo/. .)",
+      "Bash(rm -rf airhack-demo)",
+      "Bash(rsync -a --exclude=node_modules airhack-demo/ .)",
+      "Bash(cp airhack-demo/package.json .)",
+      "Bash(cp airhack-demo/package-lock.json .)",
+      "Bash(cp airhack-demo/tsconfig.json .)",
+      "Bash(cp airhack-demo/next.config.ts .)",
+      "Bash(cp airhack-demo/next-env.d.ts .)",
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s -X POST http://localhost:3000/api/verify -H \"Content-Type: application/json\" -d '{\"scenario\":\"legit\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/verify -H \"Content-Type: application/json\" -d '{\"scenario\":\"fraud\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/location -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(git add:*)"
+    ]
+  }
+}

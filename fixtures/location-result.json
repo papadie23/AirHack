@@ -1,0 +1,11 @@
+{
+  "lastLocationTime": "2026-06-05T19:30:00Z",
+  "area": {
+    "areaType": "Circle",
+    "center": {
+      "latitude": 48.7264,
+      "longitude": 2.3652
+    },
+    "radius": 200
+  }
+}
