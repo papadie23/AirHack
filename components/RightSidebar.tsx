@@ -19,9 +19,10 @@ const SVG_H = 100;
 const PAD = 8;
 
 const WEATHER_PROVIDERS: { id: WeatherProvider; label: string; sublabel: string }[] = [
-  { id: "open-meteo",   label: "Open-Meteo",  sublabel: "Free / No key" },
-  { id: "meteoblue",    label: "Meteoblue",   sublabel: "API key req." },
-  { id: "accuweather",  label: "AccuWeather", sublabel: "API key req." },
+  { id: "open-meteo",      label: "Open-Meteo",  sublabel: "Free / No key" },
+  { id: "openweathermap",  label: "OWM",          sublabel: "OpenWeatherMap" },
+  { id: "meteoblue",       label: "Meteoblue",   sublabel: "API key req." },
+  { id: "accuweather",     label: "AccuWeather", sublabel: "API key req." },
 ];
 
 function buildSparkline(data: number[]): { linePoints: string; areaPath: string } {

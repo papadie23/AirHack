@@ -1,6 +1,6 @@
 // Weather provider types and utilities. No React, safe on client + server.
 
-export type WeatherProvider = "open-meteo" | "meteoblue" | "accuweather";
+export type WeatherProvider = "open-meteo" | "openweathermap" | "meteoblue" | "accuweather";
 
 export interface WeatherResponse {
   provider: WeatherProvider;

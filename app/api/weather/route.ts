@@ -27,6 +27,10 @@ export async function GET(req: NextRequest) {
     return fetchOpenMeteo();
   }
 
+  if (provider === "openweathermap") {
+    return fetchOpenWeatherMap();
+  }
+
   if (provider === "meteoblue") {
     return fetchMeteoblue();
   }
@@ -54,6 +58,57 @@ async function fetchOpenMeteo(): Promise<NextResponse> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return weatherFallback(`Open-Meteo fetch failed: ${msg}`);
+  }
+}
+
+// ── OpenWeatherMap ────────────────────────────────────────────────────────────
+
+async function fetchOpenWeatherMap(): Promise<NextResponse> {
+  const apiKey = process.env.OPENWEATHERMAP_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      {
+        error: "OPENWEATHERMAP_API_KEY not configured",
+        hint: "Add OPENWEATHERMAP_API_KEY to .env.local to enable OpenWeatherMap live data",
+        provider: "openweathermap",
+      },
+      { status: 503 }
+    );
+  }
+
+  try {
+    const url =
+      `https://api.openweathermap.org/data/2.5/weather` +
+      `?lat=${IASI_LAT}&lon=${IASI_LON}&appid=${apiKey}&units=metric`;
+    const res = await fetch(url, { next: { revalidate: 0 } });
+
+    if (!res.ok) {
+      return weatherFallback(`OpenWeatherMap returned ${res.status}`, "openweathermap");
+    }
+
+    const data = await res.json();
+    const windSpeedMs: number = data?.wind?.speed ?? 0;
+    const weatherId: number = data?.weather?.[0]?.id ?? 800;
+
+    const response: WeatherResponse = {
+      provider: "openweathermap",
+      location: "Iași (LRIA)",
+      timestamp: new Date((data.dt ?? 0) * 1000).toISOString(),
+      temperatureC: Math.round((data?.main?.temp ?? 0) * 10) / 10,
+      apparentTemperatureC: Math.round((data?.main?.feels_like ?? 0) * 10) / 10,
+      windSpeedKt: Math.round(windSpeedMs * 1.944 * 10) / 10,
+      windDirection: data?.wind?.deg ?? 0,
+      humidity: data?.main?.humidity ?? 0,
+      weatherCode: owmIdToWmo(weatherId),
+      weatherDescription: data?.weather?.[0]?.description ?? "Unknown",
+      precipitationMm: data?.rain?.["1h"] ?? data?.snow?.["1h"] ?? 0,
+      fromFixture: false,
+    };
+
+    return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return weatherFallback(`OpenWeatherMap fetch failed: ${msg}`, "openweathermap");
   }
 }
 
@@ -221,5 +276,21 @@ function acuIconToWmo(icon: number): number {
   if (icon === 15 || icon === 16) return 95;
   if (icon <= 20) return 71;
   if (icon <= 22) return 80;
+  return 2;
+}
+
+// OWM weather condition IDs → WMO codes
+// https://openweathermap.org/weather-conditions
+function owmIdToWmo(id: number): number {
+  if (id === 800) return 0;              // clear sky
+  if (id === 801) return 1;              // few clouds
+  if (id === 802) return 2;              // scattered clouds
+  if (id >= 803) return 3;              // broken/overcast
+  if (id >= 700 && id < 800) return 45; // atmosphere (fog, haze, etc.)
+  if (id >= 600 && id < 700) return 71; // snow
+  if (id >= 520 && id < 600) return 80; // shower rain
+  if (id >= 500 && id < 520) return 61; // rain
+  if (id >= 300 && id < 400) return 51; // drizzle
+  if (id >= 200 && id < 300) return 95; // thunderstorm
   return 2;
 }
