@@ -145,16 +145,84 @@ function CenterPanel({ feature, onLog }: { feature: Feature; onLog: (m: string, 
   );
 }
 
-/* ── Weather center ── */
-interface WData { temperatureC:number; apparentTemperatureC:number; windSpeedKt:number; windDirection:number; humidity:number; weatherDescription:string; precipitationMm:number; timestamp:string; fromFixture?:boolean }
-interface MData { raw:string; flightCategory:string; wind:{directionDeg:number;speedKt:number;gustKt:number|null}; visibility:{meters:number;unlimited:boolean}; clouds:{cover:string;baseFt:number}[]; temperature:{tempC:number;dewpointC:number}; altimeter:{qnhHpa:number}; fromFixture?:boolean }
-const DIR = ["N","NE","E","SE","S","SV","V","NV"];
-const CAT_COL: Record<string,string> = { VFR:"var(--success)",MVFR:"var(--info)",IFR:"var(--warning)",LIFR:"var(--danger)" };
+/* ── Weather center — pilot + ATC full briefing ── */
+interface WData {
+  temperatureC: number; apparentTemperatureC: number; windSpeedKt: number;
+  windDirection: number; humidity: number; weatherDescription: string;
+  precipitationMm: number; timestamp: string; fromFixture?: boolean;
+}
+interface MData {
+  raw: string; flightCategory: string; observedAt?: string;
+  wind: { directionDeg: number; speedKt: number; gustKt: number | null; variableFrom: number|null; variableTo: number|null; isVariable: boolean };
+  visibility: { meters: number; unlimited: boolean };
+  clouds: { cover: string; baseFt: number; type: string|null }[];
+  temperature: { tempC: number; dewpointC: number };
+  altimeter: { qnhHpa: number };
+  phenomena: string[];
+  trend: { type: string; wind: unknown; visibility: unknown; phenomena: string[]; clouds: unknown[] } | null;
+  fromFixture?: boolean; warning?: string;
+}
+
+// LRIA runway heading: 08/26 → RWY 08 = 080°, RWY 26 = 260°
+const RWY_HDG: Record<string, number> = { "08": 80, "26": 260 };
+
+function calcWindComponents(windDir: number, windSpd: number, rwyHdg: number) {
+  const angle = ((windDir - rwyHdg) * Math.PI) / 180;
+  return {
+    headwind: Math.round(windSpd * Math.cos(angle)),
+    crosswind: Math.round(Math.abs(windSpd * Math.sin(angle))),
+  };
+}
+
+// Density altitude approx: PA + 120*(OAT - ISA)
+function densityAltitude(qnh: number, elevFt: number, tempC: number): number {
+  const pressureAltFt = elevFt + (1013.25 - qnh) * 30;
+  const isaTemp = 15 - 2 * (pressureAltFt / 1000);
+  return Math.round(pressureAltFt + 120 * (tempC - isaTemp));
+}
+
+// Dew point spread → fog risk
+function dewSpread(tempC: number, dewC: number) {
+  const spread = tempC - dewC;
+  if (spread <= 2) return { label: "Risc ceață ridicat", color: "var(--danger)" };
+  if (spread <= 5) return { label: "Risc ceață moderat", color: "var(--warning)" };
+  return { label: "Risc ceață scăzut", color: "var(--success)" };
+}
+
+const CAT_COL: Record<string, string> = {
+  VFR:"var(--success)", MVFR:"var(--info)", IFR:"var(--warning)", LIFR:"var(--danger)"
+};
+const CAT_LABEL: Record<string, string> = {
+  VFR:"Visual Flight Rules", MVFR:"Marginal VFR", IFR:"Instrument Rules", LIFR:"Low IFR"
+};
+const COVER_PCT: Record<string,number> = { SKC:0, CLR:0, FEW:25, SCT:50, BKN:75, OVC:100, VV:100 };
+const PHENOM_LABEL: Record<string,string> = {
+  TS:"Furtună",TSRA:"Furtună cu ploaie",RA:"Ploaie",SN:"Ninsoare",FG:"Ceață",
+  BR:"Burniță",DZ:"Burnă",GR:"Grindină",SHRA:"Aversă ploaie",SHSN:"Aversă ninsoare",
+  "-RA":"Ploaie ușoară","+RA":"Ploaie intensă","-SN":"Ninsoare ușoară","+TS":"Furtună severă",
+};
+
+function InfoCard({ label, value, sub, color, icon }: { label:string; value:string; sub?:string; color?:string; icon?:string }) {
+  return (
+    <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px" }}>
+      <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:4, display:"flex", alignItems:"center", gap:5 }}>
+        {icon && <i className={`ti ${icon}`} style={{ fontSize:13 }} />} {label}
+      </div>
+      <div style={{ fontSize:17, fontWeight:700, color: color ?? "var(--text-main)", lineHeight:1.2 }}>{value}</div>
+      {sub && <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:3 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <div className="section-title" style={{ marginTop:16, marginBottom:8 }}>{children}</div>;
+}
 
 function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [w, setW] = useState<WData|null>(null);
   const [m, setM] = useState<MData|null>(null);
   const [loading, setLoading] = useState(false);
+  const [rwy, setRwy] = useState<"08"|"26">("08");
 
   const load = async () => {
     setLoading(true);
@@ -164,61 +232,168 @@ function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         fetch("/api/metar?station=LRIA").then(r => r.json()),
       ]);
       setW(wd); setM(md);
-      onLog(`METAR LRIA · ${md.flightCategory} · vânt ${md.wind?.speedKt}kt`);
+      onLog(`METAR LRIA · ${md.flightCategory} · ${md.wind?.speedKt}kt ${md.wind?.directionDeg}°`);
     } catch { onLog("Eroare fetch meteo", false); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
+  const cat = m?.flightCategory ?? "VFR";
+  const catColor = CAT_COL[cat] ?? "var(--success)";
+
+  // Computed values
+  const wind = m?.wind;
+  const temp = m?.temperature;
+  const qnh = m?.altimeter?.qnhHpa ?? 1013;
+  const wComponents = wind ? calcWindComponents(wind.directionDeg, wind.speedKt, RWY_HDG[rwy]) : null;
+  const da = temp ? densityAltitude(qnh, 321, temp.tempC) : null; // LRIA elev = 321 ft
+  const spread = temp ? dewSpread(temp.tempC, temp.dewpointC) : null;
+  const relHumidity = temp ? Math.round(100 - 5 * (temp.tempC - temp.dewpointC)) : null;
+
+  // Predominant cloud ceiling
+  const ceiling = m?.clouds?.find(c => c.cover === "BKN" || c.cover === "OVC" || c.cover === "VV");
+  const visM = m?.visibility?.meters ?? 9999;
+  const visText = m?.visibility?.unlimited ? "> 10 km" : visM >= 1000 ? `${(visM/1000).toFixed(1)} km` : `${visM} m`;
+
   return (
-    <>
+    <div style={{ padding:20, height:"100%", display:"flex", flexDirection:"column", overflowY:"auto", gap:0 }}>
+
+      {/* ── Header ── */}
       <div className="map-header">
-        <div className="map-title">Vreme & METAR — LRIA Iași</div>
+        <div>
+          <div className="map-title">Briefing Meteorologic — LRIA Iași</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
+            {m?.observedAt ? new Date(m.observedAt).toLocaleString("ro", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"short" }) : "—"} UTC
+            {m?.fromFixture && <span style={{ marginLeft:8, color:"var(--warning)" }}>· fixture</span>}
+          </div>
+        </div>
         <div className="badges">
-          {m && <div className="badge" style={{ background:`${CAT_COL[m.flightCategory]}22`, color:CAT_COL[m.flightCategory], border:`1px solid ${CAT_COL[m.flightCategory]}44` }}>{m.flightCategory}</div>}
-          <button onClick={load} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>
-            <i className={`ti ti-refresh${loading?" spin":""}`} /> Refresh
+          <div className="badge" style={{ background:`${catColor}22`, color:catColor, border:`1px solid ${catColor}44`, fontSize:13, fontWeight:700, padding:"6px 14px" }}>
+            {cat}
+          </div>
+          <button onClick={load} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"6px 12px", cursor:"pointer", fontSize:12 }}>
+            <i className={`ti ti-refresh${loading?" spin":""}`} />
           </button>
         </div>
       </div>
 
-      {m && <div className="metar-raw">{m.raw}</div>}
+      {/* ── Flight category bar ── */}
+      <div style={{ background:`${catColor}15`, border:`1px solid ${catColor}44`, borderRadius:"var(--radius-md)", padding:"10px 14px", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+        <span style={{ fontWeight:700, color:catColor, fontSize:15 }}>{cat}</span>
+        <span style={{ color:catColor, fontSize:13 }}>{CAT_LABEL[cat]}</span>
+        <span style={{ marginLeft:"auto", fontSize:12, color:"var(--text-muted)" }}>
+          {m?.phenomena && m.phenomena.length > 0
+            ? m.phenomena.map(p => PHENOM_LABEL[p] ?? p).join(", ")
+            : "Fără fenomene semnificative"}
+        </span>
+      </div>
 
-      {w && (
-        <div className="weather-grid">
-          {[
-            { icon:"ti-temperature", l:"Temperatură", v:`${w.temperatureC}°C`,      s:`Senzorial ${w.apparentTemperatureC}°C` },
-            { icon:"ti-wind",        l:"Vânt",        v:`${w.windSpeedKt} kt`,       s:`${DIR[Math.round(w.windDirection/45)%8]} · ${w.windDirection}°` },
-            { icon:"ti-droplet",     l:"Umiditate",   v:`${w.humidity}%`,             s:`Precip. ${w.precipitationMm} mm` },
-            { icon:"ti-cloud",       l:"Condiții",    v:w.weatherDescription.split(" ").slice(0,2).join(" "), s:new Date(w.timestamp).toLocaleTimeString("ro") },
-          ].map(c => (
-            <div key={c.l} className="weather-card">
-              <div className="weather-card-label"><i className={`ti ${c.icon}`} /> {c.l}</div>
-              <div className="weather-card-val">{c.v}</div>
-              <div className="weather-card-sub">{c.s}</div>
-            </div>
+      {/* ── METAR raw ── */}
+      <div className="metar-raw" style={{ marginTop:12 }}>{m?.raw ?? "Se încarcă METAR..."}</div>
+
+      {/* ── Vânt + pistă ── */}
+      <SectionTitle>Vânt & Componente Pistă</SectionTitle>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+        <InfoCard icon="ti-wind" label="Direcție / Viteză"
+          value={wind?.isVariable ? `VRB ${wind.speedKt}kt` : `${wind?.directionDeg}° / ${wind?.speedKt}kt`}
+          sub={wind?.gustKt ? `Rafale G${wind.gustKt}kt` : "Fără rafale"}
+          color={wind?.gustKt && wind.gustKt > 25 ? "var(--danger)" : undefined}
+        />
+        <InfoCard icon="ti-arrow-up" label="Headwind / Tailwind"
+          value={wComponents ? `${wComponents.headwind >= 0 ? "HW" : "TW"} ${Math.abs(wComponents.headwind)}kt` : "—"}
+          sub={`Pistă ${rwy} (${RWY_HDG[rwy]}°)`}
+          color={wComponents && Math.abs(wComponents.headwind) > 20 ? "var(--warning)" : undefined}
+        />
+        <InfoCard icon="ti-arrow-right" label="Crosswind"
+          value={wComponents ? `${wComponents.crosswind}kt` : "—"}
+          sub={wComponents && wComponents.crosswind > 15 ? "⚠ Depășit limită tipică" : "În limite normale"}
+          color={wComponents && wComponents.crosswind > 15 ? "var(--danger)" : wComponents && wComponents.crosswind > 10 ? "var(--warning)" : "var(--success)"}
+        />
+        {/* Runway selector */}
+        <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", display:"flex", flexDirection:"column", gap:6 }}>
+          <div style={{ fontSize:11, color:"var(--text-muted)" }}>Pistă activă</div>
+          {(["08","26"] as const).map(r => (
+            <button key={r} onClick={() => setRwy(r)}
+              style={{ padding:"5px 8px", borderRadius:6, border:`1px solid ${rwy===r?"var(--brand)":"var(--border-color)"}`, background:rwy===r?"rgba(255,102,0,0.15)":"transparent", color:rwy===r?"var(--brand)":"var(--text-muted)", cursor:"pointer", fontSize:12, fontWeight:600, textAlign:"left" }}>
+              RWY {r} — {RWY_HDG[r]}°
+            </button>
           ))}
         </div>
+      </div>
+
+      {/* ── Vizibilitate & nori ── */}
+      <SectionTitle>Vizibilitate & Plafon Noros</SectionTitle>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+        <InfoCard icon="ti-eye" label="Vizibilitate"
+          value={visText}
+          color={visM < 1000 ? "var(--danger)" : visM < 3000 ? "var(--warning)" : "var(--success)"}
+          sub={visM < 1500 ? "⚠ Sub minime IFR" : visM < 5000 ? "Operare instrument" : "VFR OK"}
+        />
+        <InfoCard icon="ti-cloud" label="Plafon (Ceiling)"
+          value={ceiling ? `${ceiling.cover} ${ceiling.baseFt.toLocaleString()}'` : "SKC / No ceiling"}
+          sub={ceiling ? `${Math.round(ceiling.baseFt * 0.3048)} m AMSL${ceiling.type ? ` · ${ceiling.type}` : ""}` : "Cer senin"}
+          color={ceiling && ceiling.baseFt < 500 ? "var(--danger)" : ceiling && ceiling.baseFt < 1500 ? "var(--warning)" : "var(--success)"}
+        />
+        {m?.clouds?.map((c,i) => (
+          <div key={i} style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px" }}>
+            <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:4 }}>Strat nor {i+1}</div>
+            <div style={{ fontSize:16, fontWeight:700 }}>{c.cover} {c.baseFt.toLocaleString()}'</div>
+            <div style={{ marginTop:6, height:4, background:"var(--bg-hover)", borderRadius:2, overflow:"hidden" }}>
+              <div style={{ width:`${COVER_PCT[c.cover]??0}%`, height:"100%", background:"var(--info)", borderRadius:2 }}/>
+            </div>
+            <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:3 }}>{COVER_PCT[c.cover]}% acoperire{c.type ? ` · ${c.type}` : ""}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Temperatură & presiune ── */}
+      <SectionTitle>Temperatură, Presiune & Performanță</SectionTitle>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+        <InfoCard icon="ti-temperature" label="Temperatură / Dew"
+          value={temp ? `${temp.tempC > 0 ? "+" : ""}${temp.tempC}°C / ${temp.dewpointC}°C` : "—"}
+          sub={`Spread ${temp ? temp.tempC - temp.dewpointC : "—"}°C`}
+        />
+        <InfoCard icon="ti-droplet" label="Umiditate relativă"
+          value={`${relHumidity ?? "—"}%`}
+          sub={spread?.label}
+          color={spread?.color}
+        />
+        <InfoCard icon="ti-gauge" label="QNH"
+          value={`${qnh} hPa`}
+          sub={`${(qnh * 0.02953).toFixed(2)} inHg · ${qnh > 1013 ? "↑ Anticiclon" : qnh < 1005 ? "↓ Depresiune" : "Presiune normală"}`}
+          color={qnh < 995 ? "var(--danger)" : qnh < 1005 ? "var(--warning)" : undefined}
+        />
+        <InfoCard icon="ti-mountain" label="Density Altitude"
+          value={da !== null ? `${da.toLocaleString()} ft` : "—"}
+          sub={`Elev. LRIA: 321ft · ${da !== null && da > 5000 ? "⚠ Performanță redusă" : "Normal"}`}
+          color={da !== null && da > 5000 ? "var(--warning)" : undefined}
+        />
+      </div>
+
+      {/* ── Trend ── */}
+      {m?.trend && (
+        <>
+          <SectionTitle>Tendință (Trend)</SectionTitle>
+          <div style={{ background:"var(--bg-body)", border:`1px solid ${m.trend.type==="NOSIG"?"var(--success)":"var(--warning)"}`, borderRadius:"var(--radius-md)", padding:"12px", flexShrink:0 }}>
+            <div style={{ fontWeight:700, color: m.trend.type==="NOSIG"?"var(--success)":"var(--warning)", marginBottom:4 }}>
+              {m.trend.type === "NOSIG" ? "NOSIG — Nicio schimbare semnificativă" : m.trend.type}
+            </div>
+            {m.trend.type !== "NOSIG" && (
+              <div style={{ fontSize:12, color:"var(--text-muted)" }}>
+                {m.trend.phenomena?.map((p:string) => PHENOM_LABEL[p]??p).join(", ")}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
-      {m && (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-          {[
-            ["Vânt", `${m.wind.directionDeg}° / ${m.wind.speedKt}kt${m.wind.gustKt?` G${m.wind.gustKt}`:""}`],
-            ["Vizibilitate", m.visibility.unlimited?"≥ 10 km":`${m.visibility.meters} m`],
-            ["Nori", m.clouds.map(c=>`${c.cover} ${c.baseFt}'`).join(" · ")||"SKC"],
-            ["Temp / Dew", `${m.temperature.tempC}°C / ${m.temperature.dewpointC}°C`],
-            ["QNH", `${m.altimeter.qnhHpa} hPa`],
-            ["Sursă", m.fromFixture?"Fixture":"Live NOAA"],
-          ].map(([l,v]) => (
-            <div key={l} style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"10px" }}>
-              <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:4 }}>{l}</div>
-              <div style={{ fontSize:13, fontWeight:600 }}>{v}</div>
-            </div>
-          ))}
+      {/* ── Avertismente ── */}
+      {(m?.warning) && (
+        <div style={{ marginTop:12, background:"var(--warning-bg)", border:"1px solid var(--warning)", borderRadius:"var(--radius-md)", padding:"10px 14px", fontSize:12, color:"var(--warning)", flexShrink:0 }}>
+          <i className="ti ti-alert-triangle" style={{ marginRight:6 }}/>{m.warning}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -450,22 +625,88 @@ function RightPanel({ feature, onLog }: { feature: Feature; onLog:(m:string,ok?:
 }
 
 function WeatherRight() {
+  const [m, setM] = useState<MData|null>(null);
+  useEffect(() => {
+    fetch("/api/metar?station=LRIA").then(r => r.json()).then(setM).catch(() => {});
+  }, []);
+
+  const qnh = m?.altimeter?.qnhHpa ?? 1013;
+  const temp = m?.temperature;
+  const wind = m?.wind;
+  const cat = m?.flightCategory ?? "VFR";
+
+  // ISA deviation
+  const elevFt = 321;
+  const isaStd = 15 - 2 * (elevFt / 1000);
+  const isaDev = temp ? Math.round((temp.tempC - isaStd) * 10) / 10 : null;
+
+  // Transition altitude Romania: FL070 standard
+  // QNH-based transition level varies — simplified
+  const transAlt = 7000;
+  const transFL = Math.ceil((transAlt + (1013 - qnh) * 27) / 500) * 5;
+
   return (
     <>
-      <div className="section-title">Aerodrom LRIA</div>
-      <div className="stats-list" style={{ marginBottom:16 }}>
-        {[["Stație","LRIA"],["Altitudine","98 m MSL"],["Pistă","08 / 26"],["Fus orar","UTC+3"],["Tip","Internațional"]].map(([l,v])=>(
-          <div key={l} className="stat-item"><span className="stat-label">{l}</span><span className="stat-value">{v}</span></div>
-        ))}
-      </div>
-      <div className="section-title">Categorii vizibilitate</div>
-      <div className="stats-list">
-        {[["VFR","var(--success)","≥ 5 km, ≥ 1500ft"],["MVFR","var(--info)","3–5 km"],["IFR","var(--warning)","1–3 km"],["LIFR","var(--danger)","< 1 km"]].map(([cat,col,desc])=>(
-          <div key={cat} className="stat-item">
-            <span style={{fontSize:13,fontWeight:600,color:col as string}}>{cat}</span>
-            <span style={{fontSize:11,color:"var(--text-muted)",textAlign:"right"}}>{desc}</span>
+      <div className="section-title">Stația LRIA</div>
+      <div className="stats-list" style={{ marginBottom:12 }}>
+        {[
+          ["ICAO", "LRIA"], ["Elevație", "321 ft / 98 m"], ["Pistă", "08/26 · 2400m"],
+          ["Tip", "ILS Cat I"], ["ATC freq.", "TWR 118.7 MHz"],
+        ].map(([l,v]) => (
+          <div key={l} className="stat-item">
+            <span className="stat-label">{l}</span>
+            <span className="stat-value" style={{ fontSize:13 }}>{v}</span>
           </div>
         ))}
+      </div>
+
+      <div className="section-title">Calculat din METAR</div>
+      <div className="stats-list" style={{ marginBottom:12 }}>
+        <div className="stat-item">
+          <span className="stat-label">ISA Deviation</span>
+          <span className="stat-value" style={{ fontSize:13, color: isaDev && Math.abs(isaDev) > 10 ? "var(--warning)" : undefined }}>
+            {isaDev !== null ? `ISA${isaDev >= 0 ? "+" : ""}${isaDev}°C` : "—"}
+          </span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Transition Level</span>
+          <span className="stat-value" style={{ fontSize:13 }}>FL{String(transFL).padStart(3,"0")}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">QNH → QFE</span>
+          <span className="stat-value" style={{ fontSize:13 }}>{Math.round(qnh - elevFt * 0.04)} hPa</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Vânt magnetik</span>
+          <span className="stat-value" style={{ fontSize:13 }}>
+            {wind ? `${wind.isVariable ? "VRB" : String(wind.directionDeg).padStart(3,"0")}/${String(wind.speedKt).padStart(2,"0")}${wind.gustKt ? `G${wind.gustKt}` : ""}KT` : "—"}
+          </span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Dew spread</span>
+          <span className="stat-value" style={{ fontSize:13 }}>{temp ? `${temp.tempC - temp.dewpointC}°C` : "—"}</span>
+        </div>
+      </div>
+
+      <div className="section-title">Limite Operaționale</div>
+      <div className="stats-list">
+        {[
+          ["Cat I ILS", "DH 200ft · RVR 550m", "var(--success)"],
+          ["Cat II ILS", "DH 100ft · RVR 300m", "var(--info)"],
+          ["VFR circuit", "Plafon > 1000ft · Viz > 5km", "var(--text-muted)"],
+          ["LVTO", "RVR ≥ 150m", "var(--warning)"],
+        ].map(([l,v,c]) => (
+          <div key={l} className="stat-item">
+            <span className="stat-label">{l}</span>
+            <span style={{ fontSize:11, color:c as string, textAlign:"right", maxWidth:130 }}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Cat badge */}
+      <div style={{ marginTop:12, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid ${CAT_COL[cat]}44`, background:`${CAT_COL[cat]}15`, textAlign:"center" }}>
+        <div style={{ fontWeight:700, fontSize:20, color:CAT_COL[cat] }}>{cat}</div>
+        <div style={{ fontSize:11, color:CAT_COL[cat], opacity:0.85 }}>{CAT_LABEL[cat]}</div>
       </div>
     </>
   );
