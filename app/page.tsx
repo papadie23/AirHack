@@ -68,6 +68,11 @@ export default function Home() {
   // ── UI state ──────────────────────────────────────────────────────────
   const [activeCard, setActiveCard] = useState<ActiveCard>(null);
   const [activeTab, setActiveTab] = useState<BottomTab>("operator");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   // METAR fetch on mount + when provider changes + 60s refresh
   useEffect(() => {
@@ -194,6 +199,10 @@ export default function Home() {
         onVerifyLegit={() => handleVerify("legit")}
         onVerifyFraud={() => handleVerify("fraud")}
         onLocation={handleLocation}
+        weatherData={weatherData}
+        weatherLoading={weatherLoading}
+        theme={theme}
+        onThemeToggle={() => setTheme(t => t === "dark" ? "light" : "dark")}
       />
 
       <RightSidebar

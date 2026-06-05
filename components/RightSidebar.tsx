@@ -3,6 +3,7 @@
 import { useId } from "react";
 import type { DemoState, LogEntry } from "@/app/page";
 import type { WeatherResponse, WeatherProvider } from "@/app/api/weather/route";
+import { wmoIcon } from "@/lib/weather";
 
 interface Props {
   log: LogEntry[];
@@ -67,11 +68,11 @@ export default function RightSidebar({
   return (
     <div className="bg-[#1c1c21] border border-[#2f2f38] rounded-2xl p-5 flex flex-col overflow-hidden gap-5">
 
-      {/* ── Weather section ─────────────────────────────────────── */}
+      {/* ── Weather provider selector ───────────────────────────── */}
       <section className="flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between">
           <p className="text-[11px] font-semibold text-[#9595a1] uppercase tracking-[1px]">
-            Weather — Iași (LRIA)
+            Weather Provider
           </p>
           {weatherLoading && (
             <span className="w-1.5 h-1.5 rounded-full bg-[#ff6600] animate-pulse" />
@@ -97,56 +98,30 @@ export default function RightSidebar({
           ))}
         </div>
 
+        {/* Mini current conditions summary */}
+        {weatherData && !("error" in weatherData) ? (
+          <div className="flex items-center gap-2 text-[11px] font-mono">
+            <span className="text-lg leading-none">{wmoIcon(weatherData.weatherCode)}</span>
+            <span className="font-bold text-[#f3f3f6]">
+              {weatherData.temperatureC >= 0 ? "+" : ""}{weatherData.temperatureC.toFixed(1)}°C
+            </span>
+            <span className="text-[#9595a1]">·</span>
+            <span className="text-[#9595a1] truncate">{weatherData.weatherDescription}</span>
+          </div>
+        ) : weatherLoading ? (
+          <div className="h-4 w-40 bg-white/5 rounded animate-pulse" />
+        ) : null}
+
         {/* Warning / fixture notice */}
         {weatherData?.warning && (
           <p className="text-[10px] font-mono text-amber-400 truncate" title={weatherData.warning}>
-            ⚠ {weatherData.warning.slice(0, 50)}{weatherData.warning.length > 50 ? "…" : ""}
+            ⚠ {weatherData.warning.slice(0, 48)}{weatherData.warning.length > 48 ? "…" : ""}
           </p>
         )}
         {weatherData?.fromFixture && !weatherData.warning && (
           <span className="self-start text-[10px] font-mono text-yellow-600 bg-yellow-900/20 border border-yellow-800/30 px-2 py-0.5 rounded">
             FIXTURE
           </span>
-        )}
-
-        {/* Weather metrics 2×2 grid */}
-        {weatherData && !("error" in weatherData) ? (
-          <div className="grid grid-cols-2 gap-px bg-[#2f2f38] rounded-lg overflow-hidden border border-[#2f2f38]">
-            <WeatherCell label="Temperature">
-              <span className="text-lg font-mono font-bold text-cyan-300">
-                {weatherData.temperatureC >= 0 ? "+" : ""}{weatherData.temperatureC.toFixed(1)}°C
-              </span>
-              <span className="text-[10px] text-[#9595a1] font-mono">
-                Feels {weatherData.apparentTemperatureC >= 0 ? "+" : ""}{weatherData.apparentTemperatureC.toFixed(1)}°C
-              </span>
-            </WeatherCell>
-            <WeatherCell label="Wind">
-              <span className="text-lg font-mono font-bold text-[#f3f3f6]">
-                {weatherData.windSpeedKt.toFixed(1)} kt
-              </span>
-              <span className="text-[10px] text-[#9595a1] font-mono">
-                {weatherData.windDirection}°
-              </span>
-            </WeatherCell>
-            <WeatherCell label="Humidity">
-              <span className="text-lg font-mono font-bold text-sky-400">
-                {weatherData.humidity}%
-              </span>
-            </WeatherCell>
-            <WeatherCell label="Condition">
-              <span className="text-[11px] font-mono font-semibold text-[#f3f3f6] leading-tight">
-                {weatherData.weatherDescription}
-              </span>
-            </WeatherCell>
-          </div>
-        ) : weatherLoading ? (
-          <div className="animate-pulse flex flex-col gap-2">
-            {[100, 80, 90].map((w, i) => (
-              <div key={i} className="h-3 bg-white/5 rounded" style={{ width: `${w}%` }} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-[10px] text-[#9595a1]/50 font-mono italic">No weather data</p>
         )}
       </section>
 
@@ -218,15 +193,6 @@ export default function RightSidebar({
           ))}
         </div>
       </section>
-    </div>
-  );
-}
-
-function WeatherCell({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-[#1c1c21] px-3 py-2.5 flex flex-col gap-0.5">
-      <p className="text-[9px] font-mono text-[#9595a1] uppercase tracking-widest">{label}</p>
-      {children}
     </div>
   );
 }
