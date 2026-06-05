@@ -92,7 +92,7 @@ async function fetchOpenWeatherMap(): Promise<NextResponse> {
 
     const response: WeatherResponse = {
       provider: "openweathermap",
-      location: "Iași (LRIA)",
+      location: "LRIA — Iași International Airport",
       timestamp: new Date((data.dt ?? 0) * 1000).toISOString(),
       temperatureC: Math.round((data?.main?.temp ?? 0) * 10) / 10,
       apparentTemperatureC: Math.round((data?.main?.feels_like ?? 0) * 10) / 10,
@@ -151,7 +151,7 @@ async function fetchMeteoblue(): Promise<NextResponse> {
 
     const response: WeatherResponse = {
       provider: "meteoblue",
-      location: "Iași (LRIA)",
+      location: "LRIA — Iași International Airport",
       timestamp: new Date().toISOString(),
       temperatureC: temp,
       apparentTemperatureC: temp - 1,
@@ -207,7 +207,7 @@ async function fetchAccuWeather(): Promise<NextResponse> {
 
     const response: WeatherResponse = {
       provider: "accuweather",
-      location: "Iași (LRIA)",
+      location: "LRIA — Iași International Airport",
       timestamp: new Date().toISOString(),
       temperatureC: c?.Temperature?.Metric?.Value ?? 0,
       apparentTemperatureC: c?.RealFeelTemperature?.Metric?.Value ?? 0,

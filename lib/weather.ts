@@ -78,7 +78,7 @@ export function parseOpenMeteo(data: OpenMeteoResponse): WeatherResponse {
   const c = data.current;
   return {
     provider: "open-meteo",
-    location: "Iași (LRIA)",
+    location: "LRIA — Iași International Airport",
     timestamp: new Date(c.time).toISOString(),
     temperatureC: Math.round(c.temperature_2m * 10) / 10,
     apparentTemperatureC: Math.round(c.apparent_temperature * 10) / 10,
@@ -92,6 +92,6 @@ export function parseOpenMeteo(data: OpenMeteoResponse): WeatherResponse {
   };
 }
 
-// Iași coordinates
-export const IASI_LAT = 47.1585;
-export const IASI_LON = 27.6014;
+// Iași Intl Airport (LRIA) coordinates
+export const IASI_LAT = 47.1783;
+export const IASI_LON = 27.6206;
