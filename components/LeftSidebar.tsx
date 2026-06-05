@@ -88,7 +88,7 @@ export default function LeftSidebar({
                 >
                   {metar.flightCategory}
                 </span>
-                <span className="text-[#9595a1]">LFPG</span>
+                <span className="text-[#9595a1]">LRIA</span>
               </>
             ) : (
               <span className="w-2 h-2 rounded-full bg-[#9595a1]" />

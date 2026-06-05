@@ -5,7 +5,8 @@ import LeftSidebar from "@/components/LeftSidebar";
 import CenterPanel from "@/components/CenterPanel";
 import RightSidebar from "@/components/RightSidebar";
 import BottomBar from "@/components/BottomBar";
-import type { MetarResponse } from "@/app/api/metar/route";
+import type { MetarResponse, MetarProvider } from "@/app/api/metar/route";
+import type { WeatherResponse, WeatherProvider } from "@/app/api/weather/route";
 
 // ── Exported types used by child components ──────────────────────────────────
 
@@ -56,18 +57,24 @@ export default function Home() {
   // ── METAR state ───────────────────────────────────────────────────────
   const [metarData, setMetarData] = useState<MetarResponse | null>(null);
   const [metarLoading, setMetarLoading] = useState<boolean>(true);
+  const [metarProvider, setMetarProvider] = useState<MetarProvider>("noaa");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // ── Weather state ─────────────────────────────────────────────────────
+  const [weatherData, setWeatherData] = useState<WeatherResponse | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState<boolean>(true);
+  const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
 
   // ── UI state ──────────────────────────────────────────────────────────
   const [activeCard, setActiveCard] = useState<ActiveCard>(null);
   const [activeTab, setActiveTab] = useState<BottomTab>("operator");
 
-  // METAR fetch on mount + 60s refresh
+  // METAR fetch on mount + when provider changes + 60s refresh
   useEffect(() => {
     async function fetchMetar() {
       setMetarLoading(true);
       try {
-        const res = await fetch("/api/metar");
+        const res = await fetch(`/api/metar?provider=${metarProvider}`);
         const data: MetarResponse = await res.json();
         setMetarData(data);
         setLastUpdated(new Date());
@@ -80,7 +87,26 @@ export default function Home() {
     fetchMetar();
     const id = setInterval(fetchMetar, 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [metarProvider]);
+
+  // Weather fetch on mount + when provider changes + 5min refresh
+  useEffect(() => {
+    async function fetchWeather() {
+      setWeatherLoading(true);
+      try {
+        const res = await fetch(`/api/weather?provider=${weatherProvider}`);
+        const data: WeatherResponse = await res.json();
+        setWeatherData(data);
+      } catch {
+        // keep previous data on failure
+      } finally {
+        setWeatherLoading(false);
+      }
+    }
+    fetchWeather();
+    const id = setInterval(fetchWeather, 300_000);
+    return () => clearInterval(id);
+  }, [weatherProvider]);
 
   function addLog(entry: Omit<LogEntry, "id" | "time">) {
     setLog((prev) => [
@@ -159,6 +185,8 @@ export default function Home() {
         activeTab={activeTab}
         metar={metarData}
         metarLoading={metarLoading}
+        metarProvider={metarProvider}
+        onMetarProviderChange={setMetarProvider}
         verifyResult={verifyResult}
         locationResult={locationResult}
         demoState={demoState}
@@ -168,7 +196,14 @@ export default function Home() {
         onLocation={handleLocation}
       />
 
-      <RightSidebar log={log} demoState={demoState} />
+      <RightSidebar
+        log={log}
+        demoState={demoState}
+        weatherData={weatherData}
+        weatherLoading={weatherLoading}
+        weatherProvider={weatherProvider}
+        onWeatherProviderChange={setWeatherProvider}
+      />
 
       <BottomBar activeTab={activeTab} onSelectTab={setActiveTab} />
     </div>

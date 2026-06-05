@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { ActiveCard, BottomTab, DemoState, VerifyResult, LocationResult } from "@/app/page";
-import type { MetarResponse } from "@/app/api/metar/route";
+import type { MetarResponse, MetarProvider } from "@/app/api/metar/route";
 import MetarPanel from "@/components/MetarPanel";
 import PhoneMockup from "@/components/PhoneMockup";
 import DemoControls from "@/components/DemoControls";
@@ -12,6 +12,8 @@ interface Props {
   activeTab: BottomTab;
   metar: MetarResponse | null;
   metarLoading: boolean;
+  metarProvider: MetarProvider;
+  onMetarProviderChange: (p: MetarProvider) => void;
   verifyResult: VerifyResult | null;
   locationResult: LocationResult | null;
   demoState: DemoState;
@@ -23,7 +25,7 @@ interface Props {
 
 export default function CenterPanel(props: Props) {
   const {
-    activeCard, activeTab, metar, metarLoading,
+    activeCard, activeTab, metar, metarLoading, metarProvider, onMetarProviderChange,
     verifyResult, locationResult, demoState, lastUpdated,
     onVerifyLegit, onVerifyFraud, onLocation,
   } = props;
@@ -48,7 +50,12 @@ export default function CenterPanel(props: Props) {
           </div>
         ) : activeCard === "weather" ? (
           <div className="flex-1 overflow-y-auto">
-            <MetarPanel metar={metar} isLoading={metarLoading} />
+            <MetarPanel
+                metar={metar}
+                isLoading={metarLoading}
+                provider={metarProvider}
+                onProviderChange={onMetarProviderChange}
+              />
           </div>
         ) : activeCard === "sms" ? (
           <VerifyView
@@ -88,7 +95,7 @@ function CenterHeader({
   }, [lastUpdated]);
 
   const title =
-    activeCard === "weather" ? "Weather & METAR — LFPG"
+    activeCard === "weather" ? "Weather & METAR — LRIA"
     : activeCard === "sms"   ? "Identity Verification"
     : "Terminal A — Top View";
 
