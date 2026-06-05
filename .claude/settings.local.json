@@ -15,7 +15,8 @@
       "Bash(curl -s -X POST http://localhost:3000/api/verify -H \"Content-Type: application/json\" -d '{\"scenario\":\"legit\"}')",
       "Bash(curl -s -X POST http://localhost:3000/api/verify -H \"Content-Type: application/json\" -d '{\"scenario\":\"fraud\"}')",
       "Bash(curl -s -X POST http://localhost:3000/api/location -H \"Content-Type: application/json\" -d '{}')",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
