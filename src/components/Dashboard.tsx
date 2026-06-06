@@ -788,6 +788,40 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     ionica: SVG_STARTS.ionica,
     dorel:  SVG_STARTS.dorel,
   });
+
+  // Smooth movement: interpolate displayed position toward target at constant SVG px/s
+  const SMOOTH_SPEED = 60; // SVG units per second
+  const targetPosRef = useRef<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
+  const smoothPosRef = useRef<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
+  const [smoothPositions, setSmoothPositions] = useState<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
+  const rafRef = useRef<number|null>(null);
+  const lastFrameRef = useRef<number>(0);
+
+  useEffect(() => {
+    const animate = (now: number) => {
+      const dt = Math.min((now - lastFrameRef.current) / 1000, 0.1);
+      lastFrameRef.current = now;
+      let changed = false;
+      const next = { ...smoothPosRef.current };
+      for (const id of Object.keys(targetPosRef.current)) {
+        const target = targetPosRef.current[id];
+        const cur = smoothPosRef.current[id] ?? target;
+        const dx = target.x - cur.x, dy = target.y - cur.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 0.5) { next[id] = target; }
+        else {
+          const step = Math.min(SMOOTH_SPEED * dt, dist);
+          next[id] = { x: cur.x + dx/dist*step, y: cur.y + dy/dist*step };
+          changed = true;
+        }
+      }
+      smoothPosRef.current = next;
+      if (changed) setSmoothPositions({ ...next });
+      rafRef.current = requestAnimationFrame(animate);
+    };
+    rafRef.current = requestAnimationFrame(animate);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
   const [locLoading, setLocLoading] = useState(false);
   const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
@@ -962,6 +996,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
+    targetPosRef.current[personId] = svgPos;
     if (personId !== "you") return;
     // Zone proximity check — auto-advance task when entering active zone
     // We compare SVG distance (approx 1 SVG unit ≈ 0.04m at LRIA scale)
@@ -1183,15 +1218,26 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode||pixelLog ? "all" : "none", zIndex:2 }}>
             <defs>
               <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              {ZONES.map(z => (
+                <marker key={z.id} id={`arrow-${z.id}`} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill={z.color}/>
+                </marker>
+              ))}
+              <marker id="arrow-default" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#38BDF8"/>
+              </marker>
             </defs>
 
-            {/* Route segments colored per zone */}
+            {/* Route segments — thick arrows colored per zone */}
             {!calMode && pts && pts.slice(1).map((pt, i) => {
-              const color = ZONES[Math.min(i, ZONES.length-1)]?.color ?? person.color;
+              const zone = ZONES[Math.min(i, ZONES.length-1)];
+              const color = zone?.color ?? person.color;
+              const markerId = zone ? `arrow-${zone.id}` : "arrow-default";
               const from = pts[i];
               return <line key={i} x1={from.x} y1={from.y} x2={pt.x} y2={pt.y}
-                stroke={color} strokeWidth="4" strokeDasharray="12 8" strokeLinecap="round"
-                style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 5px ${color}88)` }}/>;
+                stroke={color} strokeWidth="6" strokeDasharray="16 10" strokeLinecap="round"
+                markerEnd={`url(#${markerId})`}
+                style={{ animation:"moveDash 1.2s linear infinite", filter:`drop-shadow(0 0 6px ${color}99)` }}/>;
             })}
 
             {/* Zone etape */}
@@ -1222,9 +1268,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               </g>
             )}
 
-            {/* All person dots */}
+            {/* All person dots — use smoothPositions for fluid movement */}
             {!calMode && PEOPLE.map(p => {
-              const pos = positions[p.id];
+              const pos = smoothPositions[p.id] ?? positions[p.id];
               return (
                 <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
                   <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
