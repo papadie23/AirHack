@@ -79,6 +79,7 @@ export default function Dashboard() {
   const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
   const [activePerson, setActivePerson] = useState<string>("you");
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [seenCount, setSeenCount] = useState(0);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -88,6 +89,24 @@ export default function Dashboard() {
   const myFlight = useMyFlightState();
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
+
+  // SSE: subscribe to real-time announcements once logged in
+  useEffect(() => {
+    if (!auth) return;
+    const es = new EventSource("/api/notifications");
+    es.onmessage = (e) => {
+      try {
+        const a = JSON.parse(e.data) as Announcement;
+        setAnnouncements(prev => prev.some(p => p.id === a.id) ? prev : [a, ...prev]);
+      } catch { /* ignore malformed frames */ }
+    };
+    return () => es.close();
+  }, [auth]);
+
+  // Mark all as read whenever the notification panel is open
+  useEffect(() => {
+    if (notifOpen) setSeenCount(announcements.length);
+  }, [notifOpen, announcements.length]);
 
   const addLog = (msg: string, ok = true) =>
     setLogs(p => [{ ts: new Date().toLocaleTimeString("ro"), msg, ok }, ...p].slice(0, 30));
@@ -119,8 +138,8 @@ export default function Dashboard() {
           setDrawerOpen={setDrawerOpen}
           notifOpen={notifOpen}
           setNotifOpen={setNotifOpen}
-          unreadCount={announcements.length}
-          onLogout={() => { setAuth(null); setDrawerOpen(false); setNotifOpen(false); }}
+          unreadCount={Math.max(0, announcements.length - seenCount)}
+          onLogout={() => { setAuth(null); setDrawerOpen(false); setNotifOpen(false); setSeenCount(0); setAnnouncements([]); }}
         />
       )}
       {auth && (
@@ -129,7 +148,6 @@ export default function Dashboard() {
           onClose={() => setNotifOpen(false)}
           role={auth.role}
           announcements={announcements}
-          setAnnouncements={setAnnouncements}
         />
       )}
       <div className="dashboard-grid">
@@ -141,7 +159,7 @@ export default function Dashboard() {
           hasTopBar={!!auth}
           role={auth?.role ?? null}
         />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} myFlight={myFlight} heatmapSelected={heatmapSelected} setHeatmapSelected={setHeatmapSelected} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} role={auth?.role ?? null} myFlight={myFlight} heatmapSelected={heatmapSelected} setHeatmapSelected={setHeatmapSelected} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} myFlight={myFlight} heatmapSelected={heatmapSelected} />
       </div>
       {!auth && <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />}
@@ -293,10 +311,10 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role, myFlight, heatmapSelected, setHeatmapSelected,
+  feature, onLog, weatherProvider, activePerson, announcements, role, myFlight, heatmapSelected, setHeatmapSelected,
 }: {
   feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
-  activePerson: string; announcements: Announcement[]; setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
+  activePerson: string; announcements: Announcement[];
   role: "admin" | "passenger" | null;
   myFlight: MyFlightState;
   heatmapSelected: string | null; setHeatmapSelected: React.Dispatch<React.SetStateAction<string | null>>;
@@ -308,7 +326,7 @@ function CenterPanel({
       {feature === "route"         && <RouteCenter onLog={onLog} activePerson={activePerson} />}
       {feature === "heatmap"       && !isPassenger && <HeatmapCenter onLog={onLog} selected={heatmapSelected} setSelected={setHeatmapSelected} />}
       {feature === "video-flow"    && !isPassenger && <TrafficFlowCenter onLog={onLog} />}
-      {feature === "admin"         && !isPassenger && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
+      {feature === "admin"         && !isPassenger && <AdminCenter onLog={onLog} />}
       {feature === "announcements" && <AnnouncementsCenter announcements={announcements} />}
       {feature === "my-flight"     && <MyFlightCenter onLog={onLog} myFlight={myFlight} />}
       {feature === "weather-pass"  && <PassengerWeatherCenter myFlight={myFlight} />}
@@ -3593,24 +3611,30 @@ function MyFlightModal({ onClose }: { onClose: () => void }) {
 /* ═══════════════════════════ TOP BAR ═══════════════════════════ */
 /* ═══════════════════════════ NOTIF PANEL ═══════════════════════════ */
 function NotifPanel({
-  open, onClose, role, announcements, setAnnouncements,
+  open, onClose, role, announcements,
 }: {
   open: boolean;
   onClose: () => void;
   role: "admin" | "passenger";
   announcements: Announcement[];
-  setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
 }) {
   const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
-    setAnnouncements(prev => [
-      { id: Date.now(), type: "warning" as const, text: inputText, time: new Date().toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit" }) },
-      ...prev,
-    ]);
-    setInputText("");
+    if (!inputText.trim() || sending) return;
+    setSending(true);
+    try {
+      await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: inputText.trim(), type: "warning" }),
+      });
+      setInputText("");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -3673,8 +3697,8 @@ function NotifPanel({
                     fontFamily:"inherit",
                   }}
                 />
-                <button type="submit" className="btn-primary" style={{ alignSelf:"flex-end", padding:"7px 16px", display:"flex", alignItems:"center", gap:6 }}>
-                  <i className="ti ti-send" /> Trimite
+                <button type="submit" disabled={sending} className="btn-primary" style={{ alignSelf:"flex-end", padding:"7px 16px", display:"flex", alignItems:"center", gap:6 }}>
+                  <i className={`ti ti-${sending ? "loader-2 spin" : "send"}`} /> Trimite
                 </button>
               </form>
             </div>
@@ -3857,14 +3881,24 @@ function BottomBar({ activePerson, setActivePerson }: {
 }
 
 
-function AdminCenter({ onLog, setAnnouncements }: { onLog:(m:string,ok?:boolean)=>void; setAnnouncements:React.Dispatch<React.SetStateAction<Announcement[]>> }) {
+function AdminCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [inputText, setInputText] = useState("");
-  const handleBroadcast = (e: React.FormEvent) => {
+  const [sending, setSending] = useState(false);
+  const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
-    setAnnouncements(prev => [{ id:Date.now(), type:"warning", text:inputText, time:new Date().toLocaleTimeString() }, ...prev]);
-    onLog(`[ADMIN] Anunț trimis: "${inputText}"`);
-    setInputText("");
+    if (!inputText.trim() || sending) return;
+    setSending(true);
+    try {
+      await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: inputText.trim(), type: "warning" }),
+      });
+      onLog(`[ADMIN] Anunț trimis: "${inputText.trim()}"`);
+      setInputText("");
+    } finally {
+      setSending(false);
+    }
   };
   return (
     <div style={{ padding:20 }}>
@@ -3874,8 +3908,8 @@ function AdminCenter({ onLog, setAnnouncements }: { onLog:(m:string,ok?:boolean)
         <form onSubmit={handleBroadcast} style={{ marginTop:10 }}>
           <textarea value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Scrie un anunț..."
             style={{ width:"100%", height:70, background:"#111", border:"1px solid #333", borderRadius:4, color:"#fff", padding:8, boxSizing:"border-box" }}/>
-          <button type="submit" style={{ background:"var(--brand)", color:"#fff", border:"none", padding:"6px 14px", borderRadius:4, marginTop:10, cursor:"pointer" }}>
-            Trimite pe Monitor
+          <button type="submit" disabled={sending} style={{ background:"var(--brand)", color:"#fff", border:"none", padding:"6px 14px", borderRadius:4, marginTop:10, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:6 }}>
+            <i className={`ti ti-${sending ? "loader-2 spin" : "send"}`} /> Trimite pe Monitor
           </button>
         </form>
       </div>
