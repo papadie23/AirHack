@@ -807,6 +807,18 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
 
+  // Portrait mode detection for map rotation
+  const [isPortrait, setIsPortrait] = useState(
+    typeof window !== "undefined" && window.innerWidth < 900 && window.innerHeight > window.innerWidth
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
+    const handler = (e: MediaQueryListEvent) => setIsPortrait(e.matches);
+    mq.addEventListener("change", handler);
+    setIsPortrait(mq.matches);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   // Dead-zone: only update position if moved > DEAD_ZONE_M metres
   const lastGps = useRef<Record<string, {lat:number;lng:number}>>({});
   const DEAD_ZONE_M = 5;
@@ -1049,7 +1061,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
           position: "absolute", inset: 0,
-          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
           transformOrigin: "center center",
         }}>
           <img src="/harta_completa.svg" alt="Hartă T4 LRIA" draggable={false}
