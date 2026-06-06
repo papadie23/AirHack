@@ -693,59 +693,28 @@ const GATE_SVG: Record<string, { x: number; y: number }> = {
   "4": SVG_GATE, "5": SVG_GATE, "6": SVG_GATE, "T3": SVG_GATE,
 };
 
-// Obstacole din pixel log (SVG coords) — fiecare e un dreptunghi cx±r, cy±r
-const OBSTACLES: { x: number; y: number; r: number }[] = [
-  { x: 306,  y: 365, r: 30 },
-  { x: 397,  y: 373, r: 30 },
-  { x: 468,  y: 373, r: 30 },
-  { x: 566,  y: 374, r: 30 },
-  { x: 1518, y: 300, r: 30 },
-  { x: 1516, y: 321, r: 30 },
-  { x: 1520, y: 344, r: 30 },
+// Zone etape pasager — ordonate pe traseul din terminal
+interface Zone { id: string; label: string; x: number; y: number; color: string; w: number; h: number }
+const ZONES: Zone[] = [
+  { id: "checkin",              label: "Check-in",              x: 108,  y: 407, color: "#38BDF8", w: 120, h: 70  },
+  { id: "control-securitate",   label: "Control Securitate",    x: 89,   y: 302, color: "#F97316", w: 140, h: 70  },
+  { id: "verificare-documente", label: "Verificare Documente",  x: 417,  y: 252, color: "#A78BFA", w: 150, h: 70  },
+  { id: "sosire-poarta",        label: "Sosire la Poartă",      x: 1435, y: 265, color: "#34D399", w: 140, h: 70  },
+  { id: "imbarcare",            label: "Îmbarcare",             x: 1800, y: 265, color: "#FBBF24", w: 120, h: 70  },
+  { id: "in-avion",             label: "La bord",               x: 2150, y: 265, color: "#F472B6", w: 110, h: 70  },
 ];
 
-// Punct de referință traseu (waypoint calibrat manual)
-const SVG_WAYPOINT = { x: 1550, y: 272 };
+// Waypoints traseu = centrele zonelor calibrate + gate final
+const ZONE_WAYPOINTS = ZONES.map(z => ({ x: z.x, y: z.y }));
 
-// Traseu nou — waypoints calibrate care ocolesc obstacolele din dreapta
-const SVG_WAYPOINTS_NEW = [
-  { x: 1454, y: 313 },
-  { x: 1435, y: 265 },
-];
-
-// Generează rută ortogonală (L-shape segmente) între două puncte, ocolind obstacole
-// Strategia: mers pe coridor Y comun (detour_y) ales să evite zona obstacolelor
+// Ortogonal L-shape între două puncte
 function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:number;y:number}[] {
-  // Detectează dacă segmentul orizontal la y=detourY intersectează vreun obstacol
-  const blocked = (y: number, x1: number, x2: number) => {
-    const xMin = Math.min(x1, x2), xMax = Math.max(x1, x2);
-    return OBSTACLES.some(o => Math.abs(o.y - y) < o.r && o.x + o.r > xMin && o.x - o.r < xMax);
-  };
-
-  // Încearcă coridor direct (from.y → to.x)
-  if (!blocked(from.y, from.x, to.x) && !blocked(to.y, from.x, to.x)) {
-    // L-shape simplu: merge orizontal la from.y, apoi vertical
-    return [from, { x: to.x, y: from.y }, to];
-  }
-
-  // Găsește un y de detour deasupra sau dedesubtul obstacolelor
-  const obsTop    = Math.min(...OBSTACLES.map(o => o.y - o.r)) - 20;
-  const obsBottom = Math.max(...OBSTACLES.map(o => o.y + o.r)) + 20;
-
-  // Alege detour-ul mai aproape de from.y
-  const detourY = Math.abs(obsTop - from.y) < Math.abs(obsBottom - from.y) ? obsTop : obsBottom;
-
-  return [
-    from,
-    { x: from.x, y: detourY },   // coboară/urcă vertical
-    { x: to.x,   y: detourY },   // merge orizontal pe culoarul liber
-    to,                           // ajunge la destinație
-  ];
+  return [from, { x: to.x, y: from.y }, to];
 }
 
 function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
-  const waypoints = [s, SVG_SECURITY, SVG_WAYPOINTS_NEW[0], SVG_WAYPOINTS_NEW[1], SVG_GATE];
+  const waypoints = [s, ...ZONE_WAYPOINTS];
   const result: {x:number;y:number}[] = [waypoints[0]];
   for (let i = 1; i < waypoints.length; i++) {
     const segs = makeOrthoRoute(waypoints[i-1], waypoints[i]);
@@ -1082,19 +1051,21 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
             </defs>
 
-            {/* Route for active person */}
-            {!calMode && pts && (
-              <polyline points={polyline} fill="none" stroke={person.color} strokeWidth="4"
-                strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
-                style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
-            )}
+            {/* Route segments colored per zone */}
+            {!calMode && pts && pts.slice(1).map((pt, i) => {
+              const color = ZONES[Math.min(i, ZONES.length-1)]?.color ?? person.color;
+              const from = pts[i];
+              return <line key={i} x1={from.x} y1={from.y} x2={pt.x} y2={pt.y}
+                stroke={color} strokeWidth="4" strokeDasharray="12 8" strokeLinecap="round"
+                style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 5px ${color}88)` }}/>;
+            })}
 
-            {/* Obstacole */}
-            {!calMode && OBSTACLES.map((o, i) => (
-              <g key={i}>
-                <rect x={o.x-o.r} y={o.y-o.r} width={o.r*2} height={o.r*2} rx="6"
-                  fill="rgba(239,68,68,0.15)" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4 2"/>
-                <text x={o.x} y={o.y+4} textAnchor="middle" fill="#EF4444" fontSize="10" fontWeight="700">⚠</text>
+            {/* Zone etape */}
+            {!calMode && ZONES.map(z => (
+              <g key={z.id}>
+                <rect x={z.x - z.w/2} y={z.y - z.h/2} width={z.w} height={z.h} rx="10"
+                  fill={`${z.color}22`} stroke={z.color} strokeWidth="1.5"/>
+                <text x={z.x} y={z.y + 5} textAnchor="middle" fill={z.color} fontSize="11" fontWeight="700">{z.label}</text>
               </g>
             ))}
 
