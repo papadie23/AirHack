@@ -63,7 +63,7 @@ export const GET: APIRoute = async ({ request }) => {
     });
   }
 
-  const apiKey = import.meta.env.AIRLABS_API_KEY ?? process.env.AIRLABS_API_KEY;
+  const apiKey = process.env.AIRLABS_API_KEY ?? import.meta.env.AIRLABS_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "AIRLABS_API_KEY not set" }), {
       status: 500, headers: { "Content-Type": "application/json" },
