@@ -531,23 +531,32 @@ function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
   localStorage.setItem(CAL_KEY, JSON.stringify({ points, transform }));
 }
 
-// SVG waypoints calibrate pe harta reală
-// Masa echipei / control check: (852, 349)
-// Destinație pasageri (gate): (2244, 256)
-const GATE_SVG: Record<string, { x: number; y: number }> = {
-  "1":  { x: 2244, y: 256 }, "2":  { x: 2244, y: 256 }, "3":  { x: 2244, y: 256 },
-  "4":  { x: 2244, y: 256 }, "5":  { x: 2244, y: 256 }, "6":  { x: 2244, y: 256 },
-  "T3": { x: 2244, y: 256 },
+// Puncte fixe calibrate
+const SVG_SECURITY  = { x: 852,  y: 349 }; // control check / masa echipei
+const SVG_GATE      = { x: 2244, y: 256 }; // destinație / dozator
+
+// Puncte de start diferite pentru fiecare persoană
+const SVG_STARTS: Record<string, {x:number;y:number}> = {
+  you:    { x: 150, y: 500 },
+  misu:   { x: 400, y: 480 },
+  ionica: { x: 150, y: 150 },
+  dorel:  { x: 400, y: 150 },
 };
 
+const GATE_SVG: Record<string, { x: number; y: number }> = {
+  "1": SVG_GATE, "2": SVG_GATE, "3": SVG_GATE,
+  "4": SVG_GATE, "5": SVG_GATE, "6": SVG_GATE, "T3": SVG_GATE,
+};
+
+function makeRoute(personId: string) {
+  const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
+  return [s, SVG_SECURITY, { x: 1600, y: 300 }, SVG_GATE];
+}
+
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
-  "1":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
-  "2":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
-  "3":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
-  "4":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
-  "5":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
-  "6":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
-  "T3": [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
+  "1": makeRoute("you"), "2": makeRoute("misu"),
+  "3": makeRoute("ionica"), "4": makeRoute("dorel"),
+  "5": makeRoute("you"), "6": makeRoute("you"), "T3": makeRoute("you"),
 };
 
 /* ── People config ── */
@@ -560,7 +569,12 @@ const PEOPLE: Person[] = [
 ];
 
 function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>void; activePerson: string }) {
-  const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({ you:{x:852,y:349}, misu:{x:852,y:349}, ionica:{x:2244,y:256}, dorel:{x:2244,y:256} });
+  const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({
+    you:    SVG_STARTS.you,
+    misu:   SVG_STARTS.misu,
+    ionica: SVG_STARTS.ionica,
+    dorel:  SVG_STARTS.dorel,
+  });
   const [locLoading, setLocLoading] = useState(false);
   const [pixelLog, setPixelLog] = useState(false);
   const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
@@ -869,12 +883,6 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromFixture, setFromFixture] = useState(false);
-  const [calTransform, setCalTransform] = useState<CalTransform|null>(null);
-
-  useEffect(() => {
-    const saved = loadCalibration();
-    setCalTransform(saved.transform);
-  }, []);
 
   const fetchDensity = async () => {
     setLoading(true);
@@ -895,21 +903,20 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     return () => clearInterval(t);
   }, []);
 
+  // Map celule direct pe pozițiile SVG cunoscute (nu depinde de calibrare)
+  const SVG_ZONE_MAP = [SVG_SECURITY, SVG_GATE];
   const maxDensity = Math.max(...densityData.map(c => c.pplDensity ?? 0), 1);
 
-  // Convert geohash cells to SVG circles using calibration transform
-  const circles = calTransform
-    ? densityData
-        .filter(c => c.pplDensity)
-        .map(c => {
-          const { lat, lng } = decodeGeohash(c.geohash);
-          const pos = svgFromGps(calTransform, lat, lng);
-          const intensity = (c.pplDensity ?? 0) / maxDensity;
-          const r = 30 + intensity * 60; // radius 30–90
-          const color = intensity > 0.7 ? "#EF5350" : intensity > 0.35 ? "#FFA726" : "#66BB6A";
-          return { ...pos, r, color, intensity, density: c.pplDensity ?? 0 };
-        })
-    : [];
+  const circles = densityData
+    .filter(c => c.pplDensity)
+    .map((c, i) => {
+      const pos = SVG_ZONE_MAP[i] ?? SVG_ZONE_MAP[0];
+      const intensity = (c.pplDensity ?? 0) / maxDensity;
+      const r = 40 + intensity * 80;
+      const color = intensity > 0.7 ? "#EF5350" : intensity > 0.35 ? "#FFA726" : "#66BB6A";
+      const label = i === 0 ? "Security Check" : "Boarding Gate";
+      return { ...pos, r, color, intensity, density: c.pplDensity ?? 0, label };
+    });
 
   return (
     <>
@@ -918,7 +925,6 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           <div className="map-title">Heatmap Terminal T4 — LRIA</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
             Orange Population Density API{fromFixture && <span style={{ color:"var(--warning)", marginLeft:6 }}>· fixture</span>}
-            {!calTransform && <span style={{ color:"var(--danger)", marginLeft:6 }}>· calibrare lipsă</span>}
           </div>
         </div>
         <div className="badges">
@@ -931,13 +937,12 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 
       <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
         <img src="/harta_completa.svg" alt="Hartă T4" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}/>
-
         <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
           style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}>
           <defs>
             {circles.map((c, i) => (
               <radialGradient key={i} id={`hg${i}`} cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor={c.color} stopOpacity={0.5 + c.intensity * 0.3}/>
+                <stop offset="0%" stopColor={c.color} stopOpacity={0.6 + c.intensity * 0.3}/>
                 <stop offset="100%" stopColor={c.color} stopOpacity="0"/>
               </radialGradient>
             ))}
@@ -945,17 +950,11 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           {circles.map((c, i) => (
             <g key={i}>
               <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
-              <circle cx={c.x} cy={c.y} r={8} fill={c.color} opacity="0.9"/>
-              <text x={c.x} y={c.y - c.r - 4} textAnchor="middle" fill={c.color} fontSize="11" fontWeight="600">
-                {c.density} p/km²
-              </text>
+              <circle cx={c.x} cy={c.y} r={10} fill={c.color} opacity="0.95"/>
+              <text x={c.x} y={c.y + c.r + 16} textAnchor="middle" fill={c.color} fontSize="13" fontWeight="700">{c.label}</text>
+              <text x={c.x} y={c.y + c.r + 30} textAnchor="middle" fill={c.color} fontSize="11" opacity="0.85">{c.density} pax/km²</text>
             </g>
           ))}
-          {!calTransform && (
-            <text x="1131" y="300" textAnchor="middle" fill="var(--text-muted)" fontSize="16">
-              Mergi la tab-ul Route → Calibrare pentru a poziționa heatmap-ul
-            </text>
-          )}
         </svg>
       </div>
     </>
@@ -1098,9 +1097,22 @@ function WeatherRight({
 }
 
 function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+  const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [sel, setSel] = useState<string|null>(null);
   const [verifyRes, setVerifyRes] = useState<{decision:string;simSwapped:boolean}|null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" })
+      .then(r => r.json())
+      .then((d: DensityResponse) => setDensityData(d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? []))
+      .catch(() => {});
+  }, []);
+
+  const securityDensity = densityData[0]?.pplDensity ?? 185;
+  const boardingDensity = densityData[1]?.pplDensity ?? 95;
+  const securityETA = Math.ceil((securityDensity * 45) / (2 * 60));
+  const boardingETA = Math.ceil((boardingDensity * 30) / (3 * 60));
 
   const verify = async (scenario:"legit"|"fraud") => {
     setLoading(true);
@@ -1113,9 +1125,35 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     finally { setLoading(false); }
   };
 
+  const etaColor = (eta: number) => eta > 20 ? "var(--danger)" : eta > 10 ? "var(--warning)" : "var(--success)";
+
   return (
     <>
-      <div className="section-title">Zboruri disponibile</div>
+      <div className="section-title">Timp estimat așteptare</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
+        <div style={{ padding:"12px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
+            <i className="ti ti-shield-check" style={{ color:"var(--brand)" }}/> Security Check (Masa Echipei)
+          </div>
+          <div style={{ fontSize:24, fontWeight:700, color:etaColor(securityETA) }}>{securityETA} min</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>{securityDensity} pax detectați · 2 linii active</div>
+          <div style={{ marginTop:6, height:4, background:"var(--bg-hover)", borderRadius:2 }}>
+            <div style={{ width:`${Math.min(100,(securityDensity/250)*100)}%`, height:"100%", background:etaColor(securityETA), borderRadius:2, transition:"width 0.5s" }}/>
+          </div>
+        </div>
+        <div style={{ padding:"12px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
+            <i className="ti ti-door-enter" style={{ color:"var(--success)" }}/> Boarding Gate (Dozator)
+          </div>
+          <div style={{ fontSize:24, fontWeight:700, color:etaColor(boardingETA) }}>{boardingETA} min</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>{boardingDensity} pax detectați · 3 ghișee active</div>
+          <div style={{ marginTop:6, height:4, background:"var(--bg-hover)", borderRadius:2 }}>
+            <div style={{ width:`${Math.min(100,(boardingDensity/250)*100)}%`, height:"100%", background:etaColor(boardingETA), borderRadius:2, transition:"width 0.5s" }}/>
+          </div>
+        </div>
+      </div>
+
+      <div className="section-title">Zboruri</div>
       <div className="flight-list">
         {FLIGHTS.map(f => (
           <div key={f.id} className={`flight-item${sel===f.id?" active":""}`} onClick={() => setSel(sel===f.id?null:f.id)}>
@@ -1138,7 +1176,6 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           <i className="ti ti-user-x"/> Simulează SIM Swap
         </button>
       </div>
-
       {verifyRes && (
         <div className="fade-in" style={{marginTop:10,padding:10,borderRadius:"var(--radius-md)",border:`1px solid ${verifyRes.decision==="ALLOW"?"var(--success)":"var(--danger)"}`,background:`${verifyRes.decision==="ALLOW"?"var(--success-bg)":"var(--danger-bg)"}`}}>
           <div style={{fontWeight:600,fontSize:13,color:verifyRes.decision==="ALLOW"?"var(--success)":"var(--danger)",display:"flex",alignItems:"center",gap:8}}>
