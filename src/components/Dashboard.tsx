@@ -1664,14 +1664,6 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromFixture, setFromFixture] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
-    setIsPortrait(mq.matches);
-    const h = (e: MediaQueryListEvent) => setIsPortrait(e.matches);
-    mq.addEventListener("change", h);
-    return () => mq.removeEventListener("change", h);
-  }, []);
 
   const fetchDensity = async () => {
     setLoading(true);
@@ -1690,48 +1682,152 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     fetchDensity();
     const t = setInterval(fetchDensity, 30000);
     return () => clearInterval(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Map interaction (mirrors RouteCenter) ──────────────────────────
+  const MAP_ASPECT = 2262 / 587;
+  const [mapZoom, setMapZoom] = useState(1);
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX:number; startY:number; panX:number; panY:number }|null>(null);
+  const mapWrapRef = useRef<HTMLDivElement>(null);
+  const mapZoomRef = useRef(mapZoom); mapZoomRef.current = mapZoom;
+  const mapPanRef  = useRef(mapPan);  mapPanRef.current  = mapPan;
+
+  const [isPortrait, setIsPortrait] = useState(false);
+  const isPortraitRef = useRef(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
+    const h = (e: MediaQueryListEvent) => { setIsPortrait(e.matches); isPortraitRef.current = e.matches; };
+    mq.addEventListener("change", h);
+    setIsPortrait(mq.matches); isPortraitRef.current = mq.matches;
+    return () => mq.removeEventListener("change", h);
   }, []);
 
-  // Map GPS → SVG folosind cele 2 puncte ancorate (Security și Gate)
-  // Interpolare liniară pe axa lng → x, lat → y
+  const containerSizeRef = useRef({ W: 0, H: 0 });
+  useEffect(() => {
+    const el = mapWrapRef.current; if (!el) return;
+    const update = () => { const r = el.getBoundingClientRect(); containerSizeRef.current = { W: r.width, H: r.height }; };
+    update();
+    const ro = new ResizeObserver(update); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const clampPan = (panX: number, panY: number, zoom: number) => {
+    if (!isPortraitRef.current) return { x: panX, y: panY };
+    const { W, H } = containerSizeRef.current; if (W === 0) return { x: panX, y: panY };
+    const maxX = Math.max(0, ((W / MAP_ASPECT) * zoom - W) / 2);
+    const maxY = Math.max(0, (W * zoom - H) / 2);
+    return { x: Math.max(-maxX, Math.min(maxX, panX)), y: Math.max(-maxY, Math.min(maxY, panY)) };
+  };
+
+  // On portrait: zoom to fill + anchor bottom-right corner
+  useEffect(() => {
+    if (isPortrait) {
+      requestAnimationFrame(() => {
+        const { W, H } = containerSizeRef.current; if (W === 0) return;
+        const Z = MAP_ASPECT;
+        setMapZoom(Z);
+        setMapPan(clampPan(0, (H - W * Z) / 2, Z));
+      });
+    } else {
+      setMapZoom(1); setMapPan({ x: 0, y: 0 });
+    }
+  }, [isPortrait]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wheel zoom
+  useEffect(() => {
+    const el = mapWrapRef.current; if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const minZ = isPortraitRef.current ? MAP_ASPECT : 0.5;
+      const factor = e.deltaY < 0 ? 1.15 : 0.87;
+      setMapZoom(z => { const nz = Math.min(Math.max(z * factor, minZ), 10); setMapPan(p => clampPan(p.x, p.y, nz)); return nz; });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Touch: drag + pinch-to-zoom (passive:false)
+  useEffect(() => {
+    const el = mapWrapRef.current; if (!el) return;
+    type PS = { dist:number; midX:number; midY:number; zoom:number; panX:number; panY:number };
+    let pinch: PS | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY);
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        const r = el.getBoundingClientRect();
+        dragRef.current = { startX: e.touches[0].clientX-r.left, startY: e.touches[0].clientY-r.top, panX: mapPanRef.current.x, panY: mapPanRef.current.y };
+        setIsDragging(true); pinch = null;
+      } else if (e.touches.length === 2) {
+        dragRef.current = null; setIsDragging(false);
+        const r = el.getBoundingClientRect();
+        pinch = { dist: dist(e.touches), midX: (e.touches[0].clientX+e.touches[1].clientX)/2-r.left, midY: (e.touches[0].clientY+e.touches[1].clientY)/2-r.top, zoom: mapZoomRef.current, panX: mapPanRef.current.x, panY: mapPanRef.current.y };
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && dragRef.current) {
+        const r = el.getBoundingClientRect();
+        const { startX, startY, panX, panY } = dragRef.current;
+        setMapPan(clampPan(panX + e.touches[0].clientX-r.left-startX, panY + e.touches[0].clientY-r.top-startY, mapZoomRef.current));
+      } else if (e.touches.length === 2 && pinch) {
+        const r = el.getBoundingClientRect(); const W = r.width, H = r.height;
+        const newDist = dist(e.touches);
+        const nmx = (e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
+        const nmy = (e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
+        const minZ = isPortraitRef.current ? MAP_ASPECT : 0.3;
+        const nz = Math.min(Math.max(pinch.zoom*(newDist/pinch.dist), minZ), 10);
+        const ratio = nz / pinch.zoom;
+        const cmx = pinch.midX - W/2, cmy = pinch.midY - H/2;
+        setMapZoom(nz);
+        setMapPan(clampPan(cmx-(cmx-pinch.panX)*ratio+(nmx-pinch.midX), cmy-(cmy-pinch.panY)*ratio+(nmy-pinch.midY), nz));
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) { dragRef.current = null; setIsDragging(false); pinch = null; }
+      else if (e.touches.length === 1) {
+        pinch = null;
+        const r = el.getBoundingClientRect();
+        dragRef.current = { startX: e.touches[0].clientX-r.left, startY: e.touches[0].clientY-r.top, panX: mapPanRef.current.x, panY: mapPanRef.current.y };
+      }
+    };
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchmove",  onMove,  { passive: false });
+    el.addEventListener("touchend",   onEnd,   { passive: false });
+    return () => { el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove); el.removeEventListener("touchend", onEnd); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const zoomBtnStyle: React.CSSProperties = { width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-main)", cursor:"pointer", fontSize:16, fontWeight:700, lineHeight:1, boxShadow:"0 1px 4px rgba(0,0,0,0.3)" };
+
+  // GPS → SVG
   const GPS_ANCHOR = [
     { lat: 47.17439, lng: 27.61903, svgX: 852,  svgY: 349 },
     { lat: 47.17406, lng: 27.61970, svgX: 2244, svgY: 256 },
   ];
-  const dLng = GPS_ANCHOR[1].lng - GPS_ANCHOR[0].lng;
-  const dLat = GPS_ANCHOR[1].lat - GPS_ANCHOR[0].lat;
-  const dX   = GPS_ANCHOR[1].svgX - GPS_ANCHOR[0].svgX;
-  const dY   = GPS_ANCHOR[1].svgY - GPS_ANCHOR[0].svgY;
+  const dLng = GPS_ANCHOR[1].lng - GPS_ANCHOR[0].lng, dLat = GPS_ANCHOR[1].lat - GPS_ANCHOR[0].lat;
+  const dX = GPS_ANCHOR[1].svgX - GPS_ANCHOR[0].svgX, dY = GPS_ANCHOR[1].svgY - GPS_ANCHOR[0].svgY;
+  const gpsToSvg = (lat: number, lng: number) => {
+    const tLng = (lng-GPS_ANCHOR[0].lng)/dLng, tLat = (lat-GPS_ANCHOR[0].lat)/dLat;
+    return { x: GPS_ANCHOR[0].svgX+tLng*dX+(tLat-tLng)*200, y: GPS_ANCHOR[0].svgY+tLng*dY+(tLat-tLng)*(-120) };
+  };
 
-  function gpsToSvg(lat: number, lng: number) {
-    const tLng = (lng - GPS_ANCHOR[0].lng) / dLng;
-    const tLat = (lat - GPS_ANCHOR[0].lat) / dLat;
-    return {
-      x: GPS_ANCHOR[0].svgX + tLng * dX + (tLat - tLng) * 200,
-      y: GPS_ANCHOR[0].svgY + tLng * dY + (tLat - tLng) * (-120),
-    };
-  }
-
-  // Deduplicate by geohash before building circles
-  const dedupedDensity = Array.from(
-    densityData.reduce((map, c) => {
-      const existing = map.get(c.geohash);
-      if (!existing || (c.pplDensity ?? 0) > (existing.pplDensity ?? 0)) map.set(c.geohash, c);
-      return map;
-    }, new Map<string, DensityCell>()).values()
-  );
+  const dedupedDensity = Array.from(densityData.reduce((map, c) => {
+    const ex = map.get(c.geohash);
+    if (!ex || (c.pplDensity??0) > (ex.pplDensity??0)) map.set(c.geohash, c);
+    return map;
+  }, new Map<string, DensityCell>()).values());
   const maxDensity = Math.max(...dedupedDensity.map(c => c.pplDensity ?? 0), 1);
+  const circles = dedupedDensity.filter(c => c.pplDensity).map(c => {
+    const { lat, lng } = decodeGeohash(c.geohash);
+    const pos = gpsToSvg(lat, lng);
+    const intensity = (c.pplDensity ?? 0) / maxDensity;
+    return { ...pos, r: 20+intensity*65, color: intensity>0.7?"#EF5350":intensity>0.35?"#FFA726":"#66BB6A", intensity, density: c.pplDensity??0 };
+  });
 
-  const circles = dedupedDensity
-    .filter(c => c.pplDensity)
-    .map(c => {
-      const { lat, lng } = decodeGeohash(c.geohash);
-      const pos = gpsToSvg(lat, lng);
-      const intensity = (c.pplDensity ?? 0) / maxDensity;
-      const r = 20 + intensity * 65;
-      const color = intensity > 0.7 ? "#EF5350" : intensity > 0.35 ? "#FFA726" : "#66BB6A";
-      return { ...pos, r, color, intensity, density: c.pplDensity ?? 0 };
-    });
+  // Labels counter-rotate in portrait so they stay readable
+  const labelRot = isPortrait ? 90 : 0;
 
   return (
     <>
@@ -1750,28 +1846,51 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         </div>
       </div>
 
-      <div className="map-container" style={{ position:"relative", flex:1, ...(isPortrait ? { height:"calc(100svh - 195px)", minHeight:300 } : {}), borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
-        <img src="/harta_completa.svg" alt="Hartă T4" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}/>
-        <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}>
-          <defs>
+      <div
+        ref={mapWrapRef}
+        className="map-container"
+        style={{ position:"relative", flex:1, ...(isPortrait ? { height:"calc(100svh - 195px)", minHeight:300 } : {}), borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", cursor: isDragging?"grabbing":"grab", userSelect:"none" }}
+        onMouseDown={e => { dragRef.current = { startX:e.clientX, startY:e.clientY, panX:mapPan.x, panY:mapPan.y }; setIsDragging(true); }}
+        onMouseMove={e => { if (!dragRef.current) return; const { startX,startY,panX,panY } = dragRef.current; setMapPan(clampPan(panX+e.clientX-startX, panY+e.clientY-startY, mapZoom)); }}
+        onMouseUp={() => { dragRef.current = null; setIsDragging(false); }}
+        onMouseLeave={() => { dragRef.current = null; setIsDragging(false); }}
+      >
+        {/* Zoom controls */}
+        <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
+          <button style={zoomBtnStyle} onClick={() => setMapZoom(z => { const nz=Math.min(z*1.25,10); setMapPan(p=>clampPan(p.x,p.y,nz)); return nz; })}>+</button>
+          <button style={zoomBtnStyle} onClick={() => { const minZ=isPortrait?MAP_ASPECT:0.5; setMapZoom(z => { const nz=Math.max(z*0.8,minZ); setMapPan(p=>clampPan(p.x,p.y,nz)); return nz; }); }}>−</button>
+          <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { const Z=isPortrait?MAP_ASPECT:1; const {W,H}=containerSizeRef.current; setMapZoom(Z); setMapPan(isPortrait&&W>0 ? clampPan(0,(H-W*Z)/2,Z) : {x:0,y:0}); }} title="Reset">
+            <i className="ti ti-home-2"/>
+          </button>
+        </div>
+
+        {/* Transformable layer */}
+        <div style={{ position:"absolute", inset:0, transform:`translate(${mapPan.x}px,${mapPan.y}px) scale(${mapZoom})${isPortrait?" rotate(-90deg)":""}`, transformOrigin:"center center", willChange:"transform" }}>
+          <img src="/harta_completa.svg" alt="Hartă T4" draggable={false} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}/>
+          <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet" style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2, pointerEvents:"none" }}>
+            <defs>
+              {circles.map((c, i) => (
+                <radialGradient key={i} id={`hg${i}`} cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor={c.color} stopOpacity={0.6+c.intensity*0.3}/>
+                  <stop offset="100%" stopColor={c.color} stopOpacity="0"/>
+                </radialGradient>
+              ))}
+            </defs>
             {circles.map((c, i) => (
-              <radialGradient key={i} id={`hg${i}`} cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor={c.color} stopOpacity={0.6 + c.intensity * 0.3}/>
-                <stop offset="100%" stopColor={c.color} stopOpacity="0"/>
-              </radialGradient>
+              <g key={i}>
+                <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
+                {c.intensity > 0.85 && <circle cx={c.x} cy={c.y} r={8} fill={c.color} opacity="0.95"/>}
+              </g>
             ))}
-          </defs>
-          {circles.map((c, i) => (
-            <g key={i}>
-              <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
-              {c.intensity > 0.85 && <circle cx={c.x} cy={c.y} r={8} fill={c.color} opacity="0.95"/>}
+            {/* Labels counter-rotate so they stay upright in portrait */}
+            <g transform={`rotate(${labelRot}, 852, 320)`}>
+              <text x={852} y={320} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Security</text>
             </g>
-          ))}
-          {/* Label cozi */}
-          <text x={852}  y={320} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Security</text>
-          <text x={2244} y={228} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Boarding</text>
-        </svg>
+            <g transform={`rotate(${labelRot}, 2244, 228)`}>
+              <text x={2244} y={228} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Boarding</text>
+            </g>
+          </svg>
+        </div>
       </div>
     </>
   );
