@@ -16,13 +16,28 @@ interface AuthState {
 }
 
 /* ── flights / route ── */
-const FLIGHTS = [
-  { id: "1", gate: "4",  flight: "RO 321",  dest: "București OTP", departs: "23:15", color: "var(--success)" },
-  { id: "2", gate: "2",  flight: "W6 4102", dest: "Londra LTN",    departs: "23:45", color: "var(--info)"    },
-  { id: "3", gate: "T3", flight: "LH 1407", dest: "Frankfurt FRA", departs: "00:10", color: "var(--warning)" },
-  { id: "4", gate: "5",  flight: "FR 8821", dest: "Milano BGY",    departs: "00:30", color: "var(--brand)"   },
-  { id: "5", gate: "T3", flight: "AF 1234", dest: "Paris CDG",     departs: "06:45", color: "var(--danger)"  },
+// Static fallback (used only if API fails)
+const FLIGHTS_FALLBACK = [
+  { id: "1", gate: "4",  flight: "RO 321",  dest: "București OTP", departs: "23:15", color: "var(--success)", status: "scheduled", delayed: null },
+  { id: "2", gate: "2",  flight: "W6 4102", dest: "Londra LTN",    departs: "23:45", color: "var(--info)",    status: "scheduled", delayed: null },
+  { id: "3", gate: "T3", flight: "LH 1407", dest: "Frankfurt FRA", departs: "00:10", color: "var(--warning)", status: "scheduled", delayed: null },
+  { id: "4", gate: "5",  flight: "FR 8821", dest: "Milano BGY",    departs: "00:30", color: "var(--brand)",   status: "scheduled", delayed: null },
+  { id: "5", gate: "T3", flight: "AF 1234", dest: "Paris CDG",     departs: "06:45", color: "var(--danger)",  status: "scheduled", delayed: null },
 ];
+
+// Colors cycling for live flights
+const FLIGHT_COLORS = [
+  "var(--success)", "var(--info)", "var(--warning)", "var(--brand)", "var(--danger)",
+  "var(--success)", "var(--info)", "var(--warning)", "var(--brand)", "var(--danger)",
+];
+
+type LiveFlight = {
+  id: string; gate: string; flight: string; dest: string; departs: string;
+  color: string; status: string; delayed: number | null;
+};
+
+// Keep backward compat: FLIGHTS is the static fallback used in ROUTE_PX / GATE_LABELS references
+const FLIGHTS = FLIGHTS_FALLBACK;
 
 // Waypoints în pixel-space al imaginii "Plan parter fluxuri ON.jpg"
 // Ruta: intrare T4 → check-in → baza scări → poartă (etaj)
@@ -1373,6 +1388,40 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [verifyRes, setVerifyRes] = useState<{decision:string;simSwapped:boolean}|null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Live flights state
+  const [liveFlights, setLiveFlights] = useState<LiveFlight[]>([]);
+  const [flightsLoading, setFlightsLoading] = useState(false);
+  const [flightsFetchedAt, setFlightsFetchedAt] = useState<string>("");
+  const [currentTimeRO, setCurrentTimeRO] = useState<string>("");
+  const [flightsError, setFlightsError] = useState(false);
+
+  const fetchFlights = () => {
+    setFlightsLoading(true);
+    setFlightsError(false);
+    fetch("/api/flights")
+      .then(r => r.json())
+      .then((data) => {
+        if (data.error) { setFlightsError(true); setLiveFlights([]); return; }
+        const mapped: LiveFlight[] = (data.flights ?? []).map((f: any, i: number) => ({
+          ...f,
+          color: FLIGHT_COLORS[i % FLIGHT_COLORS.length],
+        }));
+        setLiveFlights(mapped);
+        setFlightsFetchedAt(data.fetchedAt ?? "");
+        setCurrentTimeRO(data.currentTimeRO ?? "");
+        onLog(`AirLabs: ${mapped.length} zboruri IAS · ora ${data.currentTimeRO}`);
+      })
+      .catch(() => { setFlightsError(true); setLiveFlights([]); onLog("Eroare fetch zboruri AirLabs", false); })
+      .finally(() => setFlightsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchFlights();
+    const t = setInterval(fetchFlights, 60_000);
+    return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" })
       .then(r => r.json())
@@ -1425,18 +1474,65 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
       </div>
 
       <div className="section-title">Zboruri</div>
-      <div className="flight-list">
-        {FLIGHTS.map(f => (
-          <div key={f.id} className={`flight-item${sel===f.id?" active":""}`} onClick={() => setSel(sel===f.id?null:f.id)}>
-            <i className="ti ti-plane" style={{color:f.color, fontSize:18}} />
-            <div style={{flex:1}}>
-              <div className="flight-nr">{f.flight}</div>
-              <div className="flight-dest">{f.dest}</div>
-            </div>
-            <div className="flight-gate" style={{color:f.color}}>G{f.gate} · {f.departs}</div>
-          </div>
-        ))}
+
+      {/* ── Header row cu ora curentă + refresh ── */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+        <div style={{ fontSize:11, color:"var(--text-muted)", display:"flex", alignItems:"center", gap:5 }}>
+          <span className={`dot ${flightsError ? "red" : "green"}${!flightsError ? " pulse-green" : ""}`} style={{ width:6, height:6 }}/>
+          {flightsError ? "Eroare AirLabs" : `Live · IAS · ora ${currentTimeRO || "—"}`}
+        </div>
+        <button
+          onClick={fetchFlights}
+          disabled={flightsLoading}
+          title="Refresh zboruri"
+          style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"pointer", padding:"2px 4px", fontSize:13 }}
+        >
+          <i className={`ti ti-refresh${flightsLoading ? " spin" : ""}`} />
+        </button>
       </div>
+
+      <div className="flight-list">
+        {(liveFlights.length > 0 ? liveFlights : FLIGHTS_FALLBACK).map(f => {
+          const isActive  = f.status === "active";
+          const isCancelled = f.status === "cancelled";
+          const hasDelay = f.delayed && f.delayed > 0;
+          const statusColor = isCancelled ? "var(--danger)" : isActive ? "var(--brand)" : hasDelay ? "var(--warning)" : "var(--success)";
+          const statusLabel = isCancelled ? "ANULAT" : isActive ? "ÎN AER" : hasDelay ? `+${f.delayed}min` : "LA TMP";
+          return (
+            <div key={f.id} className={`flight-item${sel===f.id?" active":""}`} onClick={() => setSel(sel===f.id?null:f.id)}>
+              <i className="ti ti-plane" style={{ color: f.color, fontSize:18, opacity: isCancelled ? 0.4 : 1 }} />
+              <div style={{ flex:1 }}>
+                <div className="flight-nr" style={{ opacity: isCancelled ? 0.5 : 1 }}>{f.flight}</div>
+                <div className="flight-dest">{f.dest}</div>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2 }}>
+                <div className="flight-gate" style={{ color: f.color }}>
+                  {f.gate !== "—" ? `G${f.gate} · ` : ""}{f.departs}
+                </div>
+                <div style={{ fontSize:10, fontWeight:700, color: statusColor, letterSpacing:"0.5px" }}>
+                  {statusLabel}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {liveFlights.length === 0 && !flightsLoading && !flightsError && (
+          <div style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0" }}>
+            Niciun zbor în fereastra curentă
+          </div>
+        )}
+        {flightsLoading && liveFlights.length === 0 && (
+          <div style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+            <i className="ti ti-loader-2 spin" /> Se încarcă...
+          </div>
+        )}
+      </div>
+
+      {flightsFetchedAt && (
+        <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"right", marginTop:2, marginBottom:6 }}>
+          Actualizat {new Date(flightsFetchedAt).toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit", second:"2-digit" })} · refresh auto 60s
+        </div>
+      )}
 
       <div className="section-title" style={{marginTop:12}}>Verificare identitate</div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
