@@ -4,7 +4,7 @@ import type { WeatherProvider } from "../lib/weather";
 import { findClient, ADMIN_USERNAME, ADMIN_PASSWORD } from "../lib/mock-auth";
 import TrafficFlowCenter from "./TrafficFlowCenter";
 
-type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings" | "my-flight" | "video-flow";
+type Feature = "weather" | "route" | "heatmap" | "admin" | "announcements" | "account" | "settings" | "my-flight" | "video-flow" | "weather-pass";
 
 export interface Announcement {
   id: number; type: "info" | "warning" | "danger"; text: string; time: string;
@@ -78,12 +78,10 @@ export default function Dashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
   const [activePerson, setActivePerson] = useState<string>("you");
-  const [announcements, setAnnouncements] = useState<Announcement[]>([
-    { id: 1, type: "info",    text: "Zborul RO 321 începe îmbarcarea la Poarta T4 (Dozator Apă).", time: "12:15" },
-    { id: 2, type: "warning", text: "Aglomerare la Filtrul de Securitate (Masa Echipei). Timp estimat: 25 min.", time: "12:22" },
-  ]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [heatmapSelected, setHeatmapSelected] = useState<string | null>(null);
 
   // Shared flight state — o singură instanță, partajată între Center și Right
@@ -117,11 +115,21 @@ export default function Dashboard() {
       {auth && (
         <TopBar
           auth={auth}
-          theme={theme}
-          setTheme={setTheme}
           drawerOpen={drawerOpen}
           setDrawerOpen={setDrawerOpen}
-          onLogout={() => { setAuth(null); setDrawerOpen(false); }}
+          notifOpen={notifOpen}
+          setNotifOpen={setNotifOpen}
+          unreadCount={announcements.length}
+          onLogout={() => { setAuth(null); setDrawerOpen(false); setNotifOpen(false); }}
+        />
+      )}
+      {auth && (
+        <NotifPanel
+          open={notifOpen}
+          onClose={() => setNotifOpen(false)}
+          role={auth.role}
+          announcements={announcements}
+          setAnnouncements={setAnnouncements}
         />
       )}
       <div className="dashboard-grid">
@@ -143,15 +151,17 @@ export default function Dashboard() {
 
 /* ═══════════════════════════ LEFT PANEL ═══════════════════════════ */
 const PASSENGER_NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
-  { id: "route",         icon: "ti-route",           label: "My Route",       sub: "Device Location · Orange"   },
-  { id: "my-flight",     icon: "ti-plane-departure", label: "My Flight",      sub: "Live · AirLabs"             },
-  { id: "announcements", icon: "ti-bell",            label: "Anunțuri",       sub: "De la personalul aeroportului" },
+  { id: "route",         icon: "ti-map-pin",         label: "My Location",    sub: "Device Location · Orange"       },
+  { id: "my-flight",     icon: "ti-plane-departure", label: "My Flight",      sub: "Live · AirLabs"                 },
+  { id: "weather-pass",  icon: "ti-cloud-sun",       label: "Weather",        sub: "Departure & Arrival airports"   },
+  { id: "announcements", icon: "ti-bell",            label: "Anunțuri",       sub: "De la personalul aeroportului"  },
 ];
 const ADMIN_NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
-  { id: "weather",       icon: "ti-cloud-storm",    label: "Vreme LRIA",     sub: "METAR · Open-Meteo · NOAA"  },
-  { id: "heatmap",       icon: "ti-map-2",          label: "Heatmap",        sub: "Aglomerație zone terminal"   },
-  { id: "video-flow",    icon: "ti-video",          label: "Flow Optimization", sub: "CV + AI Dispatcher · IAS" },
-  { id: "admin",         icon: "ti-megaphone",      label: "Anunțuri Pasageri", sub: "Trimite notificări"       },
+  { id: "weather",       icon: "ti-cloud-storm",    label: "Vreme LRIA",        sub: "METAR · Open-Meteo · NOAA"  },
+  { id: "heatmap",       icon: "ti-map-2",          label: "Heatmap",           sub: "Aglomerație zone terminal"   },
+  { id: "video-flow",    icon: "ti-video",          label: "CV Dispatcher",     sub: "CV + AI · IAS"              },
+  { id: "admin",         icon: "ti-megaphone",      label: "Anunțuri Pasageri", sub: "Trimite notificări"         },
+  { id: "settings",      icon: "ti-settings",       label: "Settings",          sub: "About · API Status"         },
 ];
 const NAV = PASSENGER_NAV; // fallback
 
@@ -223,21 +233,14 @@ function LeftPanel({
               {n.label}
             </button>
           ))}
-        </div>
-
-        <div className="section-title">Pasager</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:20 }}>
-          {USER_NAV.map(n => (
-            <button
-              key={n.label}
-              className="btn-tab"
-              style={{ justifyContent:"flex-start", flex:"unset", padding:"10px 12px" }}
-              onClick={() => setDrawerOpen(false)}
-            >
-              <i className={`ti ${n.icon}`} style={{ fontSize:17 }} />
-              {n.label}
-            </button>
-          ))}
+          <button
+            className="btn-tab"
+            style={{ justifyContent:"flex-start", flex:"unset", padding:"10px 12px" }}
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} style={{ fontSize:17 }} />
+            Theme
+          </button>
         </div>
 
         {logs.length > 0 && (
@@ -260,17 +263,6 @@ function LeftPanel({
       <div className="card sidebar-left">
         <div className="brand-header">
           <div className="brand-icon"><i className="ti ti-wifi" /></div>
-          <div style={{ flex: 1 }}>
-            <div className="brand-title">AirFlow Nexus</div>
-            <div className="brand-sub">powered by Orange APIs</div>
-          </div>
-          <button
-            className="btn-theme-toggle"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          >
-            <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
-          </button>
         </div>
 
         <div className="section-title">Funcționalități</div>
@@ -285,51 +277,18 @@ function LeftPanel({
               </div>
             </div>
           ))}
-
-          {!isPassenger && (
-            <>
-              <div style={{ marginTop: 12 }}>
-                <div className="section-title">Status API Orange</div>
-              </div>
-              {[
-                { icon:"ti-map-pin", label:"Device Location", val:"342 dispozitive", dot:"green", pulse:true },
-                { icon:"ti-id-badge",label:"Number Verification", val:"12 verificări/oră", dot:"orange", pulse:false },
-                { icon:"ti-bolt",    label:"Quality on Demand", val:"2 sesiuni active", dot:"blue", pulse:false },
-              ].map(a => (
-                <div key={a.label} className="api-card">
-                  <div className="api-card-header"><i className={`ti ${a.icon}`} /> {a.label}</div>
-                  <div className="api-val">{a.val}</div>
-                  <div className="api-status">
-                    <span className={`dot ${a.dot}${a.pulse ? " pulse-green" : ""}`} />
-                    Activ
-                  </div>
-                </div>
-              ))}
-
-              <div style={{ marginTop: 12 }}>
-                <div className="section-title">Operațiuni & Securitate</div>
-              </div>
-              {([
-                { id:"flow-prediction",  icon:"ti-clock-play",           label:"Flow Prediction",      sub:"Estimează ETA cozi" },
-                { id:"boarding-verify",  icon:"ti-shield-check",          label:"Verificare Boarding",  sub:"Prevenție fraudă SIM" },
-                { id:"admin",            icon:"ti-settings-automation",   label:"Control Panel Admin",  sub:"QoD & Gestiune crize" },
-                { id:"announcements",    icon:"ti-megaphone",             label:"Anunțuri Pasageri",    sub:`${announcements.length} alerte active` },
-              ] as {id:Feature;icon:string;label:string;sub:string}[]).map(n => (
-                <div key={n.id} className={`api-card${feature===n.id?" active":""}`} onClick={() => setFeature(n.id)}>
-                  <div className="api-card-header"><i className={`ti ${n.icon}`}/> {n.label}</div>
-                  <div className="api-val">{n.sub}</div>
-                </div>
-              ))}
-            </>
-          )}
+          <div
+            className="api-card"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            style={{ cursor:"pointer" }}
+          >
+            <div className="api-card-header">
+              <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} /> Theme
+            </div>
+            <div className="api-val">{theme === "dark" ? "Dark mode" : "Light mode"}</div>
+          </div>
         </div>
 
-        {!isPassenger && (
-          <div className="alert-box" style={{ marginTop: 12 }}>
-            <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
-            <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
-          </div>
-        )}
       </div>
     </>
   );
@@ -348,18 +307,16 @@ function CenterPanel({
   const isPassenger = role === "passenger";
   return (
     <div className="card main-center">
-      {feature === "weather"       && !isPassenger && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
-      {feature === "route"          && <RouteCenter onLog={onLog} activePerson={activePerson} />}
-      {feature === "heatmap"        && !isPassenger && <HeatmapCenter onLog={onLog} selected={heatmapSelected} setSelected={setHeatmapSelected} />}
-      {feature === "flow-prediction" && !isPassenger && <FlowPredictionCenter onLog={onLog} />}
-      {feature === "video-flow"     && !isPassenger && <TrafficFlowCenter onLog={onLog} />}
-      {feature === "admin"          && !isPassenger && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
-      {feature === "announcements"  && <AnnouncementsCenter announcements={announcements} />}
-      {feature === "my-flight"      && <MyFlightCenter onLog={onLog} myFlight={myFlight} />}
-      {feature === "boarding-verify" && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
-      {feature === "status-api"     && <StatusApiCenter />}
-      {feature === "account"        && <AccountCenter activePerson={activePerson} />}
-      {feature === "settings"       && <SettingsCenter />}
+      {feature === "weather"      && !isPassenger && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
+      {feature === "route"         && <RouteCenter onLog={onLog} activePerson={activePerson} />}
+      {feature === "heatmap"       && !isPassenger && <HeatmapCenter onLog={onLog} selected={heatmapSelected} setSelected={setHeatmapSelected} />}
+      {feature === "video-flow"    && !isPassenger && <TrafficFlowCenter onLog={onLog} />}
+      {feature === "admin"         && !isPassenger && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
+      {feature === "announcements" && <AnnouncementsCenter announcements={announcements} />}
+      {feature === "my-flight"     && <MyFlightCenter onLog={onLog} myFlight={myFlight} />}
+      {feature === "weather-pass"  && <PassengerWeatherCenter myFlight={myFlight} />}
+      {feature === "account"       && <AccountCenter activePerson={activePerson} />}
+      {feature === "settings"      && <SettingsCenter />}
     </div>
   );
 }
@@ -2118,8 +2075,6 @@ function WeatherRight({
 function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [sel, setSel] = useState<string|null>(null);
-  const [verifyRes, setVerifyRes] = useState<{decision:string;simSwapped:boolean}|null>(null);
-  const [loading, setLoading] = useState(false);
 
   // Live flights state
   const [liveFlights, setLiveFlights] = useState<LiveFlight[]>([]);
@@ -2166,17 +2121,6 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const boardingDensity = densityData[1]?.pplDensity ?? 95;
   const securityETA = Math.ceil((securityDensity * 45) / (2 * 60));
   const boardingETA = Math.ceil((boardingDensity * 30) / (3 * 60));
-
-  const verify = async (scenario:"legit"|"fraud") => {
-    setLoading(true);
-    try {
-      const r = await fetch("/api/verify",{ method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ scenario }) });
-      const d = await r.json();
-      setVerifyRes(d);
-      onLog(`Verificare ${scenario} → ${d.decision}`, d.decision==="ALLOW");
-    } catch { onLog("Eroare verificare", false); }
-    finally { setLoading(false); }
-  };
 
   const etaColor = (eta: number) => eta > 20 ? "var(--danger)" : eta > 10 ? "var(--warning)" : "var(--success)";
 
@@ -2267,23 +2211,6 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         </div>
       )}
 
-      <div className="section-title" style={{marginTop:12}}>Verificare identitate</div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        <button onClick={()=>verify("legit")} disabled={loading} style={{padding:"9px",background:"var(--success-bg)",border:"1px solid var(--success)",borderRadius:"var(--radius-md)",color:"var(--success)",cursor:"pointer",fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          <i className={`ti ti-${loading?"loader-2 spin":"user-check"}`}/> Pasager legitim
-        </button>
-        <button onClick={()=>verify("fraud")} disabled={loading} style={{padding:"9px",background:"var(--danger-bg)",border:"1px solid var(--danger)",borderRadius:"var(--radius-md)",color:"var(--danger)",cursor:"pointer",fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          <i className="ti ti-user-x"/> Simulează SIM Swap
-        </button>
-      </div>
-      {verifyRes && (
-        <div className="fade-in" style={{marginTop:10,padding:10,borderRadius:"var(--radius-md)",border:`1px solid ${verifyRes.decision==="ALLOW"?"var(--success)":"var(--danger)"}`,background:`${verifyRes.decision==="ALLOW"?"var(--success-bg)":"var(--danger-bg)"}`}}>
-          <div style={{fontWeight:600,fontSize:13,color:verifyRes.decision==="ALLOW"?"var(--success)":"var(--danger)",display:"flex",alignItems:"center",gap:8}}>
-            <i className={`ti ti-${verifyRes.decision==="ALLOW"?"circle-check":"shield-x"}`}/>
-            {verifyRes.decision==="ALLOW"?"ALLOW — Verificat":"BLOCK — SIM Swap detectat"}
-          </div>
-        </div>
-      )}
     </>
   );
 }
@@ -2975,6 +2902,78 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
   );
 }
 
+/* ─── PassengerWeatherCenter ─── */
+function PassengerWeatherCenter({ myFlight }: { myFlight: MyFlightState }) {
+  const { detail } = myFlight;
+  const depWx = useAirportWeather(detail?.departure.iata ?? "");
+  const arrWx = useAirportWeather(detail?.arrival.iata ?? "");
+
+  if (!detail) {
+    return (
+      <div style={{ padding:20, height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"var(--text-muted)", gap:12 }}>
+        <i className="ti ti-cloud-off" style={{ fontSize:52, opacity:0.15 }} />
+        <div style={{ fontSize:14 }}>No flight loaded</div>
+        <div style={{ fontSize:12, opacity:0.6 }}>Go to My Flight first and search your flight code</div>
+      </div>
+    );
+  }
+
+  const airports = [
+    { iata: detail.departure.iata, airport: detail.departure.airport, wx: depWx, label: "Departure", icon: "ti-plane-departure", color: "var(--success)" },
+    { iata: detail.arrival.iata,   airport: detail.arrival.airport,   wx: arrWx, label: "Arrival",   icon: "ti-plane-arrival",   color: "var(--info)"    },
+  ];
+
+  return (
+    <div style={{ padding:20, overflowY:"auto" }}>
+      <h2 style={{ marginBottom:20 }}><i className="ti ti-cloud-sun"/> Weather — {detail.departure.iata} → {detail.arrival.iata}</h2>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+        {airports.map(({ iata, airport, wx, label, icon, color }) => (
+          <div key={iata} style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:14, padding:"20px 18px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+              <i className={`ti ${icon}`} style={{ color, fontSize:18 }} />
+              <div>
+                <div style={{ fontSize:11, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:1 }}>{label}</div>
+                <div style={{ fontSize:22, fontWeight:900, lineHeight:1 }}>{iata}</div>
+                <div style={{ fontSize:11, color:"var(--text-muted)" }}>{airport}</div>
+              </div>
+            </div>
+            {wx ? (
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={{ textAlign:"center", padding:"10px 0" }}>
+                  <div style={{ fontSize:52 }}>{wx.emoji}</div>
+                  <div style={{ fontSize:36, fontWeight:800 }}>{wx.tempC}°C</div>
+                  <div style={{ fontSize:13, color:"var(--text-muted)" }}>Feels like {wx.apparentC}°C</div>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  {([
+                    ["ti-wind",       "Wind",     `${wx.windKt} kt`  ],
+                    ["ti-droplet",    "Humidity", `${wx.humidity}%`  ],
+                    ["ti-cloud-rain", "Precip",   `${wx.precip} mm`  ],
+                  ] as [string,string,string][]).map(([ico, lbl, val]) => (
+                    <div key={lbl} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 10px", background:"rgba(255,255,255,0.03)", borderRadius:8 }}>
+                      <span style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--text-muted)" }}>
+                        <i className={`ti ${ico}`} />{lbl}
+                      </span>
+                      <span style={{ fontWeight:700, fontSize:13 }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:120, color:"var(--text-muted)", fontSize:13 }}>
+                <i className="ti ti-loader-2 spin" style={{ marginRight:8 }} /> Loading…
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center", marginTop:16 }}>
+        Open-Meteo · updated every 15 min
+      </div>
+    </div>
+  );
+}
+
 /* ─── MyFlightRight ─── */
 function MyFlightRight({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void; myFlight: MyFlightState }) {
   const { input, setInput, loading, detail, error, search } = myFlight;
@@ -3218,7 +3217,7 @@ function LoginModal({ onLogin }: { onLogin: (a: AuthState) => void }) {
         <div className="login-brand">
           <div className="brand-icon"><i className="ti ti-wifi" /></div>
           <div>
-            <div className="brand-title">AirFlow Nexus</div>
+            <div className="brand-title">AirHack</div>
             <div className="brand-sub">powered by Orange APIs</div>
           </div>
         </div>
@@ -3595,59 +3594,185 @@ function MyFlightModal({ onClose }: { onClose: () => void }) {
 }
 
 /* ═══════════════════════════ TOP BAR ═══════════════════════════ */
+/* ═══════════════════════════ NOTIF PANEL ═══════════════════════════ */
+function NotifPanel({
+  open, onClose, role, announcements, setAnnouncements,
+}: {
+  open: boolean;
+  onClose: () => void;
+  role: "admin" | "passenger";
+  announcements: Announcement[];
+  setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
+}) {
+  const [inputText, setInputText] = useState("");
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+    setAnnouncements(prev => [
+      { id: Date.now(), type: "warning" as const, text: inputText, time: new Date().toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit" }) },
+      ...prev,
+    ]);
+    setInputText("");
+  };
+
+  return (
+    <>
+      {open && (
+        <div
+          onClick={onClose}
+          style={{ position:"fixed", inset:0, zIndex:300, background:"rgba(0,0,0,0.45)", backdropFilter:"blur(2px)" }}
+        />
+      )}
+      <div style={{
+        position:"fixed", top:0, right:0, bottom:0,
+        width:"min(380px, 100vw)",
+        zIndex:301,
+        background:"var(--bg-card)",
+        borderLeft:"1px solid var(--border-color)",
+        transform: open ? "translateX(0)" : "translateX(100%)",
+        transition:"transform 0.28s cubic-bezier(.4,0,.2,1)",
+        display:"flex", flexDirection:"column",
+        overflow:"hidden",
+      }}>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"18px 20px", borderBottom:"1px solid var(--border-color)", flexShrink:0 }}>
+          <div style={{ fontSize:15, fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+            <i className="ti ti-bell" style={{ color:"var(--brand)" }} />
+            Notificări
+            {announcements.length > 0 && (
+              <span style={{ fontSize:11, background:"var(--danger)", color:"#fff", borderRadius:10, padding:"1px 7px", fontWeight:700 }}>
+                {announcements.length}
+              </span>
+            )}
+          </div>
+          <button className="btn-theme-toggle" onClick={onClose} title="Închide">
+            <i className="ti ti-x" />
+          </button>
+        </div>
+
+        <div style={{ flex:1, overflowY:"auto", padding:16, display:"flex", flexDirection:"column", gap:12 }}>
+          {/* Admin: compose form */}
+          {role === "admin" && (
+            <div style={{ padding:14, background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+              <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:10, fontWeight:600, textTransform:"uppercase", letterSpacing:1, display:"flex", alignItems:"center", gap:6 }}>
+                <i className="ti ti-megaphone" style={{ color:"var(--brand)" }} />Emite anunț
+              </div>
+              <form onSubmit={handleSend} style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <textarea
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  placeholder="Scrie un anunț pentru pasageri..."
+                  style={{
+                    width:"100%", height:72,
+                    background:"var(--bg-hover)",
+                    border:"1px solid var(--border-color)",
+                    borderRadius:"var(--radius-md)",
+                    color:"var(--text-main)",
+                    padding:"8px 10px",
+                    fontSize:13,
+                    resize:"none",
+                    boxSizing:"border-box",
+                    fontFamily:"inherit",
+                  }}
+                />
+                <button type="submit" className="btn-primary" style={{ alignSelf:"flex-end", padding:"7px 16px", display:"flex", alignItems:"center", gap:6 }}>
+                  <i className="ti ti-send" /> Trimite
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Announcement list */}
+          <div style={{ fontSize:11, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:1 }}>
+            {announcements.length === 0 ? "Nicio notificare" : `${announcements.length} anunț${announcements.length !== 1 ? "uri" : ""} activ${announcements.length !== 1 ? "e" : ""}`}
+          </div>
+          {announcements.length === 0 ? (
+            <div style={{ textAlign:"center", padding:"40px 0", color:"var(--text-muted)" }}>
+              <i className="ti ti-bell-off" style={{ fontSize:42, opacity:0.15, display:"block", marginBottom:10 }} />
+              <div style={{ fontSize:13 }}>Nicio notificare activă</div>
+            </div>
+          ) : (
+            announcements.map(a => (
+              <div key={a.id} style={{
+                padding:"12px 14px",
+                background:"var(--bg-body)",
+                borderRadius:"var(--radius-md)",
+                border:"1px solid var(--border-color)",
+                borderLeft:`4px solid var(--${a.type})`,
+              }}>
+                <div style={{ fontSize:13, fontWeight:500 }}>{a.text}</div>
+                <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:5 }}>{a.time}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════ TOP BAR ═══════════════════════════ */
 function TopBar({
-  auth, theme, setTheme, drawerOpen, setDrawerOpen, onLogout,
+  auth, drawerOpen, setDrawerOpen, notifOpen, setNotifOpen, unreadCount, onLogout,
 }: {
   auth: AuthState;
-  theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
   drawerOpen: boolean; setDrawerOpen: (v: boolean) => void;
+  notifOpen: boolean; setNotifOpen: (v: boolean) => void;
+  unreadCount: number;
   onLogout: () => void;
 }) {
   return (
-    <>
-      <div className="top-bar">
-        <button
-          className="hamburger-float top-bar-hamburger"
-          onClick={() => setDrawerOpen(!drawerOpen)}
-          title="Meniu"
-        >
-          <i className="ti ti-menu-2" />
-        </button>
-
-        <div className="top-bar-brand">
-          <div className="brand-icon" style={{ width:28, height:28, fontSize:14 }}>
-            <i className="ti ti-wifi" />
-          </div>
-          <span className="brand-title" style={{ fontSize:14 }}>AirFlow Nexus</span>
-        </div>
-
-        <div style={{ flex:1 }} />
-
-        <span className={`role-badge ${auth.role}`}>
-          {auth.role === "admin" ? (
-            <><i className="ti ti-shield-half" /> Admin</>
-          ) : (
-            <><i className="ti ti-user" /> Pasager</>
-          )}
-        </span>
-
-        <span style={{ fontSize:12, color:"var(--text-muted)", maxWidth:120, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-          {auth.displayName}
-        </span>
-
-        <button
-          className="btn-theme-toggle"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          title="Schimbă tema"
-        >
-          <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
-        </button>
-
-        <button className="btn-theme-toggle" onClick={onLogout} title="Deconectare">
-          <i className="ti ti-logout" />
-        </button>
+    <div className="top-bar">
+      {/* Left: hamburger + wifi icon */}
+      <button
+        className="hamburger-float top-bar-hamburger"
+        onClick={() => setDrawerOpen(!drawerOpen)}
+        title="Meniu"
+      >
+        <i className="ti ti-menu-2" />
+      </button>
+      <div className="brand-icon" style={{ width:28, height:28, fontSize:14 }}>
+        <i className="ti ti-wifi" />
       </div>
-    </>
+
+      <div style={{ flex:1 }} />
+
+      {/* Right: role · name · bell · logout */}
+      <span className={`role-badge ${auth.role}`}>
+        {auth.role === "admin" ? (
+          <><i className="ti ti-shield-half" /> Admin</>
+        ) : (
+          <><i className="ti ti-user" /> Pasager</>
+        )}
+      </span>
+      <span style={{ fontSize:12, color:"var(--text-muted)", maxWidth:120, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+        {auth.displayName}
+      </span>
+      <button
+        className="btn-theme-toggle"
+        onClick={() => { setNotifOpen(!notifOpen); }}
+        title="Notificări"
+        style={{ position:"relative" }}
+      >
+        <i className="ti ti-bell" />
+        {unreadCount > 0 && (
+          <span style={{
+            position:"absolute", top:2, right:2,
+            width:16, height:16, borderRadius:"50%",
+            background:"var(--danger)", color:"#fff",
+            fontSize:9, fontWeight:700,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            lineHeight:1,
+          }}>
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </button>
+      <button className="btn-theme-toggle" onClick={onLogout} title="Deconectare">
+        <i className="ti ti-logout" />
+      </button>
+    </div>
   );
 }
 
@@ -3734,67 +3859,6 @@ function BottomBar({ activePerson, setActivePerson }: {
   );
 }
 
-/* ═══════════════════════════ NEW FEATURE COMPONENTS ═══════════════════════════ */
-
-function FlowPredictionCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const [securityLanes, setSecurityLanes] = useState(2);
-  const securityETA = Math.ceil((185 * 45) / securityLanes / 60);
-  return (
-    <div style={{ padding:20 }}>
-      <h2><i className="ti ti-trending-up"/> Predictor Fluxuri T4</h2>
-      <div style={{ padding:15, background:"rgba(255,255,255,0.03)", borderRadius:8, marginTop:20 }}>
-        <h3>Filtru Securitate (Masa Echipei)</h3>
-        <div style={{ fontSize:28, fontWeight:"bold", margin:"10px 0", color:securityETA>15?"var(--warning)":"var(--success)" }}>
-          {securityETA} min <span style={{ fontSize:14, fontWeight:"normal", color:"var(--text-muted)" }}>așteptare estimată</span>
-        </div>
-        <p>Pasageri detectați de Orange API: <strong>185</strong></p>
-        <label style={{ fontSize:12, color:"var(--text-muted)", display:"block", marginBottom:5 }}>Linii de filtrare deschise:</label>
-        <div style={{ display:"flex", gap:8 }}>
-          {[1,2,3,4].map(n => (
-            <button key={n} onClick={() => { setSecurityLanes(n); onLog(`Filtre securitate: ${n} linii active`); }}
-              style={{ padding:"6px 12px", background:securityLanes===n?"var(--brand)":"rgba(255,255,255,0.1)", border:"none", borderRadius:4, cursor:"pointer", color:"#fff" }}>
-              {n}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BoardingVerifyCenter({ activePerson, onLog }: { activePerson:string; onLog:(m:string,ok?:boolean)=>void }) {
-  const [status, setStatus] = useState<"idle"|"verified"|"flagged">("idle");
-  const run = () => {
-    setStatus("idle");
-    onLog("Inițiere protocol securitate...");
-    setTimeout(() => {
-      if (activePerson === "dorel") { setStatus("flagged"); onLog("ALERTĂ: SIM Swap detectat pentru Dorel!", false); }
-      else { setStatus("verified"); onLog("Identitate validată. Număr confirmat."); }
-    }, 1000);
-  };
-  return (
-    <div style={{ padding:20 }}>
-      <h2><i className="ti ti-shield-lock"/> Verificare Boarding</h2>
-      <div style={{ padding:20, background:"rgba(255,255,255,0.02)", borderRadius:8, marginTop:20 }}>
-        <button onClick={run} style={{ padding:"10px 20px", background:"var(--brand)", border:"none", borderRadius:4, fontWeight:"bold", cursor:"pointer", color:"#fff" }}>
-          Verifică Pasagerul Curent ({activePerson})
-        </button>
-        {status==="verified" && (
-          <div style={{ background:"rgba(40,167,69,0.1)", border:"1px solid var(--success)", padding:15, borderRadius:6, marginTop:20 }}>
-            <div style={{ color:"var(--success)", fontWeight:"bold" }}><i className="ti ti-circle-check"/> VALIDAT DIGITAL</div>
-            <p style={{ fontSize:13 }}>Nu s-au detectat modificări recente ale cartelei SIM.</p>
-          </div>
-        )}
-        {status==="flagged" && (
-          <div style={{ background:"rgba(220,53,69,0.1)", border:"1px solid var(--danger)", padding:15, borderRadius:6, marginTop:20 }}>
-            <div style={{ color:"var(--danger)", fontWeight:"bold" }}><i className="ti ti-alert-triangle"/> ACCES BLOCAT</div>
-            <p style={{ fontSize:13 }}>SIM_SWAP suspect detectat. Interdicție îmbarcare.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function AdminCenter({ onLog, setAnnouncements }: { onLog:(m:string,ok?:boolean)=>void; setAnnouncements:React.Dispatch<React.SetStateAction<Announcement[]>> }) {
   const [inputText, setInputText] = useState("");
@@ -3839,34 +3903,6 @@ function AnnouncementsCenter({ announcements }: { announcements:Announcement[] }
   );
 }
 
-function StatusApiCenter() {
-  const apis = [
-    { name:"Device Location",      endpoint:"camara/location-retrieval/v0.3",       status:"UP", latency:"142ms", calls:1240 },
-    { name:"Population Density",   endpoint:"camara/population-density-data/v0.2",  status:"UP", latency:"89ms",  calls:432  },
-    { name:"Number Verification",  endpoint:"camara/number-verification/v1",         status:"UP", latency:"201ms", calls:87   },
-    { name:"SIM Swap",             endpoint:"camara/sim-swap/v1",                    status:"UP", latency:"178ms", calls:23   },
-  ];
-  return (
-    <div style={{ padding:20 }}>
-      <h2><i className="ti ti-server"/> Status API Orange</h2>
-      <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:20 }}>
-        {apis.map(a => (
-          <div key={a.name} style={{ padding:"12px 16px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:12 }}>
-            <span style={{ width:8, height:8, borderRadius:"50%", background:"var(--success)", flexShrink:0 }}/>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:600, fontSize:13 }}>{a.name}</div>
-              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{a.endpoint}</div>
-            </div>
-            <div style={{ textAlign:"right", fontSize:12 }}>
-              <div style={{ color:"var(--success)", fontWeight:600 }}>{a.status}</div>
-              <div style={{ color:"var(--text-muted)" }}>{a.latency} · {a.calls.toLocaleString()} req</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 const PERSON_PROFILES: Record<string, { role:string; flight:string; gate:string; boarding:string }> = {
   you:    { role:"Admin Aeroport", flight:"—",       gate:"—",  boarding:"—"     },
@@ -3907,21 +3943,52 @@ function AccountCenter({ activePerson }: { activePerson:string }) {
 }
 
 function SettingsCenter() {
+  const apis = [
+    { name:"Device Location",    endpoint:"camara/location-retrieval/v0.3",      status:"UP", latency:"142ms", calls:1240 },
+    { name:"Population Density", endpoint:"camara/population-density-data/v0.2", status:"UP", latency:"89ms",  calls:432  },
+    { name:"Number Verification",endpoint:"camara/number-verification/v1",        status:"UP", latency:"201ms", calls:87   },
+  ];
   return (
-    <div style={{ padding:20 }}>
-      <h2><i className="ti ti-settings"/> Setări</h2>
-      <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:20 }}>
-        {([
-          ["Interval refresh date", "30 secunde"],
-          ["Mod fixture (mock data)", "Activ"],
-          ["Limbă interfață", "Română"],
-          ["Versiune aplicație", "1.0.0 · AirHack 2026"],
-        ] as [string,string][]).map(([l,v]) => (
-          <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
-            <span style={{ color:"var(--text-muted)", fontSize:13 }}>{l}</span>
-            <span style={{ fontWeight:600, fontSize:13 }}>{v}</span>
-          </div>
-        ))}
+    <div style={{ padding:20, overflowY:"auto" }}>
+      <h2 style={{ marginBottom:20 }}><i className="ti ti-settings"/> Settings</h2>
+
+      {/* About */}
+      <div style={{ marginBottom:24 }}>
+        <div style={{ fontSize:11, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>About</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {([
+            ["Application",        "AirHack 2026"            ],
+            ["Version",            "1.0.0"                   ],
+            ["Data mode",          "Fixture (mock data active)"],
+            ["Interface language", "Romanian"                ],
+            ["Refresh interval",   "30 seconds"              ],
+          ] as [string,string][]).map(([l,v]) => (
+            <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+              <span style={{ color:"var(--text-muted)", fontSize:13 }}>{l}</span>
+              <span style={{ fontWeight:600, fontSize:13 }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* API Status */}
+      <div>
+        <div style={{ fontSize:11, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>API Status · Orange CAMARA</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {apis.map(a => (
+            <div key={a.name} style={{ padding:"12px 16px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:12 }}>
+              <span style={{ width:8, height:8, borderRadius:"50%", background:"var(--success)", flexShrink:0 }}/>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:600, fontSize:13 }}>{a.name}</div>
+                <div style={{ fontSize:11, color:"var(--text-muted)" }}>{a.endpoint}</div>
+              </div>
+              <div style={{ textAlign:"right", fontSize:12 }}>
+                <div style={{ color:"var(--success)", fontWeight:600 }}>{a.status}</div>
+                <div style={{ color:"var(--text-muted)" }}>{a.latency} · {a.calls.toLocaleString()} req</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

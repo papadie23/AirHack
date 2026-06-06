@@ -5,8 +5,6 @@ export const ORANGE_ENDPOINTS = {
   TOKEN: "https://api.orange.com/openidconnect/playground/v1.0/token",
 
   // Identity pillar
-  SIM_SWAP: "https://api.orange.com/camara/playground/api/sim-swap/v1/check",
-
   // TODO: verify exact path/version against Orange docs — number-verification may differ
   NUMBER_VERIF:
     "https://api.orange.com/camara/playground/api/number-verification/v1/verify",
@@ -17,8 +15,6 @@ export const ORANGE_ENDPOINTS = {
 
   GEOFENCING:
     "https://api.orange.com/camara/playground/api/geofencing/v0.3/subscriptions",
-
-  QOD: "https://api.orange.com/camara/playground/api/quality-on-demand/v0.11/sessions",
 
   // Admin (provision test numbers, list provisioned devices)
   ADMIN: "https://api.orange.com/camara/playground/admin/v1.0/action",
