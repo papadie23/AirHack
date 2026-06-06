@@ -130,9 +130,10 @@ export default function Dashboard() {
 
 /* ═══════════════════════════ LEFT PANEL ═══════════════════════════ */
 const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
-  { id: "weather", icon: "ti-cloud-storm", label: "Vreme / METAR",    sub: "LRIA · Open-Meteo · NOAA" },
-  { id: "route",   icon: "ti-route",       label: "My Route",         sub: "Device Location · Orange"  },
-  { id: "heatmap", icon: "ti-map-2",       label: "Heatmap Terminal", sub: "Aglomerație zone"          },
+  { id: "weather",   icon: "ti-cloud-storm",    label: "Vreme / METAR",    sub: "LRIA · Open-Meteo · NOAA"  },
+  { id: "route",     icon: "ti-route",           label: "My Route",         sub: "Device Location · Orange"  },
+  { id: "heatmap",   icon: "ti-map-2",           label: "Heatmap Terminal", sub: "Aglomerație zone"          },
+  { id: "my-flight", icon: "ti-plane-departure", label: "Zborul meu",       sub: "Traseu live · AirLabs"     },
 ];
 
 const USER_NAV = [
@@ -155,7 +156,7 @@ function LeftPanel({
   role: "admin" | "passenger" | null;
 }) {
   const isPassenger = role === "passenger";
-  const visibleNav = isPassenger ? NAV.filter(n => n.id === "route") : NAV;
+  const visibleNav = isPassenger ? NAV.filter(n => n.id === "route" || n.id === "my-flight") : NAV;
 
   return (
     <>
@@ -285,22 +286,6 @@ function LeftPanel({
                   </div>
                 </div>
               ))}
-
-              {/* ── Zborul meu card — sub Device Location ── */}
-              <div
-                className={`api-card${feature === "my-flight" ? " active" : ""}`}
-                onClick={() => setFeature("my-flight")}
-                style={{ cursor:"pointer" }}
-              >
-                <div className="api-card-header">
-                  <i className="ti ti-plane-departure" /> Zborul meu
-                </div>
-                <div className="api-val">Traseu live · AirLabs</div>
-                <div className="api-status">
-                  <span className="dot green pulse-green" />
-                  {feature === "my-flight" ? "Activ acum" : "Disponibil"}
-                </div>
-              </div>
 
               <div style={{ marginTop: 12 }}>
                 <div className="section-title">Operațiuni & Securitate</div>
