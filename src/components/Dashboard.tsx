@@ -3,7 +3,7 @@ import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-tran
 import type { WeatherProvider } from "../lib/weather";
 import { findClient, ADMIN_USERNAME, ADMIN_PASSWORD } from "../lib/mock-auth";
 
-type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings";
+type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings" | "my-flight";
 
 export interface Announcement {
   id: number; type: "info" | "warning" | "danger"; text: string; time: string;
@@ -286,6 +286,22 @@ function LeftPanel({
                 </div>
               ))}
 
+              {/* ── Zborul meu card — sub Device Location ── */}
+              <div
+                className={`api-card${feature === "my-flight" ? " active" : ""}`}
+                onClick={() => setFeature("my-flight")}
+                style={{ cursor:"pointer" }}
+              >
+                <div className="api-card-header">
+                  <i className="ti ti-plane-departure" /> Zborul meu
+                </div>
+                <div className="api-val">Traseu live · AirLabs</div>
+                <div className="api-status">
+                  <span className="dot green pulse-green" />
+                  {feature === "my-flight" ? "Activ acum" : "Disponibil"}
+                </div>
+              </div>
+
               <div style={{ marginTop: 12 }}>
                 <div className="section-title">Operațiuni & Securitate</div>
               </div>
@@ -337,6 +353,7 @@ function CenterPanel({
       {feature === "status-api"       && <StatusApiCenter />}
       {feature === "account"          && <AccountCenter activePerson={activePerson} />}
       {feature === "settings"         && <SettingsCenter />}
+      {feature === "my-flight"        && <MyFlightCenter onLog={onLog} />}
     </div>
   );
 }
@@ -1259,6 +1276,7 @@ function RightPanel({
       {feature === "weather" && <WeatherRight weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />}
       {feature === "route"   && <RouteRight onLog={onLog} />}
       {feature === "heatmap" && <HeatmapRight />}
+      {feature === "my-flight" && <MyFlightRight onLog={onLog} />}
     </div>
   );
 }
@@ -1642,6 +1660,483 @@ function HeatmapRight() {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/* ═══════════════════════════ MY FLIGHT — shared state hook ═══════════════════════════ */
+// Shared state între MyFlightCenter și MyFlightRight prin localStorage
+const MF_KEY = "airhack_my_flight";
+
+function useMyFlightState() {
+  const [input, setInput]     = useState(() => {
+    try { return localStorage.getItem(MF_KEY) ?? ""; } catch { return ""; }
+  });
+  const [loading, setLoading] = useState(false);
+  const [detail, setDetail]   = useState<FlightDetail | null>(null);
+  const [error, setError]     = useState("");
+
+  const search = async (code: string) => {
+    const c = code.trim().toUpperCase().replace(/\s/g, "");
+    if (!c) return;
+    setLoading(true); setError(""); setDetail(null);
+    try {
+      const r = await fetch(`/api/flight-details?flight=${encodeURIComponent(c)}`);
+      const d = await r.json();
+      if (d.error) { setError(d.error); }
+      else {
+        setDetail(d);
+        try { localStorage.setItem(MF_KEY, c); } catch {}
+      }
+    } catch { setError("Eroare de rețea. Încearcă din nou."); }
+    finally   { setLoading(false); }
+  };
+
+  // Auto-load din localStorage la mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MF_KEY);
+      if (saved) search(saved);
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return { input, setInput, loading, detail, error, search };
+}
+
+/* ─── Airport coordinates for route map (lat/lon) ─── */
+const AIRPORT_COORDS: Record<string, { lat: number; lon: number; label: string }> = {
+  IAS: { lat: 47.178, lon: 27.621, label: "Iași" },
+  OTP: { lat: 44.572, lon: 26.102, label: "București" },
+  BCN: { lat: 41.297, lon: 2.078,  label: "Barcelona" },
+  DUB: { lat: 53.421, lon: -6.270, label: "Dublin" },
+  VIE: { lat: 48.110, lon: 16.570, label: "Viena" },
+  LTN: { lat: 51.874, lon: -0.368, label: "Londra" },
+  MXP: { lat: 45.630, lon: 8.728,  label: "Milano" },
+  BGY: { lat: 45.669, lon: 9.704,  label: "Milano BGY" },
+  CDG: { lat: 49.009, lon: 2.548,  label: "Paris" },
+  FRA: { lat: 50.037, lon: 8.562,  label: "Frankfurt" },
+  MUC: { lat: 48.354, lon: 11.786, label: "München" },
+  AMS: { lat: 52.310, lon: 4.768,  label: "Amsterdam" },
+  MAD: { lat: 40.472, lon: -3.561, label: "Madrid" },
+  FCO: { lat: 41.800, lon: 12.239, label: "Roma" },
+  ATH: { lat: 37.936, lon: 23.944, label: "Atena" },
+  SKG: { lat: 40.520, lon: 22.971, label: "Salonic" },
+  RHO: { lat: 36.405, lon: 28.086, label: "Rodos" },
+  LCA: { lat: 34.875, lon: 33.625, label: "Larnaca" },
+  FMM: { lat: 47.988, lon: 10.239, label: "Memmingen" },
+  IST: { lat: 41.275, lon: 28.752, label: "Istanbul" },
+  TLV: { lat: 32.011, lon: 34.887, label: "Tel Aviv" },
+  WAW: { lat: 52.166, lon: 20.967, label: "Varșovia" },
+  BUD: { lat: 47.437, lon: 19.261, label: "Budapesta" },
+  PRG: { lat: 50.100, lon: 14.260, label: "Praga" },
+  ZRH: { lat: 47.458, lon: 8.548,  label: "Zürich" },
+  BRU: { lat: 50.901, lon: 4.484,  label: "Bruxelles" },
+  LIS: { lat: 38.774, lon: -9.135, label: "Lisabona" },
+  CLJ: { lat: 46.785, lon: 23.686, label: "Cluj" },
+  TSR: { lat: 45.809, lon: 21.338, label: "Timișoara" },
+};
+
+/* ─── SVG Route Map ─── */
+function RouteMapSVG({ dep, arr, progress }: {
+  dep: string; arr: string; progress: number | null;
+}) {
+  const from = AIRPORT_COORDS[dep];
+  const to   = AIRPORT_COORDS[arr];
+  if (!from || !to) return (
+    <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)", fontSize:12 }}>
+      <i className="ti ti-map-off" style={{ fontSize:28, display:"block", marginBottom:8, opacity:0.4 }} />
+      Coordonate indisponibile pentru {dep} → {arr}
+    </div>
+  );
+
+  // Project lat/lon to SVG viewport (simple equirectangular)
+  const W = 440, H = 200, PAD = 32;
+
+  // Bounding box with padding
+  const minLon = Math.min(from.lon, to.lon);
+  const maxLon = Math.max(from.lon, to.lon);
+  const minLat = Math.min(from.lat, to.lat);
+  const maxLat = Math.max(from.lat, to.lat);
+  const spanLon = Math.max(maxLon - minLon, 2);
+  const spanLat = Math.max(maxLat - minLat, 2);
+
+  const project = (lat: number, lon: number) => ({
+    x: PAD + ((lon - minLon) / spanLon) * (W - 2 * PAD),
+    y: (H - PAD) - ((lat - minLat) / spanLat) * (H - 2 * PAD),
+  });
+
+  const pDep = project(from.lat, from.lon);
+  const pArr = project(to.lat, to.lon);
+
+  // Arc midpoint elevated (great circle approximation)
+  const mx = (pDep.x + pArr.x) / 2;
+  const my = (pDep.y + pArr.y) / 2 - Math.hypot(pArr.x - pDep.x, pArr.y - pDep.y) * 0.22;
+
+  const pathD = `M ${pDep.x} ${pDep.y} Q ${mx} ${my} ${pArr.x} ${pArr.y}`;
+
+  // Plane position along the quadratic bezier curve
+  let planeX = mx, planeY = my, planeAngle = 0;
+  if (progress !== null) {
+    const t = progress / 100;
+    const bx = (1-t)*(1-t)*pDep.x + 2*(1-t)*t*mx + t*t*pArr.x;
+    const by = (1-t)*(1-t)*pDep.y + 2*(1-t)*t*my + t*t*pArr.y;
+    const dt = 0.01;
+    const t2 = Math.min(t + dt, 1);
+    const bx2 = (1-t2)*(1-t2)*pDep.x + 2*(1-t2)*t2*mx + t2*t2*pArr.x;
+    const by2 = (1-t2)*(1-t2)*pDep.y + 2*(1-t2)*t2*my + t2*t2*pArr.y;
+    planeX = bx; planeY = by;
+    planeAngle = Math.atan2(by2 - by, bx2 - bx) * (180 / Math.PI);
+  }
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:"1px solid var(--border-color)" }}>
+      {/* Grid lines */}
+      {[0.25, 0.5, 0.75].map(f => (
+        <line key={f}
+          x1={PAD + f*(W-2*PAD)} y1={PAD/2} x2={PAD + f*(W-2*PAD)} y2={H - PAD/2}
+          stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4"
+        />
+      ))}
+
+      {/* Dashed background path */}
+      <path d={pathD} fill="none" stroke="var(--border-color)" strokeWidth="1.5" strokeDasharray="6,4" />
+
+      {/* Filled progress path */}
+      {progress !== null && progress > 0 && (
+        <path d={pathD} fill="none" stroke="var(--brand)" strokeWidth="2.5"
+          strokeDasharray={`${progress * 4} 9999`} strokeLinecap="round" opacity="0.9"
+        />
+      )}
+
+      {/* DEP dot */}
+      <circle cx={pDep.x} cy={pDep.y} r="6" fill="var(--success)" opacity="0.9" />
+      <circle cx={pDep.x} cy={pDep.y} r="3" fill="#fff" />
+      <text x={pDep.x} y={pDep.y - 10} textAnchor="middle" fontSize="10" fill="var(--success)" fontWeight="700">{dep}</text>
+      <text x={pDep.x} y={pDep.y + 18} textAnchor="middle" fontSize="9" fill="var(--text-muted)">{from.label}</text>
+
+      {/* ARR dot */}
+      <circle cx={pArr.x} cy={pArr.y} r="6" fill="var(--info)" opacity="0.9" />
+      <circle cx={pArr.x} cy={pArr.y} r="3" fill="#fff" />
+      <text x={pArr.x} y={pArr.y - 10} textAnchor="middle" fontSize="10" fill="var(--info)" fontWeight="700">{arr}</text>
+      <text x={pArr.x} y={pArr.y + 18} textAnchor="middle" fontSize="9" fill="var(--text-muted)">{to.label}</text>
+
+      {/* Plane icon (triangle) */}
+      {progress !== null && (
+        <g transform={`translate(${planeX},${planeY}) rotate(${planeAngle})`}>
+          <polygon points="-8,5 8,0 -8,-5" fill="var(--brand)" opacity="0.95" />
+          <circle cx="0" cy="0" r="10" fill="var(--brand)" opacity="0.15" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+/* ─── MyFlightCenter ─── */
+function MyFlightCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+  const { input, setInput, loading, detail, error, search } = useMyFlightState();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    search(input);
+  };
+
+  const status = detail ? (STATUS_META[detail.status] ?? { label: detail.status, color: "var(--text-muted)", icon: "ti-question-mark" }) : null;
+
+  useEffect(() => {
+    if (detail) onLog(`Zborul meu: ${detail.flight} ${detail.departure.iata}→${detail.arrival.iata} · ${status?.label}`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail]);
+
+  return (
+    <div style={{ padding:24, height:"100%", display:"flex", flexDirection:"column", gap:0, overflowY:"auto" }}>
+      {/* Header */}
+      <div className="map-header" style={{ marginBottom:16 }}>
+        <div>
+          <div className="map-title"><i className="ti ti-plane-departure" style={{ marginRight:8 }} />Zborul meu</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
+            Traseu live · AirLabs · {detail ? `${detail.departure.iata} → ${detail.arrival.iata}` : "Introdu codul IATA"}
+          </div>
+        </div>
+        {detail && status && (
+          <div className="badge" style={{ background:`${status.color}22`, color:status.color, border:`1px solid ${status.color}44`, fontSize:12, fontWeight:700, padding:"5px 12px" }}>
+            <i className={`ti ${status.icon}`} style={{ marginRight:4 }} />{status.label}
+          </div>
+        )}
+      </div>
+
+      {/* Search */}
+      <form onSubmit={handleSubmit} style={{ display:"flex", gap:8, marginBottom:20, flexShrink:0 }}>
+        <input
+          type="text"
+          className="phone-input"
+          placeholder="Cod IATA zbor — ex: LH6381, W43653, RO708"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          style={{ flex:1, textTransform:"uppercase" }}
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          className="btn-primary"
+          style={{ padding:"9px 20px", display:"flex", alignItems:"center", gap:6 }}
+        >
+          <i className={`ti ti-${loading ? "loader-2 spin" : "search"}`} />
+          {loading ? "..." : "Caută"}
+        </button>
+      </form>
+
+      {/* Error */}
+      {error && (
+        <div style={{ padding:"10px 14px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)", border:"1px solid var(--danger)", color:"var(--danger)", fontSize:13, marginBottom:16, display:"flex", alignItems:"center", gap:8 }}>
+          <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+
+      {/* Map */}
+      {detail ? (
+        <>
+          {/* Progress bar zbor activ */}
+          {detail.status === "active" && detail.progressPct !== null && (
+            <div style={{ marginBottom:14, padding:"12px 16px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-muted)", marginBottom:6 }}>
+                <span style={{ fontWeight:600, color:"var(--success)" }}>
+                  <i className="ti ti-plane-departure" /> {detail.departure.iata} · {detail.departure.actual !== "—" ? detail.departure.actual : detail.departure.scheduled}
+                </span>
+                <span style={{ color:"var(--brand)", fontWeight:700 }}>
+                  <i className="ti ti-clock" /> {detail.remainingMin} min rămași
+                </span>
+                <span style={{ fontWeight:600, color:"var(--info)" }}>
+                  <i className="ti ti-plane-arrival" /> {detail.arrival.iata} · {detail.arrival.estimated !== "—" ? detail.arrival.estimated : detail.arrival.scheduled}
+                </span>
+              </div>
+              <div style={{ height:8, background:"var(--bg-hover)", borderRadius:4, overflow:"hidden" }}>
+                <div style={{ width:`${detail.progressPct}%`, height:"100%", background:"var(--brand)", borderRadius:4, boxShadow:"0 0 10px var(--brand)", transition:"width 1s" }} />
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-muted)", marginTop:4 }}>
+                <span>{detail.elapsedMin} min scurși</span>
+                <span style={{ fontWeight:600 }}>{detail.progressPct}% din rută</span>
+                <span>{detail.duration} min total</span>
+              </div>
+            </div>
+          )}
+
+          {/* SVG route map */}
+          <div style={{ marginBottom:16 }}>
+            <div className="section-title" style={{ marginBottom:8 }}>Traseul zborului</div>
+            <RouteMapSVG
+              dep={detail.departure.iata}
+              arr={detail.arrival.iata}
+              progress={detail.progressPct}
+            />
+          </div>
+
+          {/* Info cards row */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:14 }}>
+            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Plecare</div>
+              <div style={{ fontSize:18, fontWeight:800 }}>{detail.departure.iata}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.departure.airport}</div>
+              <div style={{ fontSize:13, fontWeight:700, marginTop:4 }}>{detail.departure.actual !== "—" ? detail.departure.actual : detail.departure.scheduled}</div>
+              {detail.departure.gate !== "—" && (
+                <div style={{ fontSize:11, color:"var(--brand)", marginTop:2 }}>Poartă {detail.departure.gate}</div>
+              )}
+            </div>
+            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}>
+              <i className="ti ti-plane" style={{ fontSize:22, color:"var(--brand)" }} />
+              {detail.duration ? (
+                <div style={{ fontSize:12, fontWeight:600 }}>{Math.floor(detail.duration/60)}h {detail.duration%60}min</div>
+              ) : null}
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.airline}</div>
+              {detail.departure.delayed && detail.departure.delayed > 0 ? (
+                <div style={{ fontSize:11, color:"var(--warning)", fontWeight:600 }}>+{detail.departure.delayed}min întârziere</div>
+              ) : null}
+            </div>
+            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Sosire</div>
+              <div style={{ fontSize:18, fontWeight:800 }}>{detail.arrival.iata}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.arrival.airport}</div>
+              <div style={{ fontSize:13, fontWeight:700, marginTop:4 }}>{detail.arrival.estimated !== "—" ? detail.arrival.estimated : detail.arrival.scheduled}</div>
+              {detail.arrival.baggage !== "—" && (
+                <div style={{ fontSize:11, color:"var(--info)", marginTop:2 }}>Belt {detail.arrival.baggage}</div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center" }}>
+            Date live AirLabs · actualizat {new Date(detail.fetchedAt).toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
+          </div>
+        </>
+      ) : !error && !loading && (
+        <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"var(--text-muted)", gap:12 }}>
+          <i className="ti ti-map-pin-off" style={{ fontSize:48, opacity:0.2 }} />
+          <div style={{ fontSize:14 }}>Introdu codul IATA pentru a vedea traseul</div>
+          <div style={{ fontSize:12, opacity:0.7 }}>ex: LH6381, W43653, RO708</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── MyFlightRight ─── */
+function MyFlightRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+  const { input, setInput, loading, detail, error, search } = useMyFlightState();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    search(input);
+  };
+
+  const status = detail ? (STATUS_META[detail.status] ?? { label: detail.status, color: "var(--text-muted)", icon: "ti-question-mark" }) : null;
+
+  return (
+    <>
+      <div className="section-title">Zborul meu — Detalii</div>
+
+      {/* Quick search */}
+      <form onSubmit={handleSubmit} style={{ display:"flex", gap:6, marginBottom:12 }}>
+        <input
+          type="text"
+          className="phone-input"
+          placeholder="Cod IATA..."
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          style={{ flex:1, fontSize:12, padding:"7px 10px", textTransform:"uppercase" }}
+        />
+        <button type="submit" disabled={loading || !input.trim()}
+          style={{ padding:"7px 10px", background:"var(--brand)", border:"none", borderRadius:"var(--radius-md)", color:"#fff", cursor:"pointer", fontSize:13 }}>
+          <i className={`ti ti-${loading ? "loader-2 spin" : "search"}`} />
+        </button>
+      </form>
+
+      {error && (
+        <div style={{ fontSize:12, color:"var(--danger)", padding:"8px 10px", background:"var(--danger-bg)", border:"1px solid var(--danger)", borderRadius:"var(--radius-md)", marginBottom:10, display:"flex", gap:6 }}>
+          <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+
+      {detail && status && (
+        <div className="fade-in">
+          {/* Status */}
+          <div style={{ padding:"10px 12px", borderRadius:"var(--radius-md)", background:`${status.color}18`, border:`1px solid ${status.color}44`, display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+            <i className={`ti ${status.icon}`} style={{ fontSize:18, color:status.color, flexShrink:0 }} />
+            <div>
+              <div style={{ fontWeight:700, fontSize:14, color:status.color }}>{status.label}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.airline} · {detail.flight}</div>
+            </div>
+            {detail.departure.delayed && detail.departure.delayed > 0 ? (
+              <div style={{ marginLeft:"auto", fontWeight:700, fontSize:12, color:"var(--warning)" }}>+{detail.departure.delayed}min</div>
+            ) : null}
+          </div>
+
+          {/* Progress bar activ */}
+          {detail.status === "active" && detail.progressPct !== null && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"var(--text-muted)", marginBottom:3 }}>
+                <span>{detail.departure.iata}</span>
+                <span style={{ color:"var(--brand)", fontWeight:600 }}>{detail.remainingMin} min rămași</span>
+                <span>{detail.arrival.iata}</span>
+              </div>
+              <div style={{ height:5, background:"var(--bg-hover)", borderRadius:3, overflow:"hidden" }}>
+                <div style={{ width:`${detail.progressPct}%`, height:"100%", background:"var(--brand)", borderRadius:3, boxShadow:"0 0 6px var(--brand)" }} />
+              </div>
+            </div>
+          )}
+
+          {/* DEP stats */}
+          <div className="stats-list" style={{ marginBottom:10 }}>
+            <div className="stat-item">
+              <span className="stat-label"><i className="ti ti-plane-departure" style={{ marginRight:3 }} />Plecare</span>
+              <span className="stat-value" style={{ fontWeight:700 }}>{detail.departure.iata}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Programat</span>
+              <span className="stat-value">{detail.departure.scheduled}</span>
+            </div>
+            {detail.departure.actual !== "—" && (
+              <div className="stat-item">
+                <span className="stat-label">Actual</span>
+                <span className="stat-value" style={{ color:"var(--success)" }}>{detail.departure.actual}</span>
+              </div>
+            )}
+            {detail.departure.gate !== "—" && (
+              <div className="stat-item">
+                <span className="stat-label">Poartă</span>
+                <span className="stat-value" style={{ color:"var(--brand)", fontWeight:700 }}>{detail.departure.gate}</span>
+              </div>
+            )}
+            {detail.departure.terminal !== "—" && (
+              <div className="stat-item">
+                <span className="stat-label">Terminal</span>
+                <span className="stat-value">{detail.departure.terminal}</span>
+              </div>
+            )}
+          </div>
+
+          {/* ARR stats */}
+          <div className="stats-list" style={{ marginBottom:10 }}>
+            <div className="stat-item">
+              <span className="stat-label"><i className="ti ti-plane-arrival" style={{ marginRight:3 }} />Sosire</span>
+              <span className="stat-value" style={{ fontWeight:700 }}>{detail.arrival.iata}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Programat</span>
+              <span className="stat-value">{detail.arrival.scheduled}</span>
+            </div>
+            {detail.arrival.estimated !== "—" && detail.arrival.estimated !== detail.arrival.scheduled && (
+              <div className="stat-item">
+                <span className="stat-label">Estimat</span>
+                <span className="stat-value" style={{ color:"var(--warning)" }}>{detail.arrival.estimated}</span>
+              </div>
+            )}
+            {detail.arrival.delayed && detail.arrival.delayed > 0 ? (
+              <div className="stat-item">
+                <span className="stat-label">Întârziere</span>
+                <span className="stat-value" style={{ color:"var(--warning)" }}>+{detail.arrival.delayed} min</span>
+              </div>
+            ) : null}
+            {detail.arrival.terminal !== "—" && (
+              <div className="stat-item">
+                <span className="stat-label">Terminal</span>
+                <span className="stat-value">{detail.arrival.terminal}</span>
+              </div>
+            )}
+            {detail.arrival.baggage !== "—" && (
+              <div className="stat-item">
+                <span className="stat-label">Bagaje</span>
+                <span className="stat-value" style={{ color:"var(--info)" }}>Belt {detail.arrival.baggage}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Duration */}
+          {detail.duration ? (
+            <div className="stats-list">
+              <div className="stat-item">
+                <span className="stat-label">Durată</span>
+                <span className="stat-value">{Math.floor(detail.duration/60)}h {detail.duration%60}min</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Companie</span>
+                <span className="stat-value">{detail.airline}</span>
+              </div>
+            </div>
+          ) : null}
+
+          <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center", marginTop:10 }}>
+            Live AirLabs · {new Date(detail.fetchedAt).toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
+          </div>
+        </div>
+      )}
+
+      {!detail && !error && !loading && (
+        <div style={{ textAlign:"center", padding:"16px 0", color:"var(--text-muted)" }}>
+          <i className="ti ti-ticket" style={{ fontSize:28, display:"block", marginBottom:8, opacity:0.25 }} />
+          <div style={{ fontSize:12 }}>Introdu codul de pe bilet</div>
+        </div>
+      )}
+
+      <div style={{ borderTop:"1px solid var(--border-color)", margin:"16px 0" }} />
     </>
   );
 }
@@ -2065,8 +2560,6 @@ function TopBar({
   drawerOpen: boolean; setDrawerOpen: (v: boolean) => void;
   onLogout: () => void;
 }) {
-  const [showFlightModal, setShowFlightModal] = useState(false);
-
   return (
     <>
       <div className="top-bar">
@@ -2099,28 +2592,6 @@ function TopBar({
           {auth.displayName}
         </span>
 
-        {/* ── Buton "Zborul meu" — vizibil pentru toți ── */}
-        <button
-          onClick={() => setShowFlightModal(true)}
-          title="Zborul meu"
-          style={{
-            display:"flex", alignItems:"center", gap:6,
-            padding:"5px 12px",
-            background:"rgba(255,102,0,0.12)",
-            border:"1px solid rgba(255,102,0,0.35)",
-            borderRadius:"var(--radius-md)",
-            color:"var(--brand)",
-            cursor:"pointer",
-            fontSize:12,
-            fontWeight:600,
-            whiteSpace:"nowrap",
-            transition:"background 0.15s",
-          }}
-        >
-          <i className="ti ti-plane-departure" style={{ fontSize:15 }} />
-          <span className="flight-btn-label">Zborul meu</span>
-        </button>
-
         <button
           className="btn-theme-toggle"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -2133,10 +2604,6 @@ function TopBar({
           <i className="ti ti-logout" />
         </button>
       </div>
-
-      {showFlightModal && (
-        <MyFlightModal onClose={() => setShowFlightModal(false)} />
-      )}
     </>
   );
 }
