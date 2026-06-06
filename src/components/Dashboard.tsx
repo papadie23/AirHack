@@ -146,7 +146,7 @@ const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
   { id: "route",      icon: "ti-route",           label: "My Route",         sub: "Device Location · Orange"  },
   { id: "heatmap",    icon: "ti-map-2",           label: "Heatmap Terminal", sub: "Aglomerație zone"          },
   { id: "video-flow", icon: "ti-video",           label: "Flow Optimization",sub: "CV + AI Dispatcher · IAS"  },
-  { id: "my-flight",  icon: "ti-plane-departure", label: "Zborul meu",       sub: "Traseu live · AirLabs"     },
+  { id: "my-flight",  icon: "ti-plane-departure", label: "My Flight",         sub: "Live · AirLabs"            },
 ];
 
 const USER_NAV = [
@@ -2533,7 +2533,7 @@ export interface MyFlightState {
 
 function useMyFlightState(): MyFlightState {
   const [input, setInput]     = useState(() => {
-    try { return localStorage.getItem(MF_KEY) ?? ""; } catch { return ""; }
+    try { return localStorage.getItem(MF_KEY) ?? "W64102"; } catch { return "W64102"; }
   });
   const [loading, setLoading] = useState(false);
   const [detail, setDetail]   = useState<FlightDetail | null>(null);
@@ -2558,7 +2558,7 @@ function useMyFlightState(): MyFlightState {
   // Auto-load din localStorage la mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(MF_KEY);
+      const saved = localStorage.getItem(MF_KEY) ?? "W64102";
       if (saved) search(saved);
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2789,7 +2789,7 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
       {/* Header */}
       <div className="map-header" style={{ marginBottom:16 }}>
         <div>
-          <div className="map-title"><i className="ti ti-plane-departure" style={{ marginRight:8 }} />Zborul meu</div>
+          <div className="map-title"><i className="ti ti-plane-departure" style={{ marginRight:8 }} />My Flight</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
             Traseu live · AirLabs · {detail ? `${detail.departure.iata} → ${detail.arrival.iata}` : "Introdu codul IATA"}
           </div>
@@ -3082,8 +3082,8 @@ function LoginModal({ onLogin }: { onLogin: (a: AuthState) => void }) {
   const [tab, setTab] = useState<"admin" | "passenger">("passenger");
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
-  const [phone, setPhone] = useState("");
-  const [iata, setIata] = useState("");
+  const [phone, setPhone] = useState("+40721000001");
+  const [iata, setIata] = useState("W6 4102");
   const [error, setError] = useState("");
 
   const submitAdmin = (e: React.FormEvent) => {
