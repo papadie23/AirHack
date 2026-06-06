@@ -862,9 +862,16 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const [dynamicRoute, setDynamicRoute] = useState<{x:number;y:number}[]|null>(null);
 
+  // Reset dynamic route when the active person changes
+  const prevActivePerson = useRef(activePerson);
+  if (prevActivePerson.current !== activePerson) {
+    prevActivePerson.current = activePerson;
+    setDynamicRoute(null);
+  }
+
   const person = PEOPLE.find(p => p.id === activePerson)!;
   const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
-  const pts = activePerson === "you" && dynamicRoute ? dynamicRoute : (flight ? ROUTE_SVG[flight.gate] : null);
+  const pts = dynamicRoute ?? (flight ? ROUTE_SVG[flight.gate] : null);
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
@@ -875,26 +882,24 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
-    if (personId === "you") {
-      // Traseu dinamic: din pozitia GPS curenta → waypoints existente → poarta
-      const baseRoute = makeRoute("you");
-      const route = [svgPos, ...baseRoute.slice(1)];
-      setDynamicRoute(route);
-    }
+    // Dynamic route: from current GPS position → existing waypoints → gate
+    const baseRoute = makeRoute(personId);
+    const route = [svgPos, ...baseRoute.slice(1)];
+    setDynamicRoute(route);
   };
 
-  // Auto-trigger permission prompt on mount for activePerson === "you"
+  // Auto-trigger permission prompt on mount for any logged-in user
   const locationAsked = useRef(false);
   useEffect(() => {
-    if (activePerson === "you" && navigator.geolocation && !locationAsked.current) {
+    if (navigator.geolocation && !locationAsked.current) {
       locationAsked.current = true;
       navigator.geolocation.getCurrentPosition(
-        () => {}, // doar cere permisiunea, fără a face nimic
-        () => {}, // ignoră eroarea — utilizatorul poate refuza
+        () => {}, // just request permission, do nothing yet
+        () => {}, // ignore refusal — user can still click Localizează
         { timeout: 5000 }
       );
     }
-  }, [activePerson]);
+  }, []);
 
   const getLocation = () => {
     if (!navigator.geolocation) {
