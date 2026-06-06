@@ -3,12 +3,14 @@ import { orangePost } from "../../lib/orange/client";
 import { ORANGE_ENDPOINTS } from "../../lib/orange/endpoints";
 
 const PERSON_FIXTURE: Record<string, string> = {
+  you:    "location-result.json",
   misu:   "location-misu.json",
   ionica: "location-ionica.json",
   dorel:  "location-dorel.json",
 };
 
 const PERSON_PHONE: Record<string, string> = {
+  you:    "+99012345678",
   misu:   "+99012345678",
   ionica: "+99087654321",
   dorel:  "+99011111111",
@@ -18,12 +20,7 @@ export const POST: APIRoute = async ({ request }) => {
   const body = await request.json().catch(() => ({}));
   const person: string = (body.person ?? "you").toLowerCase();
 
-  if (person === "you") {
-    // Browser geolocation is handled client-side; this path shouldn't be called for "you"
-    return new Response(JSON.stringify({ error: "Use browser geolocation for 'you'" }), { status: 400 });
-  }
-
-  const fixture = PERSON_FIXTURE[person];
+  const fixture = PERSON_FIXTURE[person] ?? "location-result.json";
   const phoneNumber = PERSON_PHONE[person] ?? "+99012345678";
 
   const result = await orangePost<{

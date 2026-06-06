@@ -49,6 +49,7 @@ export default function Dashboard() {
   const [logs, setLogs] = useState<{ ts: string; msg: string; ok: boolean }[]>([]);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
+  const [activePerson, setActivePerson] = useState<string>("you");
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -61,10 +62,10 @@ export default function Dashboard() {
     <div id="dashboard">
       <div className="dashboard-grid">
         <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
-      <BottomBar logs={logs} />
+      <BottomBar logs={logs} activePerson={activePerson} setActivePerson={setActivePerson} />
     </div>
   );
 }
@@ -141,14 +142,14 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider,
+  feature, onLog, weatherProvider, activePerson,
 }: {
-  feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
+  feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider; activePerson: string;
 }) {
   return (
     <div className="card main-center">
       {feature === "weather" && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
-      {feature === "route"   && <RouteCenter   onLog={onLog} />}
+      {feature === "route"   && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
       {feature === "heatmap" && <HeatmapCenter onLog={onLog} />}
     </div>
   );
@@ -482,8 +483,8 @@ function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:numb
 }
 
 const defaultPoints: CalPoint[] = [
-  { svgX: 210, svgY: 490, lat: 47.17439229, lng: 27.61903507 },
-  { svgX: 1980, svgY: 490, lat: 47.17440000, lng: 27.62650000 },
+  { svgX: 100, svgY: 500, lat: 47.174617, lng: 27.619244 },
+  { svgX: 2000, svgY: 100, lat: 47.1740641, lng: 27.619701 },
   { svgX: 1100, svgY: 80, lat: 47.17480000, lng: 27.62200000 },
 ];
 
@@ -530,8 +531,7 @@ const PEOPLE: Person[] = [
   { id: "dorel",  name: "Dorel",  flightId: "4", color: "#34D399" },
 ];
 
-function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const [activePerson, setActivePerson] = useState<string>("you");
+function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>void; activePerson: string }) {
   const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({ you:{x:396,y:479}, misu:{x:396,y:479}, ionica:{x:396,y:479}, dorel:{x:396,y:479} });
   const [locLoading, setLocLoading] = useState(false);
 
@@ -564,31 +564,17 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const getLocation = async () => {
     setLocLoading(true);
     try {
-      if (activePerson === "you") {
-        await new Promise<void>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            pos => {
-              placeOnMap(pos.coords.latitude, pos.coords.longitude, "you");
-              onLog(`GPS · ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
-              resolve();
-            },
-            err => { onLog(`Geolocation eroare: ${err.message}`, false); reject(); },
-            { enableHighAccuracy: true, timeout: 10000 }
-          );
-        });
+      const r = await fetch("/api/location", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ person: activePerson }),
+      });
+      const d = await r.json();
+      const lat = d.location?.latitude, lng = d.location?.longitude;
+      if (lat && lng) {
+        placeOnMap(lat, lng, activePerson);
+        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)}${d.fromFixture ? " (mock)" : ""}`);
       } else {
-        const r = await fetch("/api/location", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ person: activePerson }),
-        });
-        const d = await r.json();
-        const lat = d.location?.latitude, lng = d.location?.longitude;
-        if (lat && lng) {
-          placeOnMap(lat, lng, activePerson);
-          onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)}${d.fromFixture ? " (mock)" : ""}`);
-        } else {
-          onLog(`${person.name}: ${d.error ?? "fără locație"}`, false);
-        }
+        onLog(`${person.name}: ${d.error ?? "fără locație"}`, false);
       }
     } catch { onLog("Eroare locație", false); }
     finally { setLocLoading(false); }
@@ -626,31 +612,19 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 
   return (
     <>
-      {/* ── Person selector ── */}
-      <div style={{ display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" }}>
-        {PEOPLE.map(p => {
-          const pFlight = FLIGHTS.find(f => f.id === p.flightId);
-          return (
-            <button key={p.id} onClick={() => setActivePerson(p.id)} style={{
-              padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12, fontWeight:600,
-              border:`1px solid ${activePerson===p.id ? p.color : "var(--border-color)"}`,
-              background: activePerson===p.id ? `${p.color}22` : "var(--bg-hover)",
-              color: activePerson===p.id ? p.color : "var(--text-muted)",
-              display:"flex", alignItems:"center", gap:6,
-            }}>
-              <span style={{ width:8, height:8, borderRadius:"50%", background:p.color, display:"inline-block" }}/>
-              {p.name}
-              {pFlight && <span style={{ fontWeight:400, opacity:0.7 }}>· {pFlight.flight}</span>}
-            </button>
-          );
-        })}
+      {/* ── Controls row ── */}
+      <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ width:8, height:8, borderRadius:"50%", background:person.color, display:"inline-block" }}/>
+          <span style={{ fontSize:13, fontWeight:600, color:person.color }}>{person.name}</span>
+          {flight && <span style={{ fontSize:12, color:"var(--text-muted)" }}>· {flight.flight} → {flight.dest}</span>}
+        </div>
         <button onClick={getLocation} disabled={locLoading} style={{
           marginLeft:"auto", padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
           border:"1px solid var(--border-color)", background:"var(--bg-hover)", color:"var(--text-muted)",
           display:"flex", alignItems:"center", gap:6,
         }}>
-          <i className={`ti ti-${activePerson==="you" ? "current-location" : "map-pin"}${locLoading?" spin":""}`}/>
-          {activePerson === "you" ? "Locația mea" : `Locație ${person.name}`}
+          <i className={`ti ti-map-pin${locLoading?" spin":""}`}/> Localizează
         </button>
         <button onClick={() => { setCalMode(m => !m); setPendingPin(null); }} style={{
           padding:"6px 10px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
@@ -1187,24 +1161,15 @@ function HeatmapRight() {
 }
 
 /* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
-function BottomBar({ logs }: { logs:{ts:string;msg:string;ok:boolean}[] }) {
+function BottomBar({ logs, activePerson, setActivePerson }: { logs:{ts:string;msg:string;ok:boolean}[]; activePerson: string; setActivePerson: (id:string)=>void }) {
   return (
     <div className="bottom-bar">
-      {/* Cont / profil */}
-      <button className="btn-tab">
-        <i className="ti ti-user-circle" /> Contul meu
-      </button>
-      <button className="btn-tab">
-        <i className="ti ti-plane-departure" /> Zborul meu
-      </button>
-      <button className="btn-tab">
-        <i className="ti ti-bell" /> Notificări
-      </button>
-      <button className="btn-tab">
-        <i className="ti ti-settings" /> Setări
-      </button>
-
-      {/* Activity log inline */}
+      {PEOPLE.map(p => (
+        <button key={p.id} className={`btn-tab${activePerson===p.id?" active":""}`} onClick={() => setActivePerson(p.id)}
+          style={{ color: activePerson===p.id ? p.color : undefined, borderBottom: activePerson===p.id ? `2px solid ${p.color}` : undefined }}>
+          <i className={`ti ${p.id==="you" ? "ti-user-circle" : "ti-user"}`}/> {p.name}
+        </button>
+      ))}
       <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:8, overflow:"hidden" }}>
         {logs.slice(0,2).map((l,i) => (
           <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
@@ -1215,9 +1180,8 @@ function BottomBar({ logs }: { logs:{ts:string;msg:string;ok:boolean}[] }) {
         ))}
         {logs.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
       </div>
-
       <button className="btn-tab" style={{ flex:"0 0 auto" }}>
-        <i className="ti ti-help-circle" /> Ajutor
+        <i className="ti ti-help-circle"/> Ajutor
       </button>
     </div>
   );
