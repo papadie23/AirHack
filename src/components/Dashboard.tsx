@@ -2771,143 +2771,141 @@ function RouteMapSVG({ dep, arr, progress }: {
 /* ─── MyFlightCenter ─── */
 function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void; myFlight: MyFlightState }) {
   const { input, setInput, loading, detail, error, search } = myFlight;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    search(input);
-  };
-
   const status = detail ? (STATUS_META[detail.status] ?? { label: detail.status, color: "var(--text-muted)", icon: "ti-question-mark" }) : null;
 
   useEffect(() => {
-    if (detail) onLog(`Zborul meu: ${detail.flight} ${detail.departure.iata}→${detail.arrival.iata} · ${status?.label}`);
+    if (detail) onLog(`My Flight: ${detail.flight} ${detail.departure.iata}→${detail.arrival.iata} · ${status?.label}`);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail]);
 
-  return (
-    <div style={{ padding:24, height:"100%", display:"flex", flexDirection:"column", gap:0, overflowY:"auto" }}>
-      {/* Header */}
-      <div className="map-header" style={{ marginBottom:16 }}>
-        <div>
-          <div className="map-title"><i className="ti ti-plane-departure" style={{ marginRight:8 }} />My Flight</div>
-          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
-            Traseu live · AirLabs · {detail ? `${detail.departure.iata} → ${detail.arrival.iata}` : "Introdu codul IATA"}
-          </div>
-        </div>
-        {detail && status && (
-          <div className="badge" style={{ background:`${status.color}22`, color:status.color, border:`1px solid ${status.color}44`, fontSize:12, fontWeight:700, padding:"5px 12px" }}>
-            <i className={`ti ${status.icon}`} style={{ marginRight:4 }} />{status.label}
-          </div>
-        )}
-      </div>
+  const row = (icon: string, label: string, val: React.ReactNode, accent?: string) => (
+    <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid var(--border-color)" }}>
+      <i className={`ti ${icon}`} style={{ fontSize:16, color: accent ?? "var(--text-muted)", width:20, textAlign:"center", flexShrink:0 }} />
+      <span style={{ fontSize:12, color:"var(--text-muted)", width:130, flexShrink:0 }}>{label}</span>
+      <span style={{ fontSize:13, fontWeight:600, color: accent ?? "var(--text-main)" }}>{val}</span>
+    </div>
+  );
 
-      {/* Search */}
-      <form onSubmit={handleSubmit} style={{ display:"flex", gap:8, marginBottom:20, flexShrink:0 }}>
-        <input
-          type="text"
-          className="phone-input"
-          placeholder="Cod IATA zbor — ex: LH6381, W43653, RO708"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          style={{ flex:1, textTransform:"uppercase" }}
-        />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="btn-primary"
-          style={{ padding:"9px 20px", display:"flex", alignItems:"center", gap:6 }}
-        >
+  return (
+    <div style={{ padding:20, height:"100%", display:"flex", flexDirection:"column", gap:0, overflowY:"auto" }}>
+      {/* Search bar */}
+      <form onSubmit={e => { e.preventDefault(); search(input); }} style={{ display:"flex", gap:8, marginBottom:16, flexShrink:0 }}>
+        <input type="text" className="phone-input" placeholder="Cod zbor IATA — ex: LH6381" value={input}
+          onChange={e => setInput(e.target.value)} style={{ flex:1, textTransform:"uppercase" }} />
+        <button type="submit" disabled={loading || !input.trim()} className="btn-primary"
+          style={{ padding:"9px 16px", display:"flex", alignItems:"center", gap:6 }}>
           <i className={`ti ti-${loading ? "loader-2 spin" : "search"}`} />
-          {loading ? "..." : "Caută"}
         </button>
       </form>
 
-      {/* Error */}
       {error && (
-        <div style={{ padding:"10px 14px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)", border:"1px solid var(--danger)", color:"var(--danger)", fontSize:13, marginBottom:16, display:"flex", alignItems:"center", gap:8 }}>
+        <div style={{ padding:"10px 14px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)", border:"1px solid var(--danger)", color:"var(--danger)", fontSize:13, marginBottom:12 }}>
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
 
-      {/* Map */}
-      {detail ? (
+      {detail && status ? (
         <>
-          {/* Progress bar zbor activ */}
+          {/* ── Hero: flight number + status ── */}
+          <div style={{ background:"var(--bg-body)", border:`1px solid ${status.color}44`, borderRadius:14, padding:"18px 20px", marginBottom:12, display:"flex", alignItems:"center", gap:16 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:28, fontWeight:800, letterSpacing:1 }}>{detail.flight}</div>
+              <div style={{ fontSize:13, color:"var(--text-muted)", marginTop:2 }}>{detail.airline}</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ background:`${status.color}22`, color:status.color, border:`1px solid ${status.color}55`, borderRadius:20, padding:"5px 14px", fontSize:13, fontWeight:700, display:"inline-flex", alignItems:"center", gap:6 }}>
+                <i className={`ti ${status.icon}`} />{status.label}
+              </div>
+              {detail.duration && (
+                <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:6 }}>
+                  <i className="ti ti-clock" style={{ marginRight:4 }} />{Math.floor(detail.duration/60)}h {detail.duration%60}m
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Progress bar (zbor activ) ── */}
           {detail.status === "active" && detail.progressPct !== null && (
-            <div style={{ marginBottom:14, padding:"12px 16px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-muted)", marginBottom:6 }}>
-                <span style={{ fontWeight:600, color:"var(--success)" }}>
-                  <i className="ti ti-plane-departure" /> {detail.departure.iata} · {detail.departure.actual !== "—" ? detail.departure.actual : detail.departure.scheduled}
-                </span>
-                <span style={{ color:"var(--brand)", fontWeight:700 }}>
-                  <i className="ti ti-clock" /> {detail.remainingMin} min rămași
-                </span>
-                <span style={{ fontWeight:600, color:"var(--info)" }}>
-                  <i className="ti ti-plane-arrival" /> {detail.arrival.iata} · {detail.arrival.estimated !== "—" ? detail.arrival.estimated : detail.arrival.scheduled}
-                </span>
+            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:12, padding:"14px 16px", marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, fontWeight:700, marginBottom:8 }}>
+                <span style={{ color:"var(--success)" }}><i className="ti ti-plane-departure" /> {detail.departure.iata}</span>
+                <span style={{ color:"var(--brand)" }}>{detail.remainingMin} min rămași</span>
+                <span style={{ color:"var(--info)" }}>{detail.arrival.iata} <i className="ti ti-plane-arrival" /></span>
               </div>
-              <div style={{ height:8, background:"var(--bg-hover)", borderRadius:4, overflow:"hidden" }}>
-                <div style={{ width:`${detail.progressPct}%`, height:"100%", background:"var(--brand)", borderRadius:4, boxShadow:"0 0 10px var(--brand)", transition:"width 1s" }} />
+              <div style={{ height:10, background:"var(--bg-hover)", borderRadius:5, overflow:"hidden" }}>
+                <div style={{ width:`${detail.progressPct}%`, height:"100%", background:"var(--brand)", borderRadius:5, boxShadow:`0 0 8px var(--brand)` }} />
               </div>
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-muted)", marginTop:4 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-muted)", marginTop:6 }}>
                 <span>{detail.elapsedMin} min scurși</span>
-                <span style={{ fontWeight:600 }}>{detail.progressPct}% din rută</span>
+                <span style={{ fontWeight:700 }}>{detail.progressPct}%</span>
                 <span>{detail.duration} min total</span>
               </div>
             </div>
           )}
 
-          {/* SVG route map */}
-          <div style={{ marginBottom:16 }}>
-            <div className="section-title" style={{ marginBottom:8 }}>Traseul zborului</div>
-            <RouteMapSVG
-              dep={detail.departure.iata}
-              arr={detail.arrival.iata}
-              progress={detail.progressPct}
-            />
-          </div>
-
-          {/* Info cards row */}
-          <div className="flight-info-grid" style={{ marginBottom:14 }}>
-            <div className="fig-dep" style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
-              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Plecare</div>
-              <div style={{ fontSize:18, fontWeight:800 }}>{detail.departure.iata}</div>
-              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.departure.airport}</div>
-              <div style={{ fontSize:13, fontWeight:700, marginTop:4 }}>{detail.departure.actual !== "—" ? detail.departure.actual : detail.departure.scheduled}</div>
-              {detail.departure.gate !== "—" && (
-                <div style={{ fontSize:11, color:"var(--brand)", marginTop:2 }}>Poartă {detail.departure.gate}</div>
+          {/* ── DEP / ARR cards ── */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
+            {/* Departure */}
+            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:12, padding:"14px" }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Plecare</div>
+              <div style={{ fontSize:30, fontWeight:900 }}>{detail.departure.iata}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:8 }}>{detail.departure.airport}</div>
+              <div style={{ fontSize:18, fontWeight:700 }}>{detail.departure.actual !== "—" ? detail.departure.actual : detail.departure.scheduled}</div>
+              {detail.departure.actual !== "—" && detail.departure.actual !== detail.departure.scheduled && (
+                <div style={{ fontSize:11, color:"var(--text-muted)", textDecoration:"line-through" }}>{detail.departure.scheduled}</div>
+              )}
+              {detail.departure.terminal !== "—" && <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:4 }}>Terminal {detail.departure.terminal}</div>}
+              {detail.departure.gate !== "—" && <div style={{ fontSize:12, color:"var(--brand)", fontWeight:700, marginTop:2 }}>Poartă {detail.departure.gate}</div>}
+              {(detail.departure.delayed ?? 0) > 0 && (
+                <div style={{ marginTop:6, fontSize:12, color:"var(--warning)", fontWeight:700 }}>
+                  <i className="ti ti-clock-exclamation" /> +{detail.departure.delayed} min întârziere
+                </div>
               )}
             </div>
-            <div className="fig-middle" style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}>
-              <i className="ti ti-plane" style={{ fontSize:22, color:"var(--brand)" }} />
-              {detail.duration ? (
-                <div style={{ fontSize:12, fontWeight:600 }}>{Math.floor(detail.duration/60)}h {detail.duration%60}min</div>
-              ) : null}
-              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.airline}</div>
-              {detail.departure.delayed && detail.departure.delayed > 0 ? (
-                <div style={{ fontSize:11, color:"var(--warning)", fontWeight:600 }}>+{detail.departure.delayed}min întârziere</div>
-              ) : null}
-            </div>
-            <div className="fig-arr" style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
-              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Sosire</div>
-              <div style={{ fontSize:18, fontWeight:800 }}>{detail.arrival.iata}</div>
-              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.arrival.airport}</div>
-              <div style={{ fontSize:13, fontWeight:700, marginTop:4 }}>{detail.arrival.estimated !== "—" ? detail.arrival.estimated : detail.arrival.scheduled}</div>
+            {/* Arrival */}
+            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:12, padding:"14px" }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Sosire</div>
+              <div style={{ fontSize:30, fontWeight:900 }}>{detail.arrival.iata}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:8 }}>{detail.arrival.airport}</div>
+              <div style={{ fontSize:18, fontWeight:700 }}>{detail.arrival.estimated !== "—" ? detail.arrival.estimated : detail.arrival.scheduled}</div>
+              {detail.arrival.estimated !== "—" && detail.arrival.estimated !== detail.arrival.scheduled && (
+                <div style={{ fontSize:11, color:"var(--text-muted)", textDecoration:"line-through" }}>{detail.arrival.scheduled}</div>
+              )}
+              {detail.arrival.terminal !== "—" && <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:4 }}>Terminal {detail.arrival.terminal}</div>}
+              {detail.arrival.gate !== "—" && <div style={{ fontSize:12, color:"var(--brand)", fontWeight:700, marginTop:2 }}>Poartă {detail.arrival.gate}</div>}
               {detail.arrival.baggage !== "—" && (
-                <div style={{ fontSize:11, color:"var(--info)", marginTop:2 }}>Belt {detail.arrival.baggage}</div>
+                <div style={{ fontSize:12, color:"var(--info)", fontWeight:600, marginTop:6 }}>
+                  <i className="ti ti-luggage" /> Belt {detail.arrival.baggage}
+                </div>
+              )}
+              {(detail.arrival.delayed ?? 0) > 0 && (
+                <div style={{ marginTop:6, fontSize:12, color:"var(--warning)", fontWeight:700 }}>
+                  <i className="ti ti-clock-exclamation" /> +{detail.arrival.delayed} min întârziere
+                </div>
               )}
             </div>
           </div>
 
-          <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center" }}>
-            Date live AirLabs · actualizat {new Date(detail.fetchedAt).toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
+          {/* ── Details rows ── */}
+          <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:12, padding:"4px 16px", marginBottom:10 }}>
+            {row("ti-plane", "Zbor", detail.flight)}
+            {row("ti-building-airport", "Companie", detail.airline)}
+            {detail.duration && row("ti-clock", "Durată zbor", `${Math.floor(detail.duration/60)}h ${detail.duration%60}m`)}
+            {detail.departure.terminal !== "—" && row("ti-door-enter", "Terminal plecare", detail.departure.terminal, "var(--brand)")}
+            {detail.departure.gate !== "—" && row("ti-armchair", "Poartă plecare", detail.departure.gate, "var(--brand)")}
+            {detail.arrival.terminal !== "—" && row("ti-door-exit", "Terminal sosire", detail.arrival.terminal, "var(--info)")}
+            {detail.arrival.baggage !== "—" && row("ti-luggage", "Belt bagaje", detail.arrival.baggage, "var(--info)")}
+          </div>
+
+          <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center", marginTop:4 }}>
+            Live AirLabs · {new Date(detail.fetchedAt).toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
           </div>
         </>
       ) : !error && !loading && (
-        <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"var(--text-muted)", gap:12 }}>
-          <i className="ti ti-map-pin-off" style={{ fontSize:48, opacity:0.2 }} />
-          <div style={{ fontSize:14 }}>Introdu codul IATA pentru a vedea traseul</div>
-          <div style={{ fontSize:12, opacity:0.7 }}>ex: LH6381, W43653, RO708</div>
+        <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"var(--text-muted)", gap:10 }}>
+          <i className="ti ti-plane-departure" style={{ fontSize:52, opacity:0.15 }} />
+          <div style={{ fontSize:14 }}>Caută zborul tău</div>
+          <div style={{ fontSize:12, opacity:0.6 }}>ex: LH6381, W43653, RO708</div>
         </div>
       )}
     </div>
