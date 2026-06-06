@@ -669,9 +669,11 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     setCalTransform(saved.transform);
   }, []);
 
+  const [dynamicRoute, setDynamicRoute] = useState<{x:number;y:number}[]|null>(null);
+
   const person = PEOPLE.find(p => p.id === activePerson)!;
   const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
-  const pts = flight ? ROUTE_SVG[flight.gate] : null;
+  const pts = activePerson === "you" && dynamicRoute ? dynamicRoute : (flight ? ROUTE_SVG[flight.gate] : null);
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
@@ -680,7 +682,14 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const prev = lastGps.current[personId];
     if (prev && haversineM(prev.lat, prev.lng, lat, lng) < DEAD_ZONE_M) return;
     lastGps.current[personId] = { lat, lng };
-    setPositions(prev => ({ ...prev, [personId]: svgFromGps(calTransform, lat, lng) }));
+    const svgPos = svgFromGps(calTransform, lat, lng);
+    setPositions(p => ({ ...p, [personId]: svgPos }));
+    if (personId === "you") {
+      // Traseu dinamic: din pozitia GPS curenta → waypoints existente → poarta
+      const baseRoute = makeRoute("you");
+      const route = [svgPos, ...baseRoute.slice(1)];
+      setDynamicRoute(route);
+    }
   };
 
   // Auto-trigger permission prompt on mount for activePerson === "you"
