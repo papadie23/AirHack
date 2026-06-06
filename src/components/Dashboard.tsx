@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
 import { findClient, ADMIN_USERNAME, ADMIN_PASSWORD } from "../lib/mock-auth";
+import TrafficFlowCenter from "./TrafficFlowCenter";
 
-type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings" | "my-flight";
+type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings" | "my-flight" | "video-flow";
 
 export interface Announcement {
   id: number; type: "info" | "warning" | "danger"; text: string; time: string;
@@ -140,10 +141,11 @@ export default function Dashboard() {
 
 /* ═══════════════════════════ LEFT PANEL ═══════════════════════════ */
 const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
-  { id: "weather",   icon: "ti-cloud-storm",    label: "Vreme / METAR",    sub: "LRIA · Open-Meteo · NOAA"  },
-  { id: "route",     icon: "ti-route",           label: "My Route",         sub: "Device Location · Orange"  },
-  { id: "heatmap",   icon: "ti-map-2",           label: "Heatmap Terminal", sub: "Aglomerație zone"          },
-  { id: "my-flight", icon: "ti-plane-departure", label: "Zborul meu",       sub: "Traseu live · AirLabs"     },
+  { id: "weather",    icon: "ti-cloud-storm",    label: "Vreme / METAR",    sub: "LRIA · Open-Meteo · NOAA"  },
+  { id: "route",      icon: "ti-route",           label: "My Route",         sub: "Device Location · Orange"  },
+  { id: "heatmap",    icon: "ti-map-2",           label: "Heatmap Terminal", sub: "Aglomerație zone"          },
+  { id: "video-flow", icon: "ti-video",           label: "Flow Optimization",sub: "CV + AI Dispatcher · IAS"  },
+  { id: "my-flight",  icon: "ti-plane-departure", label: "Zborul meu",       sub: "Traseu live · AirLabs"     },
 ];
 
 const USER_NAV = [
@@ -350,6 +352,7 @@ function CenterPanel({
       {feature === "account"          && <AccountCenter activePerson={activePerson} />}
       {feature === "settings"         && <SettingsCenter />}
       {feature === "my-flight"        && <MyFlightCenter onLog={onLog} myFlight={myFlight} />}
+      {feature === "video-flow"       && <TrafficFlowCenter onLog={onLog} />}
     </div>
   );
 }
