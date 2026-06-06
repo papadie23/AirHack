@@ -7,3 +7,8 @@ dist/
 # Next.js artifacts
 .next/
 next-env.d.ts
+
+# Environment secrets
+.env
+.env.local
+.env*.local

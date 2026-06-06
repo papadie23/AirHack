@@ -6,6 +6,14 @@
  */
 
 import { getAccessToken } from "./token";
+
+async function getBearerToken(): Promise<string> {
+  // Direct API key takes priority over OAuth client credentials
+  if (process.env.ORANGE_API_KEY) {
+    return process.env.ORANGE_API_KEY;
+  }
+  return getAccessToken();
+}
 import path from "path";
 import fs from "fs";
 
@@ -35,7 +43,7 @@ export async function orangePost<T = unknown>(
   }
 
   try {
-    const token = await getAccessToken();
+    const token = await getBearerToken();
 
     const response = await fetch(endpoint, {
       method: "POST",
