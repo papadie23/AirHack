@@ -482,7 +482,9 @@ function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:numb
 }
 
 const defaultPoints: CalPoint[] = [
-  // hardcoded by /api/save-calibration
+  { svgX: 210, svgY: 490, lat: 47.17439229, lng: 27.61903507 },
+  { svgX: 1980, svgY: 490, lat: 47.17440000, lng: 27.62650000 },
+  { svgX: 1100, svgY: 80, lat: 47.17480000, lng: 27.62200000 },
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
