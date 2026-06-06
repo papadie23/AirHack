@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:4321/)",
+      "Bash(curl -s http://localhost:4323/)",
+      "Bash(grep -v '^$')",
+      "Bash(grep -n \"^=======$\" src/components/Dashboard.tsx)",
+      "Bash(npx tsc:*)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
+    ]
+  }
+}

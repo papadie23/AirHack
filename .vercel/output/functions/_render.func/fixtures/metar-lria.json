@@ -1,0 +1,34 @@
+{
+  "raw": "METAR LRIA 051930Z 18010KT 9999 SCT025 BKN070 22/14 Q1017 NOSIG",
+  "station": "LRIA",
+  "observedAt": "2026-06-05T19:30:00Z",
+  "wind": {
+    "directionDeg": 180,
+    "speedKt": 10,
+    "gustKt": null,
+    "variableFrom": null,
+    "variableTo": null,
+    "isVariable": false
+  },
+  "visibility": {
+    "meters": 9999,
+    "unlimited": true
+  },
+  "clouds": [
+    { "cover": "SCT", "baseFt": 2500, "type": null },
+    { "cover": "BKN", "baseFt": 7000, "type": null }
+  ],
+  "temperature": { "tempC": 22, "dewpointC": 14 },
+  "altimeter": { "qnhHpa": 1017 },
+  "phenomena": [],
+  "trend": {
+    "type": "NOSIG",
+    "wind": null,
+    "visibility": null,
+    "phenomena": [],
+    "clouds": []
+  },
+  "flightCategory": "VFR",
+  "fromFixture": true,
+  "provider": "fixture"
+}
