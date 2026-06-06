@@ -2773,10 +2773,37 @@ function RouteMapSVG({ dep, arr, progress }: {
   );
 }
 
+/* ─── Airport weather hook ─── */
+const WMO_EMOJI: Record<number, string> = {
+  0:"☀️", 1:"🌤️", 2:"⛅", 3:"☁️", 45:"🌫️", 48:"🌫️",
+  51:"🌦️", 53:"🌦️", 55:"🌧️", 61:"🌧️", 63:"🌧️", 65:"🌧️",
+  71:"🌨️", 73:"🌨️", 75:"❄️", 80:"🌦️", 81:"🌧️", 82:"⛈️",
+  95:"⛈️", 96:"⛈️", 99:"⛈️",
+};
+interface AirportWx { tempC: number; windKt: number; desc: string; emoji: string }
+function useAirportWeather(iata: string): AirportWx | null {
+  const [wx, setWx] = useState<AirportWx | null>(null);
+  useEffect(() => {
+    const c = AIRPORT_COORDS[iata];
+    if (!c) return;
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,wind_speed_10m,weather_code&wind_speed_unit=kn&timezone=auto`)
+      .then(r => r.json())
+      .then(d => {
+        const cur = d.current;
+        const code = cur.weather_code as number;
+        setWx({ tempC: Math.round(cur.temperature_2m), windKt: Math.round(cur.wind_speed_10m), desc: cur.weather_code, emoji: WMO_EMOJI[code] ?? "🌡️" });
+      })
+      .catch(() => {});
+  }, [iata]);
+  return wx;
+}
+
 /* ─── MyFlightCenter ─── */
 function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void; myFlight: MyFlightState }) {
   const { input, setInput, loading, detail, error, search } = myFlight;
   const status = detail ? (STATUS_META[detail.status] ?? { label: detail.status, color: "var(--text-muted)", icon: "ti-question-mark" }) : null;
+  const depWx = useAirportWeather(detail?.departure.iata ?? "");
+  const arrWx = useAirportWeather(detail?.arrival.iata ?? "");
 
   useEffect(() => {
     if (detail) onLog(`My Flight: ${detail.flight} ${detail.departure.iata}→${detail.arrival.iata} · ${status?.label}`);
@@ -2901,6 +2928,30 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
             {detail.arrival.terminal !== "—" && row("ti-door-exit", "Terminal sosire", detail.arrival.terminal, "var(--info)")}
             {detail.arrival.baggage !== "—" && row("ti-luggage", "Belt bagaje", detail.arrival.baggage, "var(--info)")}
           </div>
+
+          {/* ── Weather DEP / ARR ── */}
+          {(depWx || arrWx) && (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
+              {[{ iata: detail.departure.iata, wx: depWx, label: "Vreme la plecare" },
+                { iata: detail.arrival.iata,   wx: arrWx, label: "Vreme la sosire"  }].map(({ iata, wx, label }) => (
+                <div key={iata} style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:12, padding:"12px 14px" }}>
+                  <div style={{ fontSize:10, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>{label}</div>
+                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>{iata}</div>
+                  {wx ? (
+                    <>
+                      <div style={{ fontSize:28, marginBottom:2 }}>{wx.emoji}</div>
+                      <div style={{ fontSize:22, fontWeight:800 }}>{wx.tempC}°C</div>
+                      <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:4 }}>
+                        <i className="ti ti-wind" style={{ marginRight:4 }} />{wx.windKt} kt
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize:20, opacity:0.3 }}>…</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center", marginTop:4 }}>
             Live AirLabs · {new Date(detail.fetchedAt).toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
