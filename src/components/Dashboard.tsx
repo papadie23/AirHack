@@ -811,6 +811,12 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromFixture, setFromFixture] = useState(false);
+  const [calTransform, setCalTransform] = useState<CalTransform|null>(null);
+
+  useEffect(() => {
+    const saved = loadCalibration();
+    setCalTransform(saved.transform);
+  }, []);
 
   const fetchDensity = async () => {
     setLoading(true);
@@ -831,15 +837,21 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     return () => clearInterval(t);
   }, []);
 
-  const totalPpl = Math.round(densityData.filter(c => c.pplDensity).reduce((s,c) => s+(c.pplDensity??0), 0));
+  const maxDensity = Math.max(...densityData.map(c => c.pplDensity ?? 0), 1);
 
-  // Map zone id → fixed SVG rect on the terminal floor plan (viewBox 0 0 2262 587)
-  const ZONE_RECTS: Record<string, {x:number;y:number;w:number;h:number;label:string}> = {
-    security: { x:100,  y:380, w:320, h:150, label:"Securitate"  },
-    checkin:  { x:100,  y:220, w:320, h:150, label:"Check-in"    },
-    dutyfree: { x:900,  y:100, w:400, h:180, label:"Duty Free"   },
-    gateC3:   { x:1400, y:100, w:350, h:180, label:"Poarta C3"   },
-  };
+  // Convert geohash cells to SVG circles using calibration transform
+  const circles = calTransform
+    ? densityData
+        .filter(c => c.pplDensity)
+        .map(c => {
+          const { lat, lng } = decodeGeohash(c.geohash);
+          const pos = svgFromGps(calTransform, lat, lng);
+          const intensity = (c.pplDensity ?? 0) / maxDensity;
+          const r = 30 + intensity * 60; // radius 30–90
+          const color = intensity > 0.7 ? "#EF5350" : intensity > 0.35 ? "#FFA726" : "#66BB6A";
+          return { ...pos, r, color, intensity, density: c.pplDensity ?? 0 };
+        })
+    : [];
 
   return (
     <>
@@ -848,6 +860,7 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           <div className="map-title">Heatmap Terminal T4 — LRIA</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
             Orange Population Density API{fromFixture && <span style={{ color:"var(--warning)", marginLeft:6 }}>· fixture</span>}
+            {!calTransform && <span style={{ color:"var(--danger)", marginLeft:6 }}>· calibrare lipsă</span>}
           </div>
         </div>
         <div className="badges">
@@ -863,29 +876,29 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 
         <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
           style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}>
-          {TERMINAL_ZONES.map((z, i) => {
-            const cell = densityData[i];
-            const density = cell?.pplDensity ?? z.base;
-            const rect = ZONE_RECTS[z.id];
-            const alpha = Math.min(0.7, 0.15 + (density / z.limit) * 0.55);
-            const color = density > z.limit * 0.8 ? "#EF5350" : density > z.limit * 0.4 ? "#FFA726" : "#66BB6A";
-            return (
-              <g key={z.id}>
-                <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} rx="10"
-                  fill={color} fillOpacity={alpha} stroke={color} strokeWidth="1.5" strokeOpacity="0.6"/>
-                <text x={rect.x+rect.w/2} y={rect.y+rect.h/2-10} textAnchor="middle" fill={color} fontSize="16" fontWeight="700">{rect.label}</text>
-                <text x={rect.x+rect.w/2} y={rect.y+rect.h/2+12} textAnchor="middle" fill={color} fontSize="13" opacity="0.9">~{Math.round(density)} pax/km²</text>
-              </g>
-            );
-          })}
+          <defs>
+            {circles.map((c, i) => (
+              <radialGradient key={i} id={`hg${i}`} cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor={c.color} stopOpacity={0.5 + c.intensity * 0.3}/>
+                <stop offset="100%" stopColor={c.color} stopOpacity="0"/>
+              </radialGradient>
+            ))}
+          </defs>
+          {circles.map((c, i) => (
+            <g key={i}>
+              <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
+              <circle cx={c.x} cy={c.y} r={8} fill={c.color} opacity="0.9"/>
+              <text x={c.x} y={c.y - c.r - 4} textAnchor="middle" fill={c.color} fontSize="11" fontWeight="600">
+                {c.density} p/km²
+              </text>
+            </g>
+          ))}
+          {!calTransform && (
+            <text x="1131" y="300" textAnchor="middle" fill="var(--text-muted)" fontSize="16">
+              Mergi la tab-ul Route → Calibrare pentru a poziționa heatmap-ul
+            </text>
+          )}
         </svg>
-
-        {totalPpl > 0 && (
-          <div style={{ position:"absolute", top:10, left:10, background:"rgba(11,17,32,0.85)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"6px 12px", fontSize:12, color:"var(--text-main)", backdropFilter:"blur(4px)", zIndex:3 }}>
-            <span style={{ color:"var(--text-muted)" }}>Densitate totală: </span>
-            <span style={{ fontWeight:700, color:"var(--brand)" }}>{totalPpl.toLocaleString()} pax/km²</span>
-          </div>
-        )}
       </div>
     </>
   );

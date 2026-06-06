@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { orangePost } from "../../lib/orange/client";
+import { orangePostWithKey } from "../../lib/orange/client";
 
 // LRIA airport bounding polygon (lat/lon)
 const LRIA_POLYGON = [
@@ -17,15 +17,13 @@ export const POST: APIRoute = async ({ request }) => {
   const startTime = body.startTime ?? new Date(now.getTime() - 30 * 60000).toISOString();
   const endTime = body.endTime ?? now.toISOString();
 
-  const result = await orangePost(
+  const apiKey = import.meta.env.ORANGE_POPULATION_KEY ?? process.env.ORANGE_POPULATION_KEY;
+
+  const result = await orangePostWithKey(
+    apiKey,
     "population-density.json",
     ENDPOINT,
-    {
-      area: { areaType: "POLYGON", boundary: LRIA_POLYGON },
-      startTime,
-      endTime,
-      precision: 7,
-    }
+    { area: { areaType: "POLYGON", boundary: LRIA_POLYGON }, startTime, endTime, precision: 7 }
   );
 
   if (!result.ok) {
