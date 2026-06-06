@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
 
-type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements";
+type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings";
 
 export interface Announcement {
   id: number; type: "info" | "warning" | "danger"; text: string; time: string;
@@ -71,7 +71,7 @@ export default function Dashboard() {
         <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
-      <BottomBar logs={logs} activePerson={activePerson} setActivePerson={setActivePerson} />
+      <BottomBar logs={logs} activePerson={activePerson} setActivePerson={setActivePerson} feature={feature} setFeature={setFeature} />
     </div>
   );
 }
@@ -176,8 +176,12 @@ function CenterPanel({
       {feature === "heatmap"          && <HeatmapCenter onLog={onLog} />}
       {feature === "flow-prediction"  && <FlowPredictionCenter onLog={onLog} />}
       {feature === "boarding-verify"  && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
-      {feature === "admin"            && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
+      {feature === "admin"            && activePerson === "you" && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
+      {feature === "admin"            && activePerson !== "you" && <AnnouncementsCenter announcements={announcements} />}
       {feature === "announcements"    && <AnnouncementsCenter announcements={announcements} />}
+      {feature === "status-api"       && <StatusApiCenter />}
+      {feature === "account"          && <AccountCenter activePerson={activePerson} />}
+      {feature === "settings"         && <SettingsCenter />}
     </div>
   );
 }
@@ -1280,16 +1284,31 @@ function HeatmapRight() {
 }
 
 /* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
-function BottomBar({ logs, activePerson, setActivePerson }: { logs:{ts:string;msg:string;ok:boolean}[]; activePerson: string; setActivePerson: (id:string)=>void }) {
+function BottomBar({ logs, activePerson, setActivePerson, feature, setFeature }: {
+  logs:{ts:string;msg:string;ok:boolean}[];
+  activePerson: string; setActivePerson: (id:string)=>void;
+  feature: Feature; setFeature: (f:Feature)=>void;
+}) {
   return (
     <div className="bottom-bar">
       {PEOPLE.map(p => (
         <button key={p.id} className={`btn-tab${activePerson===p.id?" active":""}`} onClick={() => setActivePerson(p.id)}
           style={{ color: activePerson===p.id ? p.color : undefined, borderBottom: activePerson===p.id ? `2px solid ${p.color}` : undefined }}>
           <i className={`ti ${p.id==="you" ? "ti-user-circle" : "ti-user"}`}/> {p.name}
+          {p.id==="you" && <span style={{ fontSize:10, marginLeft:4, color:"var(--brand)", opacity:0.8 }}>Admin</span>}
         </button>
       ))}
-      <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:8, overflow:"hidden" }}>
+      <div style={{ width:1, background:"var(--border-color)", margin:"4px 6px" }}/>
+      <button className={`btn-tab${feature==="account"?" active":""}`} onClick={() => setFeature("account")}>
+        <i className="ti ti-user-circle"/> Contul meu
+      </button>
+      <button className={`btn-tab${feature==="status-api"?" active":""}`} onClick={() => setFeature("status-api")}>
+        <i className="ti ti-server"/> Status API
+      </button>
+      <button className={`btn-tab${feature==="settings"?" active":""}`} onClick={() => setFeature("settings")}>
+        <i className="ti ti-settings"/> Setări
+      </button>
+      <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:16, overflow:"hidden" }}>
         {logs.slice(0,2).map((l,i) => (
           <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
             <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
@@ -1297,7 +1316,7 @@ function BottomBar({ logs, activePerson, setActivePerson }: { logs:{ts:string;ms
             <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
           </div>
         ))}
-        {logs.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
+        {logs.length===0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
       </div>
       <button className="btn-tab" style={{ flex:"0 0 auto" }}>
         <i className="ti ti-help-circle"/> Ajutor
@@ -1397,12 +1416,101 @@ function AdminCenter({ onLog, setAnnouncements }: { onLog:(m:string,ok?:boolean)
 function AnnouncementsCenter({ announcements }: { announcements:Announcement[] }) {
   return (
     <div style={{ padding:20 }}>
-      <h2><i className="ti ti-presentation"/> Monitoare Informare Pasageri</h2>
+      <h2><i className="ti ti-presentation"/> Anunțuri Aeroport</h2>
+      {announcements.length === 0 && <p style={{ color:"var(--text-muted)", marginTop:20 }}>Niciun anunț activ.</p>}
       <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:20 }}>
         {announcements.map(a => (
           <div key={a.id} style={{ padding:15, background:"rgba(255,255,255,0.02)", borderLeft:`5px solid var(--${a.type})`, borderRadius:"0 6px 6px 0" }}>
             <p style={{ margin:0, fontSize:14, fontWeight:500 }}>{a.text}</p>
             <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:5 }}>{a.time}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatusApiCenter() {
+  const apis = [
+    { name:"Device Location",      endpoint:"camara/location-retrieval/v0.3",       status:"UP", latency:"142ms", calls:1240 },
+    { name:"Population Density",   endpoint:"camara/population-density-data/v0.2",  status:"UP", latency:"89ms",  calls:432  },
+    { name:"Number Verification",  endpoint:"camara/number-verification/v1",         status:"UP", latency:"201ms", calls:87   },
+    { name:"SIM Swap",             endpoint:"camara/sim-swap/v1",                    status:"UP", latency:"178ms", calls:23   },
+  ];
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-server"/> Status API Orange</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:20 }}>
+        {apis.map(a => (
+          <div key={a.name} style={{ padding:"12px 16px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:12 }}>
+            <span style={{ width:8, height:8, borderRadius:"50%", background:"var(--success)", flexShrink:0 }}/>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:600, fontSize:13 }}>{a.name}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{a.endpoint}</div>
+            </div>
+            <div style={{ textAlign:"right", fontSize:12 }}>
+              <div style={{ color:"var(--success)", fontWeight:600 }}>{a.status}</div>
+              <div style={{ color:"var(--text-muted)" }}>{a.latency} · {a.calls.toLocaleString()} req</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const PERSON_PROFILES: Record<string, { role:string; flight:string; gate:string; boarding:string }> = {
+  you:    { role:"Admin Aeroport", flight:"—",       gate:"—",  boarding:"—"     },
+  misu:   { role:"Pasager",        flight:"W6 4102", gate:"G2", boarding:"23:45" },
+  ionica: { role:"Pasager",        flight:"LH 1407", gate:"T3", boarding:"00:10" },
+  dorel:  { role:"Pasager",        flight:"FR 8821", gate:"G5", boarding:"00:30" },
+};
+
+function AccountCenter({ activePerson }: { activePerson:string }) {
+  const person = PEOPLE.find(p => p.id === activePerson)!;
+  const profile = PERSON_PROFILES[activePerson];
+  return (
+    <div style={{ padding:20 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:24 }}>
+        <div style={{ width:56, height:56, borderRadius:"50%", background:`${person.color}22`, border:`2px solid ${person.color}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:person.color }}>
+          <i className="ti ti-user"/>
+        </div>
+        <div>
+          <div style={{ fontSize:20, fontWeight:700 }}>{person.name}</div>
+          <div style={{ fontSize:13, color:"var(--text-muted)" }}>{profile.role}</div>
+        </div>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {([
+          ["Zbor", profile.flight],
+          ["Poartă", profile.gate],
+          ["Îmbarcare", profile.boarding],
+          ["Status", activePerson==="you" ? "🟢 Admin activ" : "🟢 Check-in finalizat"],
+        ] as [string,string][]).map(([l,v]) => (
+          <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+            <span style={{ color:"var(--text-muted)", fontSize:13 }}>{l}</span>
+            <span style={{ fontWeight:600, fontSize:13 }}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsCenter() {
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-settings"/> Setări</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:20 }}>
+        {([
+          ["Interval refresh date", "30 secunde"],
+          ["Mod fixture (mock data)", "Activ"],
+          ["Limbă interfață", "Română"],
+          ["Versiune aplicație", "1.0.0 · AirHack 2026"],
+        ] as [string,string][]).map(([l,v]) => (
+          <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+            <span style={{ color:"var(--text-muted)", fontSize:13 }}>{l}</span>
+            <span style={{ fontWeight:600, fontSize:13 }}>{v}</span>
           </div>
         ))}
       </div>
