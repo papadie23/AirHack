@@ -1,11 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
+import { findClient, ADMIN_USERNAME, ADMIN_PASSWORD } from "../lib/mock-auth";
 
 type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings";
 
 export interface Announcement {
   id: number; type: "info" | "warning" | "danger"; text: string; time: string;
+}
+
+interface AuthState {
+  role: "admin" | "passenger";
+  personId: string;
+  displayName: string;
 }
 
 /* ── flights / route ── */
@@ -58,20 +65,50 @@ export default function Dashboard() {
     { id: 1, type: "info",    text: "Zborul RO 321 începe îmbarcarea la Poarta T4 (Dozator Apă).", time: "12:15" },
     { id: 2, type: "warning", text: "Aglomerare la Filtrul de Securitate (Masa Echipei). Timp estimat: 25 min.", time: "12:22" },
   ]);
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
   const addLog = (msg: string, ok = true) =>
     setLogs(p => [{ ts: new Date().toLocaleTimeString("ro"), msg, ok }, ...p].slice(0, 30));
 
+  const handleLogin = (a: AuthState) => {
+    setAuth(a);
+    if (a.role === "passenger") {
+      setActivePerson(a.personId);
+      setFeature("route");
+    } else {
+      setActivePerson("you");
+    }
+  };
+
   return (
-    <div id="dashboard">
+    <div id="dashboard" className={auth ? "has-topbar" : ""}>
+      {!auth && <LoginModal onLogin={handleLogin} />}
+      {auth && (
+        <TopBar
+          auth={auth}
+          theme={theme}
+          setTheme={setTheme}
+          drawerOpen={drawerOpen}
+          setDrawerOpen={setDrawerOpen}
+          onLogout={() => { setAuth(null); setDrawerOpen(false); }}
+        />
+      )}
       <div className="dashboard-grid">
-        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} logs={logs} announcements={announcements} />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} />
+        <LeftPanel
+          feature={feature} setFeature={setFeature}
+          theme={theme} setTheme={setTheme}
+          logs={logs} announcements={announcements}
+          drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen}
+          hasTopBar={!!auth}
+          role={auth?.role ?? null}
+        />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
-      <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />
+      {!auth && <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />}
     </div>
   );
 }
@@ -92,14 +129,18 @@ const USER_NAV = [
 ];
 
 function LeftPanel({
-  feature, setFeature, theme, setTheme, logs, announcements,
+  feature, setFeature, theme, setTheme, logs, announcements, drawerOpen, setDrawerOpen, hasTopBar, role,
 }: {
   feature: Feature; setFeature: (f: Feature) => void;
   theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
   logs: { ts: string; msg: string; ok: boolean }[];
   announcements: Announcement[];
+  drawerOpen: boolean; setDrawerOpen: (v: boolean) => void;
+  hasTopBar: boolean;
+  role: "admin" | "passenger" | null;
 }) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const isPassenger = role === "passenger";
+  const visibleNav = isPassenger ? NAV.filter(n => n.id === "route") : NAV;
 
   return (
     <>
@@ -114,14 +155,16 @@ function LeftPanel({
         />
       )}
 
-      {/* Floating hamburger — mobile only (hidden on desktop via CSS) */}
-      <button
-        className="hamburger-float"
-        onClick={() => setDrawerOpen(true)}
-        title="Meniu"
-      >
-        <i className="ti ti-menu-2" />
-      </button>
+      {/* Floating hamburger — mobile only, hidden when TopBar provides its own */}
+      {!hasTopBar && (
+        <button
+          className="hamburger-float"
+          onClick={() => setDrawerOpen(true)}
+          title="Meniu"
+        >
+          <i className="ti ti-menu-2" />
+        </button>
+      )}
 
       {/* Drawer — mobile only (hidden on desktop via CSS) */}
       <div className={`side-drawer${drawerOpen ? " open" : ""}`}>
@@ -134,7 +177,7 @@ function LeftPanel({
 
         <div className="section-title">Navigare</div>
         <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:20 }}>
-          {NAV.map(n => (
+          {visibleNav.map(n => (
             <button
               key={n.id}
               className={`btn-tab${feature === n.id ? " active" : ""}`}
@@ -197,7 +240,7 @@ function LeftPanel({
 
         <div className="section-title">Funcționalități</div>
         <div className="api-list">
-          {NAV.map(n => (
+          {visibleNav.map(n => (
             <div key={n.id} className={`api-card${feature === n.id ? " active" : ""}`} onClick={() => setFeature(n.id)}>
               <div className="api-card-header"><i className={`ti ${n.icon}`} /> {n.label}</div>
               <div className="api-val">{n.sub}</div>
@@ -208,44 +251,50 @@ function LeftPanel({
             </div>
           ))}
 
-          <div style={{ marginTop: 12 }}>
-            <div className="section-title">Status API Orange</div>
-          </div>
-          {[
-            { icon:"ti-map-pin", label:"Device Location", val:"342 dispozitive", dot:"green", pulse:true },
-            { icon:"ti-id-badge",label:"Number Verification", val:"12 verificări/oră", dot:"orange", pulse:false },
-            { icon:"ti-bolt",    label:"Quality on Demand", val:"2 sesiuni active", dot:"blue", pulse:false },
-          ].map(a => (
-            <div key={a.label} className="api-card">
-              <div className="api-card-header"><i className={`ti ${a.icon}`} /> {a.label}</div>
-              <div className="api-val">{a.val}</div>
-              <div className="api-status">
-                <span className={`dot ${a.dot}${a.pulse ? " pulse-green" : ""}`} />
-                Activ
+          {!isPassenger && (
+            <>
+              <div style={{ marginTop: 12 }}>
+                <div className="section-title">Status API Orange</div>
               </div>
-            </div>
-          ))}
+              {[
+                { icon:"ti-map-pin", label:"Device Location", val:"342 dispozitive", dot:"green", pulse:true },
+                { icon:"ti-id-badge",label:"Number Verification", val:"12 verificări/oră", dot:"orange", pulse:false },
+                { icon:"ti-bolt",    label:"Quality on Demand", val:"2 sesiuni active", dot:"blue", pulse:false },
+              ].map(a => (
+                <div key={a.label} className="api-card">
+                  <div className="api-card-header"><i className={`ti ${a.icon}`} /> {a.label}</div>
+                  <div className="api-val">{a.val}</div>
+                  <div className="api-status">
+                    <span className={`dot ${a.dot}${a.pulse ? " pulse-green" : ""}`} />
+                    Activ
+                  </div>
+                </div>
+              ))}
 
-          <div style={{ marginTop: 12 }}>
-            <div className="section-title">Operațiuni & Securitate</div>
+              <div style={{ marginTop: 12 }}>
+                <div className="section-title">Operațiuni & Securitate</div>
+              </div>
+              {([
+                { id:"flow-prediction",  icon:"ti-clock-play",           label:"Flow Prediction",      sub:"Estimează ETA cozi" },
+                { id:"boarding-verify",  icon:"ti-shield-check",          label:"Verificare Boarding",  sub:"Prevenție fraudă SIM" },
+                { id:"admin",            icon:"ti-settings-automation",   label:"Control Panel Admin",  sub:"QoD & Gestiune crize" },
+                { id:"announcements",    icon:"ti-megaphone",             label:"Anunțuri Pasageri",    sub:`${announcements.length} alerte active` },
+              ] as {id:Feature;icon:string;label:string;sub:string}[]).map(n => (
+                <div key={n.id} className={`api-card${feature===n.id?" active":""}`} onClick={() => setFeature(n.id)}>
+                  <div className="api-card-header"><i className={`ti ${n.icon}`}/> {n.label}</div>
+                  <div className="api-val">{n.sub}</div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        {!isPassenger && (
+          <div className="alert-box" style={{ marginTop: 12 }}>
+            <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
+            <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
           </div>
-          {([
-            { id:"flow-prediction",  icon:"ti-clock-play",           label:"Flow Prediction",      sub:"Estimează ETA cozi" },
-            { id:"boarding-verify",  icon:"ti-shield-check",          label:"Verificare Boarding",  sub:"Prevenție fraudă SIM" },
-            { id:"admin",            icon:"ti-settings-automation",   label:"Control Panel Admin",  sub:"QoD & Gestiune crize" },
-            { id:"announcements",    icon:"ti-megaphone",             label:"Anunțuri Pasageri",    sub:`${announcements.length} alerte active` },
-          ] as {id:Feature;icon:string;label:string;sub:string}[]).map(n => (
-            <div key={n.id} className={`api-card${feature===n.id?" active":""}`} onClick={() => setFeature(n.id)}>
-              <div className="api-card-header"><i className={`ti ${n.icon}`}/> {n.label}</div>
-              <div className="api-val">{n.sub}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="alert-box" style={{ marginTop: 12 }}>
-          <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
-          <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
-        </div>
+        )}
       </div>
     </>
   );
@@ -253,16 +302,18 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements,
+  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role,
 }: {
   feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
   activePerson: string; announcements: Announcement[]; setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
+  role: "admin" | "passenger" | null;
 }) {
+  const isPassenger = role === "passenger";
   return (
     <div className="card main-center">
-      {feature === "weather"          && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
+      {feature === "weather"          && !isPassenger && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
       {feature === "route"            && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
-      {feature === "heatmap"          && <HeatmapCenter onLog={onLog} />}
+      {feature === "heatmap"          && !isPassenger && <HeatmapCenter onLog={onLog} />}
       {feature === "flow-prediction"  && <FlowPredictionCenter onLog={onLog} />}
       {feature === "boarding-verify"  && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
       {feature === "admin"            && activePerson === "you" && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
@@ -1496,6 +1547,189 @@ function HeatmapRight() {
         </div>
       )}
     </>
+  );
+}
+
+/* ═══════════════════════════ LOGIN MODAL ═══════════════════════════ */
+function LoginModal({ onLogin }: { onLogin: (a: AuthState) => void }) {
+  const [tab, setTab] = useState<"admin" | "passenger">("passenger");
+  const [adminUser, setAdminUser] = useState("");
+  const [adminPass, setAdminPass] = useState("");
+  const [phone, setPhone] = useState("");
+  const [iata, setIata] = useState("");
+  const [error, setError] = useState("");
+
+  const submitAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminUser === ADMIN_USERNAME && adminPass === ADMIN_PASSWORD) {
+      onLogin({ role: "admin", personId: "you", displayName: "Admin" });
+    } else {
+      setError("Utilizator sau parolă incorectă.");
+    }
+  };
+
+  const submitPassenger = (e: React.FormEvent) => {
+    e.preventDefault();
+    const client = findClient(phone, iata);
+    if (client) {
+      onLogin({ role: "passenger", personId: client.personId, displayName: client.displayName });
+    } else {
+      setError("Număr de telefon sau zbor IATA incorect.");
+    }
+  };
+
+  return (
+    <div className="login-overlay">
+      <div className="login-modal fade-in">
+        <div className="login-brand">
+          <div className="brand-icon"><i className="ti ti-wifi" /></div>
+          <div>
+            <div className="brand-title">AirFlow Nexus</div>
+            <div className="brand-sub">powered by Orange APIs</div>
+          </div>
+        </div>
+
+        <div className="login-tabs">
+          <button
+            className={`login-tab${tab === "passenger" ? " active" : ""}`}
+            onClick={() => { setTab("passenger"); setError(""); }}
+          >
+            <i className="ti ti-user" /> Pasager
+          </button>
+          <button
+            className={`login-tab${tab === "admin" ? " active" : ""}`}
+            onClick={() => { setTab("admin"); setError(""); }}
+          >
+            <i className="ti ti-shield-half" /> Personal
+          </button>
+        </div>
+
+        {tab === "passenger" && (
+          <form onSubmit={submitPassenger} className="login-form">
+            <div className="login-field">
+              <label>Număr de telefon</label>
+              <input
+                type="tel"
+                className="phone-input"
+                placeholder="+40721000001"
+                value={phone}
+                onChange={e => { setPhone(e.target.value); setError(""); }}
+                autoFocus
+              />
+            </div>
+            <div className="login-field">
+              <label>Cod zbor (IATA)</label>
+              <input
+                type="text"
+                className="phone-input"
+                placeholder="RO321"
+                value={iata}
+                onChange={e => { setIata(e.target.value); setError(""); }}
+              />
+            </div>
+            {error && <div className="login-error">{error}</div>}
+            <button type="submit" className="btn-primary login-submit">
+              <i className="ti ti-login" /> Intră
+            </button>
+            <div className="login-hint">
+              <i className="ti ti-info-circle" />
+              Demo: +40721000001 / RO321
+            </div>
+          </form>
+        )}
+
+        {tab === "admin" && (
+          <form onSubmit={submitAdmin} className="login-form">
+            <div className="login-field">
+              <label>Utilizator</label>
+              <input
+                type="text"
+                className="phone-input"
+                placeholder="admin"
+                value={adminUser}
+                onChange={e => { setAdminUser(e.target.value); setError(""); }}
+                autoFocus
+                autoComplete="username"
+              />
+            </div>
+            <div className="login-field">
+              <label>Parolă</label>
+              <input
+                type="password"
+                className="phone-input"
+                placeholder="••••••"
+                value={adminPass}
+                onChange={e => { setAdminPass(e.target.value); setError(""); }}
+                autoComplete="current-password"
+              />
+            </div>
+            {error && <div className="login-error">{error}</div>}
+            <button type="submit" className="btn-primary login-submit">
+              <i className="ti ti-login" /> Autentificare
+            </button>
+            <div className="login-hint">
+              <i className="ti ti-info-circle" />
+              Demo: admin / admin
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════ TOP BAR ═══════════════════════════ */
+function TopBar({
+  auth, theme, setTheme, drawerOpen, setDrawerOpen, onLogout,
+}: {
+  auth: AuthState;
+  theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
+  drawerOpen: boolean; setDrawerOpen: (v: boolean) => void;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="top-bar">
+      <button
+        className="hamburger-float top-bar-hamburger"
+        onClick={() => setDrawerOpen(!drawerOpen)}
+        title="Meniu"
+      >
+        <i className="ti ti-menu-2" />
+      </button>
+
+      <div className="top-bar-brand">
+        <div className="brand-icon" style={{ width:28, height:28, fontSize:14 }}>
+          <i className="ti ti-wifi" />
+        </div>
+        <span className="brand-title" style={{ fontSize:14 }}>AirFlow Nexus</span>
+      </div>
+
+      <div style={{ flex:1 }} />
+
+      <span className={`role-badge ${auth.role}`}>
+        {auth.role === "admin" ? (
+          <><i className="ti ti-shield-half" /> Admin</>
+        ) : (
+          <><i className="ti ti-user" /> Pasager</>
+        )}
+      </span>
+
+      <span style={{ fontSize:12, color:"var(--text-muted)", maxWidth:120, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+        {auth.displayName}
+      </span>
+
+      <button
+        className="btn-theme-toggle"
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        title="Schimbă tema"
+      >
+        <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
+      </button>
+
+      <button className="btn-theme-toggle" onClick={onLogout} title="Deconectare">
+        <i className="ti ti-logout" />
+      </button>
+    </div>
   );
 }
 
