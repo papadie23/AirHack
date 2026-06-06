@@ -335,7 +335,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 
       {/* ── Vânt + pistă ── */}
       <SectionTitle>Vânt & Componente Pistă</SectionTitle>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+      <div className="info-grid">
         <InfoCard icon="ti-wind" label="Direcție / Viteză"
           value={wind?.isVariable ? `VRB ${wind.speedKt}kt` : `${wind?.directionDeg}° / ${wind?.speedKt}kt`}
           sub={wind?.gustKt ? `Rafale G${wind.gustKt}kt` : "Fără rafale"}
@@ -365,7 +365,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 
       {/* ── Vizibilitate & nori ── */}
       <SectionTitle>Vizibilitate & Plafon Noros</SectionTitle>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+      <div className="info-grid">
         <InfoCard icon="ti-eye" label="Vizibilitate"
           value={visText}
           color={visM < 1000 ? "var(--danger)" : visM < 3000 ? "var(--warning)" : "var(--success)"}
@@ -390,7 +390,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 
       {/* ── Temperatură & presiune ── */}
       <SectionTitle>Temperatură, Presiune & Performanță</SectionTitle>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+      <div className="info-grid">
         <InfoCard icon="ti-temperature" label="Temperatură / Dew"
           value={temp ? `${temp.tempC > 0 ? "+" : ""}${temp.tempC}°C / ${temp.dewpointC}°C` : "—"}
           sub={`Spread ${temp ? temp.tempC - temp.dewpointC : "—"}°C`}
@@ -1167,10 +1167,13 @@ function BottomBar({ logs, activePerson, setActivePerson }: { logs:{ts:string;ms
       {PEOPLE.map(p => (
         <button key={p.id} className={`btn-tab${activePerson===p.id?" active":""}`} onClick={() => setActivePerson(p.id)}
           style={{ color: activePerson===p.id ? p.color : undefined, borderBottom: activePerson===p.id ? `2px solid ${p.color}` : undefined }}>
-          <i className={`ti ${p.id==="you" ? "ti-user-circle" : "ti-user"}`}/> {p.name}
+          <i className={`ti ${p.id==="you" ? "ti-user-circle" : "ti-user"}`}/>
+          <span className="btn-tab-label">{p.name}</span>
         </button>
       ))}
-      <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:8, overflow:"hidden" }}>
+
+      {/* Activity log inline */}
+      <div className="activity-log" style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:8, overflow:"hidden" }}>
         {logs.slice(0,2).map((l,i) => (
           <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
             <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
@@ -1180,8 +1183,10 @@ function BottomBar({ logs, activePerson, setActivePerson }: { logs:{ts:string;ms
         ))}
         {logs.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
       </div>
-      <button className="btn-tab" style={{ flex:"0 0 auto" }}>
-        <i className="ti ti-help-circle"/> Ajutor
+
+      <button className="btn-tab">
+        <i className="ti ti-help-circle" />
+        <span className="btn-tab-label">Ajutor</span>
       </button>
     </div>
   );
