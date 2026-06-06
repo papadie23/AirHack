@@ -84,6 +84,7 @@ export default function Dashboard() {
   ]);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [heatmapSelected, setHeatmapSelected] = useState<string | null>(null);
 
   // Shared flight state — o singură instanță, partajată între Center și Right
   const myFlight = useMyFlightState();
@@ -131,8 +132,8 @@ export default function Dashboard() {
           hasTopBar={!!auth}
           role={auth?.role ?? null}
         />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} myFlight={myFlight} />
-        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} myFlight={myFlight} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} myFlight={myFlight} heatmapSelected={heatmapSelected} setHeatmapSelected={setHeatmapSelected} />
+        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} myFlight={myFlight} heatmapSelected={heatmapSelected} />
       </div>
       {!auth && <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />}
     </div>
@@ -330,19 +331,20 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role, myFlight,
+  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role, myFlight, heatmapSelected, setHeatmapSelected,
 }: {
   feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
   activePerson: string; announcements: Announcement[]; setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
   role: "admin" | "passenger" | null;
   myFlight: MyFlightState;
+  heatmapSelected: string | null; setHeatmapSelected: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
   const isPassenger = role === "passenger";
   return (
     <div className="card main-center">
       {feature === "weather"          && !isPassenger && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
       {feature === "route"            && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
-      {feature === "heatmap"          && !isPassenger && <HeatmapCenter onLog={onLog} />}
+      {feature === "heatmap"          && !isPassenger && <HeatmapCenter onLog={onLog} selected={heatmapSelected} setSelected={setHeatmapSelected} />}
       {feature === "flow-prediction"  && <FlowPredictionCenter onLog={onLog} />}
       {feature === "boarding-verify"  && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
       {feature === "admin"            && activePerson === "you" && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
@@ -1436,10 +1438,9 @@ function zoneColor(intensity: number): string {
   return "#66BB6A";
 }
 
-function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:boolean)=>void; selected: string | null; setSelected: React.Dispatch<React.SetStateAction<string | null>> }) {
   const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
     if (paused) return;
@@ -1675,17 +1676,18 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 
 /* ═══════════════════════════ RIGHT PANEL ═══════════════════════════ */
 function RightPanel({
-  feature, onLog, weatherProvider, setWeatherProvider, myFlight,
+  feature, onLog, weatherProvider, setWeatherProvider, myFlight, heatmapSelected,
 }: {
   feature: Feature; onLog:(m:string,ok?:boolean)=>void;
   weatherProvider: WeatherProvider; setWeatherProvider: (p: WeatherProvider) => void;
   myFlight: MyFlightState;
+  heatmapSelected: string | null;
 }) {
   return (
     <div className="card sidebar-right">
       {feature === "weather" && <WeatherRight weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />}
       {feature === "route"   && <RouteRight onLog={onLog} />}
-      {feature === "heatmap" && <HeatmapRight />}
+      {feature === "heatmap" && <HeatmapRight selected={heatmapSelected} />}
       {feature === "my-flight" && <MyFlightRight onLog={onLog} myFlight={myFlight} />}
     </div>
   );
@@ -1983,92 +1985,152 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   );
 }
 
-function HeatmapRight() {
-  const [cells, setCells] = useState<DensityCell[]>([]);
-  const [updatedAt, setUpdatedAt] = useState<string>("");
+function HeatmapRight({ selected }: { selected: string | null }) {
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    const load = () =>
-      fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" })
-        .then(r => r.json())
-        .then((d: DensityResponse) => {
-          setCells(d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? []);
-          setUpdatedAt(new Date().toLocaleTimeString("ro"));
-        }).catch(() => {});
-    load();
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
+    const id = setInterval(() => setTick(t => t + 1), 2000);
+    return () => clearInterval(id);
   }, []);
 
-  const estimation = cells.filter(c => c.dataType === "DENSITY_ESTIMATION");
-  const maxDensity = Math.max(...estimation.map(c => c.pplDensity ?? 0), 1);
-  const totalDensity = Math.round(estimation.reduce((s,c) => s+(c.pplDensity??0),0));
-  const alertCells = estimation.filter(c => (c.pplDensity??0) > 150);
+  // Generează date sintetice pentru zonele din centru
+  const data = generateSyntheticDensity(tick);
+  const maxDensity = Math.max(...data.map(d => d.density * 250), 1); // convertează la "pax echivalent"
+  const totalPax = data.reduce((s, d) => s + d.pax, 0);
+  const avgDensity = data.reduce((s, d) => s + d.density, 0) / data.length;
+  const alertZones = data.filter(d => d.density > 0.7);
+  
+  const selectedData = selected ? data.find(d => d.id === selected) : null;
+  const selectedZone = selected ? AIRPORT_ZONES.find(z => z.id === selected) : null;
 
   return (
     <>
-      <div className="section-title">Densitate Populație</div>
-      <div className="stats-list" style={{ marginBottom:12 }}>
-        <div className="stat-item">
-          <span className="stat-label">Total celule</span>
-          <span className="stat-value">{cells.length}</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Cu estimare</span>
-          <span className="stat-value">{estimation.length}</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Densitate max</span>
-          <span className="stat-value" style={{ color: maxDensity > 150 ? "var(--danger)" : "var(--text-main)" }}>
-            {maxDensity > 1 ? `${Math.round(maxDensity)} /km²` : "—"}
-          </span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Zone alertă</span>
-          <span className="stat-value" style={{ color: alertCells.length > 0 ? "var(--danger)" : "var(--success)" }}>
-            {alertCells.length}
-          </span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Actualizat</span>
-          <span className="stat-value" style={{ fontSize:12, color:"var(--text-muted)" }}>{updatedAt || "—"}</span>
-        </div>
-      </div>
+      {/* Dacă este o zonă selectată, arată detalii expanded */}
+      {selectedZone && selectedData ? (
+        <>
+          <div className="section-title" style={{ marginBottom:16 }}>
+            <i className={`ti ${selectedZone.icon}`} style={{ marginRight:6, fontSize:16, color:zoneColor(selectedData.density) }} />
+            {selectedZone.label}
+          </div>
 
-      <div className="section-title">Celule Geohash</div>
-      <div style={{ flex:1, overflowY:"auto" }}>
-        {estimation.map(c => {
-          const color = heatColor(c.pplDensity ?? 0);
-          const pct = Math.min(Math.round((c.pplDensity ?? 0) / maxDensity * 100), 100);
-          return (
-            <div key={`est-${c.geohash}`} className="zone-row">
-              <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div className="zone-bar-wrap">
-                  <div className="zone-bar" style={{ width:`${pct}%`, background:color }}/>
-                </div>
-                <span style={{ fontSize:12, fontWeight:600, color, width:50, textAlign:"right" }}>
-                  {Math.round(c.pplDensity ?? 0)}/km²
-                </span>
+          {/* Info card expandat */}
+          <div style={{ padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}44`, marginBottom:16 }}>
+            {/* Ocupare */}
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, marginBottom:4, color:"var(--text-muted)" }}>
+                <span>Ocupare</span>
+                <span style={{ fontWeight:600, color:zoneColor(selectedData.density) }}>{Math.round(selectedData.density * 100)}%</span>
+              </div>
+              <div style={{ height:8, background:"var(--bg-hover)", borderRadius:4, overflow:"hidden" }}>
+                <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), transition:"width 0.8s", boxShadow:`0 0 8px ${zoneColor(selectedData.density)}` }} />
               </div>
             </div>
-          );
-        })}
-        {cells.filter(c => c.dataType !== "DENSITY_ESTIMATION").map(c => (
-          <div key={`low-${c.geohash}`} className="zone-row">
-            <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
-            <span style={{ fontSize:11, color:"var(--text-muted)" }}>LOW_DENSITY</span>
-          </div>
-        ))}
-      </div>
 
-      {alertCells.length > 0 && (
-        <div className="alert-box" style={{ marginTop:12 }}>
-          <div className="alert-title"><i className="ti ti-alert-triangle"/> {alertCells.length} zone aglomerate</div>
-          <div className="alert-desc">
-            {alertCells.map(c => `${c.geohash}: ${Math.round(c.pplDensity??0)}/km²`).join(" · ")}
+            {/* Persoane */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Persoane</div>
+                <div style={{ fontSize:16, fontWeight:800, color:zoneColor(selectedData.density) }}>{selectedData.pax}</div>
+              </div>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Status</div>
+                <div style={{ fontSize:12, fontWeight:600, color:selectedData.density > 0.7 ? "var(--danger)" : selectedData.density > 0.4 ? "var(--warning)" : "var(--success)" }}>
+                  {selectedData.density > 0.7 ? "⚠ Aglomerat" : selectedData.density > 0.4 ? "⚡ Moderat" : "✓ Liber"}
+                </div>
+              </div>
+            </div>
+
+            {/* ETA și Trend */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Aşteptare ETA</div>
+                <div style={{ fontSize:12, fontWeight:600 }}>
+                  {selectedData.density > 0.7 ? `~${Math.round(selectedData.density * 25)} min` : "< 5 min"}
+                </div>
+              </div>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Trend</div>
+                <div style={{ fontSize:12, fontWeight:600 }}>
+                  {tick % 3 === 0 ? "↗ Crește" : tick % 3 === 1 ? "→ Stabil" : "↘ Scade"}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+
+          <div className="section-title">Informații Suplimentare</div>
+          <div style={{ fontSize:12, color:"var(--text-muted)", lineHeight:1.6 }}>
+            <p>Zona <strong>{selectedZone.label}</strong> este curativ la <strong>{Math.round(selectedData.density * 100)}%</strong> din capacitate cu <strong>{selectedData.pax}</strong> persoane detectate.</p>
+            {selectedData.density > 0.7 && (
+              <p style={{ color:"var(--danger)", marginTop:8 }}>⚠ <strong>Alertă:</strong> Aglomerare ridicată. Se recomandă evitarea zonei sau planificarea unei alte rute.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Afişare generală dacă nu este selectată o zonă */}
+          <div className="section-title">Densitate Populație</div>
+          <div className="stats-list" style={{ marginBottom:12 }}>
+            <div className="stat-item">
+              <span className="stat-label">Total zone</span>
+              <span className="stat-value">{AIRPORT_ZONES.length}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Total pax</span>
+              <span className="stat-value">{totalPax}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Densitate medie</span>
+              <span className="stat-value" style={{ color: avgDensity > 0.7 ? "var(--danger)" : avgDensity > 0.4 ? "var(--warning)" : "var(--text-main)" }}>
+                {Math.round(avgDensity * 100)}%
+              </span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Zone alertă</span>
+              <span className="stat-value" style={{ color: alertZones.length > 0 ? "var(--danger)" : "var(--success)" }}>
+                {alertZones.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="section-title">Zone Terminal T4</div>
+          <div style={{ flex:1, overflowY:"auto" }}>
+            {data.map(d => {
+              const zone = AIRPORT_ZONES.find(z => z.id === d.id)!;
+              const color = zoneColor(d.density);
+              const pct = Math.min(Math.round(d.density * 100), 100);
+              return (
+                <div key={d.id} className="zone-row">
+                  <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0 }}>
+                    <i className={`ti ${zone.icon}`} style={{ fontSize:14, color, flexShrink:0 }} />
+                    <span style={{ fontSize:12, fontWeight:600, color, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {zone.label}
+                    </span>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                    <div className="zone-bar-wrap">
+                      <div className="zone-bar" style={{ width:`${pct}%`, background:color }}/>
+                    </div>
+                    <span style={{ fontSize:12, fontWeight:600, color, width:40, textAlign:"right" }}>
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {alertZones.length > 0 && (
+            <div className="alert-box" style={{ marginTop:12 }}>
+              <div className="alert-title"><i className="ti ti-alert-triangle"/> {alertZones.length} zone aglomerate</div>
+              <div className="alert-desc">
+                {alertZones.map(z => {
+                  const zone = AIRPORT_ZONES.find(z2 => z2.id === z.id)!;
+                  return `${zone.label}: ${Math.round(z.density * 100)}%`;
+                }).join(" · ")}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </>
   );
