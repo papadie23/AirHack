@@ -709,7 +709,7 @@ function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
 
 // Puncte fixe calibrate
 const SVG_SECURITY  = { x: 852,  y: 349 }; // control check / masa echipei
-const SVG_GATE      = { x: 2244, y: 256 }; // destinație / dozator
+const SVG_GATE      = { x: 1435, y: 265 }; // destinație / dozator
 
 // Puncte de start diferite pentru fiecare persoană
 const SVG_STARTS: Record<string, {x:number;y:number}> = {
@@ -730,7 +730,7 @@ const ZONES: Zone[] = [
   { id: "checkin",              label: "Check-in",              x: 108,  y: 407, color: "#38BDF8", w: 160, h: 90 },
   { id: "control-securitate",   label: "Control Securitate",    x: 417,  y: 252, color: "#F97316", w: 180, h: 90 },
   { id: "verificare-documente", label: "Verificare Documente",  x: 793,  y: 323, color: "#A78BFA", w: 180, h: 90 },
-  { id: "sosire-poarta",        label: "Boarding",              x: 1435, y: 265, color: "#34D399", w: 170, h: 90 },
+  { id: "sosire-poarta",        label: "Sosire la Poartă",      x: 1435, y: 265, color: "#34D399", w: 170, h: 90 },
   { id: "imbarcare",            label: "Îmbarcare",             x: 2150, y: 265, color: "#FBBF24", w: 140, h: 90 },
 ];
 
