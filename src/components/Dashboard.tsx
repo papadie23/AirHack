@@ -872,6 +872,27 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const [dynamicRoute, setDynamicRoute] = useState<{x:number;y:number}[]|null>(null);
 
+  // ── Boarding task state machine ──
+  type BoardingPhase = "idle"|"confirming"|"awaiting-location"|"task"|"done";
+  const [boardingPhase, setBoardingPhase] = useState<BoardingPhase>("confirming");
+  const [taskIdx, setTaskIdx] = useState(0);
+  const TASKS = ZONES.map(z => ({ zone: z, label: z.label }));
+
+  const advanceTask = () => {
+    const next = taskIdx + 1;
+    if (next >= TASKS.length) { setBoardingPhase("done"); }
+    else { setTaskIdx(next); setBoardingPhase("task"); setDynamicRoute(null); }
+  };
+
+  const goToZone = () => {
+    const zone = TASKS[taskIdx]?.zone;
+    if (!zone || !positions[activePerson]) return;
+    const from = positions[activePerson];
+    const to = { x: zone.x, y: zone.y };
+    const segs = makeOrthoRoute(from, to);
+    setDynamicRoute(segs);
+  };
+
   // Reset dynamic route when the active person changes
   const prevActivePerson = useRef(activePerson);
   if (prevActivePerson.current !== activePerson) {
@@ -892,10 +913,32 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
-    // Dynamic route: from current GPS position → existing waypoints → gate
-    const baseRoute = makeRoute(personId);
-    const route = [svgPos, ...baseRoute.slice(1)];
-    setDynamicRoute(route);
+    if (personId !== "you") return;
+    // Zone proximity check — auto-advance task when entering active zone
+    // We compare SVG distance (approx 1 SVG unit ≈ 0.04m at LRIA scale)
+    setBoardingPhase(phase => {
+      if (phase !== "task") return phase;
+      return phase; // handled below via setState callback trick
+    });
+    setTaskIdx(idx => {
+      const zone = ZONES[idx];
+      if (!zone) return idx;
+      const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
+      if (dist < Math.max(zone.w, zone.h) * 0.6) {
+        // entered zone — clear route, advance after short delay
+        setTimeout(() => {
+          setDynamicRoute(null);
+          setBoardingPhase(p => p === "task" ? "task" : p);
+          setTaskIdx(i => {
+            const next = i + 1;
+            if (next >= ZONES.length) { setBoardingPhase("done"); return i; }
+            setBoardingPhase("task");
+            return next;
+          });
+        }, 800);
+      }
+      return idx;
+    });
   };
 
   // Auto-trigger permission prompt on mount for any logged-in user
@@ -922,6 +965,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         const lng = pos.coords.longitude;
         placeOnMap(lat, lng, activePerson);
         onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${pos.coords.accuracy.toFixed(0)}m`);
+        setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
         setLocLoading(false);
       },
       (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); },
@@ -1198,6 +1242,61 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             <div style={{fontWeight:600,fontSize:14,color:person.color}}>{flight.flight} → {flight.dest}</div>
             <div style={{fontSize:12,color:"var(--text-muted)"}}>{GATE_LABELS[flight.gate]} · Decolare {flight.departs}</div>
           </div>
+        </div>
+      )}
+
+      {/* ── Boarding task overlay ── */}
+      {boardingPhase === "confirming" && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:16, padding:"28px 32px", maxWidth:340, width:"90%", textAlign:"center" }}>
+            <div style={{ fontSize:28, marginBottom:12 }}>✈️</div>
+            <div style={{ fontSize:18, fontWeight:700, marginBottom:8 }}>Începeți procesul de îmbarcare?</div>
+            <div style={{ fontSize:13, color:"var(--text-muted)", marginBottom:24 }}>Vă vom ghida pas cu pas până la avion.</div>
+            <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
+              <button onClick={() => setBoardingPhase("awaiting-location")}
+                style={{ flex:1, padding:"10px 0", background:"var(--brand)", border:"none", borderRadius:8, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Da</button>
+              <button onClick={() => setBoardingPhase("idle")}
+                style={{ flex:1, padding:"10px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:8, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>Nu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "awaiting-location" && (
+        <div style={{ marginTop:8, padding:"14px 16px", background:"rgba(56,189,248,0.1)", border:"1px solid #38BDF8", borderRadius:12, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <i className="ti ti-map-pin" style={{ color:"#38BDF8", fontSize:22, flexShrink:0 }}/>
+          <div>
+            <div style={{ fontWeight:700, fontSize:14, color:"#38BDF8" }}>Activați localizarea</div>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>Apăsați butonul <b>Localizează</b> pentru a continua ghidarea.</div>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "task" && TASKS[taskIdx] && (
+        <div style={{ marginTop:8, padding:"14px 16px", background:`${TASKS[taskIdx].zone.color}18`, border:`1px solid ${TASKS[taskIdx].zone.color}`, borderRadius:12, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+            <span style={{ background:TASKS[taskIdx].zone.color, color:"#000", fontWeight:800, fontSize:12, borderRadius:20, padding:"2px 10px" }}>
+              {taskIdx + 1} / {TASKS.length}
+            </span>
+            <span style={{ fontWeight:700, fontSize:15, color:TASKS[taskIdx].zone.color }}>{TASKS[taskIdx].label}</span>
+          </div>
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={advanceTask}
+              style={{ flex:1, padding:"9px 0", background:TASKS[taskIdx].zone.color, border:"none", borderRadius:8, color:"#000", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+              ✓ Am făcut
+            </button>
+            <button onClick={goToZone}
+              style={{ flex:1, padding:"9px 0", background:"var(--bg-hover)", border:`1px solid ${TASKS[taskIdx].zone.color}`, borderRadius:8, color:TASKS[taskIdx].zone.color, fontWeight:600, fontSize:13, cursor:"pointer" }}>
+              ➜ Mergi spre {TASKS[taskIdx].label}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "done" && (
+        <div style={{ marginTop:8, padding:"14px 16px", background:"rgba(52,211,153,0.15)", border:"1px solid #34D399", borderRadius:12, textAlign:"center", flexShrink:0 }}>
+          <div style={{ fontSize:22 }}>🎉</div>
+          <div style={{ fontWeight:700, fontSize:15, color:"#34D399", marginTop:4 }}>Îmbarcare completă! Zbor plăcut!</div>
         </div>
       )}
     </>
