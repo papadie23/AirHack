@@ -1451,7 +1451,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             {/* Gate */}
             {!calMode && gatePos && (
               <g filter="url(#glow2)">
-                <circle cx={gatePos.x - 40} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" style={{animation:"pulse 2s infinite"}}/>
+                <circle cx={gatePos.x - 40} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2"/>
                 <circle cx={gatePos.x - 40} cy={gatePos.y} r="7" fill="#10B981"/>
               </g>
             )}
@@ -1463,7 +1463,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               const pos = positions[p.id];
               return (
                 <g filter="url(#glow2)">
-                  <circle cx={pos.x} cy={pos.y} r="12" fill={p.color} opacity="0.3" style={{animation:"pulse 2s infinite"}}/>
+                  <circle cx={pos.x} cy={pos.y} r="12" fill={p.color} opacity="0.3"/>
                   <circle cx={pos.x} cy={pos.y} r="7" fill={p.color}/>
                   <circle cx={pos.x} cy={pos.y} r="2.5" fill="#fff"/>
                 </g>
@@ -1811,7 +1811,7 @@ function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:b
             const r = z.radius * (0.6 + d.density * 0.6);
             const isSelected = selected === z.id;
             // Pentru "gate" (Sosire la Poartă), pune eticheta deasupra
-            const labelY = z.id === "gate" ? z.svgY - r - 10 : z.svgY + r + 20;
+            const labelY = z.id === "gate" ? z.svgY - r - 14 : z.svgY + r + 26;
             
             return (
               <g key={z.id} style={{ cursor:"pointer" }} onClick={(e) => { e.stopPropagation(); setSelected(selected === z.id ? null : z.id); }}>
@@ -1839,9 +1839,9 @@ function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:b
                   x={z.svgX}
                   y={labelY}
                   textAnchor="middle"
-                  fontSize="12"
+                  fontSize="18"
                   fill={color}
-                  fontWeight="600"
+                  fontWeight="700"
                   style={{ pointerEvents:"none" }}
                 >
                   {z.label}
