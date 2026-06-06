@@ -13,6 +13,7 @@ interface AuthState {
   role: "admin" | "passenger";
   personId: string;
   displayName: string;
+  flightIata?: string;
 }
 
 /* ── flights / route ── */
@@ -95,7 +96,13 @@ export default function Dashboard() {
     setAuth(a);
     if (a.role === "passenger") {
       setActivePerson(a.personId);
-      setFeature("route");
+      if (a.flightIata) {
+        myFlight.setInput(a.flightIata);
+        myFlight.search(a.flightIata);
+        setFeature("my-flight");
+      } else {
+        setFeature("route");
+      }
     } else {
       setActivePerson("you");
     }
@@ -2272,7 +2279,7 @@ function LoginModal({ onLogin }: { onLogin: (a: AuthState) => void }) {
     e.preventDefault();
     const client = findClient(phone, iata);
     if (client) {
-      onLogin({ role: "passenger", personId: client.personId, displayName: client.displayName });
+      onLogin({ role: "passenger", personId: client.personId, displayName: client.displayName, flightIata: client.flightIata });
     } else {
       setError("Număr de telefon sau zbor IATA incorect.");
     }
