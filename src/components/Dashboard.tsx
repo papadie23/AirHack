@@ -1213,6 +1213,60 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
       )}
 
+      {/* ── Boarding task overlay ── */}
+      {boardingPhase === "confirming" && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:20, padding:"36px 32px", maxWidth:360, width:"92%", textAlign:"center" }}>
+            <div style={{ fontSize:48, marginBottom:16 }}>✈️</div>
+            <div style={{ fontSize:22, fontWeight:800, marginBottom:10 }}>Începeți procesul de îmbarcare?</div>
+            <div style={{ fontSize:15, color:"var(--text-muted)", marginBottom:28 }}>Vă vom ghida pas cu pas până la avion.</div>
+            <div style={{ display:"flex", gap:14, justifyContent:"center" }}>
+              <button onClick={() => setBoardingPhase("awaiting-location")}
+                style={{ flex:1, padding:"14px 0", background:"var(--brand)", border:"none", borderRadius:10, color:"#fff", fontWeight:800, fontSize:17, cursor:"pointer" }}>Da</button>
+              <button onClick={() => setBoardingPhase("idle")}
+                style={{ flex:1, padding:"14px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:10, color:"var(--text-muted)", fontSize:17, cursor:"pointer" }}>Nu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "awaiting-location" && (
+        <div style={{ marginTop:10, padding:"18px 20px", background:"rgba(56,189,248,0.1)", border:"2px solid #38BDF8", borderRadius:14, display:"flex", alignItems:"center", gap:14, flexShrink:0 }}>
+          <i className="ti ti-map-pin" style={{ color:"#38BDF8", fontSize:28, flexShrink:0 }}/>
+          <div>
+            <div style={{ fontWeight:800, fontSize:17, color:"#38BDF8" }}>Activați localizarea</div>
+            <div style={{ fontSize:14, color:"var(--text-muted)", marginTop:4 }}>Apăsați butonul <b style={{color:"#38BDF8"}}>Localizează</b> pentru a continua ghidarea.</div>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "task" && TASKS[taskIdx] && (
+        <div style={{ marginTop:10, padding:"18px 20px", background:`${TASKS[taskIdx].zone.color}18`, border:`2px solid ${TASKS[taskIdx].zone.color}`, borderRadius:14, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+            <span style={{ background:TASKS[taskIdx].zone.color, color:"#000", fontWeight:800, fontSize:13, borderRadius:20, padding:"3px 12px" }}>
+              {taskIdx + 1} / {TASKS.length}
+            </span>
+            <span style={{ fontWeight:800, fontSize:18, color:TASKS[taskIdx].zone.color }}>{TASKS[taskIdx].label}</span>
+          </div>
+          <div style={{ display:"flex", gap:12 }}>
+            <button onClick={advanceTask}
+              style={{ flex:1, padding:"13px 0", background:TASKS[taskIdx].zone.color, border:"none", borderRadius:10, color:"#000", fontWeight:800, fontSize:16, cursor:"pointer" }}>
+              ✓ Am făcut
+            </button>
+            <button onClick={goToZone}
+              style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:`2px solid ${TASKS[taskIdx].zone.color}`, borderRadius:10, color:TASKS[taskIdx].zone.color, fontWeight:700, fontSize:15, cursor:"pointer" }}>
+              ➜ Mergi spre {TASKS[taskIdx].label}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "done" && (
+        <div style={{ marginTop:10, padding:"20px", background:"rgba(52,211,153,0.15)", border:"2px solid #34D399", borderRadius:14, textAlign:"center", flexShrink:0 }}>
+          <div style={{ fontSize:36 }}>🎉</div>
+          <div style={{ fontWeight:800, fontSize:18, color:"#34D399", marginTop:6 }}>Îmbarcare completă! Zbor plăcut!</div>
+        </div>
+      )}
       {/* ETA card — shown on all screens, prominent on mobile */}
       {flight && (
         <div className="route-eta-card fade-in">
@@ -1245,60 +1299,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
       )}
 
-      {/* ── Boarding task overlay ── */}
-      {boardingPhase === "confirming" && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:16, padding:"28px 32px", maxWidth:340, width:"90%", textAlign:"center" }}>
-            <div style={{ fontSize:28, marginBottom:12 }}>✈️</div>
-            <div style={{ fontSize:18, fontWeight:700, marginBottom:8 }}>Începeți procesul de îmbarcare?</div>
-            <div style={{ fontSize:13, color:"var(--text-muted)", marginBottom:24 }}>Vă vom ghida pas cu pas până la avion.</div>
-            <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
-              <button onClick={() => setBoardingPhase("awaiting-location")}
-                style={{ flex:1, padding:"10px 0", background:"var(--brand)", border:"none", borderRadius:8, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Da</button>
-              <button onClick={() => setBoardingPhase("idle")}
-                style={{ flex:1, padding:"10px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:8, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>Nu</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {boardingPhase === "awaiting-location" && (
-        <div style={{ marginTop:8, padding:"14px 16px", background:"rgba(56,189,248,0.1)", border:"1px solid #38BDF8", borderRadius:12, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
-          <i className="ti ti-map-pin" style={{ color:"#38BDF8", fontSize:22, flexShrink:0 }}/>
-          <div>
-            <div style={{ fontWeight:700, fontSize:14, color:"#38BDF8" }}>Activați localizarea</div>
-            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>Apăsați butonul <b>Localizează</b> pentru a continua ghidarea.</div>
-          </div>
-        </div>
-      )}
-
-      {boardingPhase === "task" && TASKS[taskIdx] && (
-        <div style={{ marginTop:8, padding:"14px 16px", background:`${TASKS[taskIdx].zone.color}18`, border:`1px solid ${TASKS[taskIdx].zone.color}`, borderRadius:12, flexShrink:0 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-            <span style={{ background:TASKS[taskIdx].zone.color, color:"#000", fontWeight:800, fontSize:12, borderRadius:20, padding:"2px 10px" }}>
-              {taskIdx + 1} / {TASKS.length}
-            </span>
-            <span style={{ fontWeight:700, fontSize:15, color:TASKS[taskIdx].zone.color }}>{TASKS[taskIdx].label}</span>
-          </div>
-          <div style={{ display:"flex", gap:10 }}>
-            <button onClick={advanceTask}
-              style={{ flex:1, padding:"9px 0", background:TASKS[taskIdx].zone.color, border:"none", borderRadius:8, color:"#000", fontWeight:700, fontSize:13, cursor:"pointer" }}>
-              ✓ Am făcut
-            </button>
-            <button onClick={goToZone}
-              style={{ flex:1, padding:"9px 0", background:"var(--bg-hover)", border:`1px solid ${TASKS[taskIdx].zone.color}`, borderRadius:8, color:TASKS[taskIdx].zone.color, fontWeight:600, fontSize:13, cursor:"pointer" }}>
-              ➜ Mergi spre {TASKS[taskIdx].label}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {boardingPhase === "done" && (
-        <div style={{ marginTop:8, padding:"14px 16px", background:"rgba(52,211,153,0.15)", border:"1px solid #34D399", borderRadius:12, textAlign:"center", flexShrink:0 }}>
-          <div style={{ fontSize:22 }}>🎉</div>
-          <div style={{ fontWeight:700, fontSize:15, color:"#34D399", marginTop:4 }}>Îmbarcare completă! Zbor plăcut!</div>
-        </div>
-      )}
     </>
   );
 }
