@@ -20,6 +20,16 @@
   --radius-md: 10px;
 }
 
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg-body: #f0f2f7;
+  --bg-card: #ffffff;
+  --bg-hover: #e6e9f4;
+  --border-color: #d2d6e8;
+  --text-main: #14142b;
+  --text-muted: #6b6b8a;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
@@ -288,6 +298,47 @@ html, body {
 
 /* ── User dot glow ── */
 .user-dot { filter: drop-shadow(0 0 6px #ff6600) drop-shadow(0 0 14px rgba(255,102,0,0.4)); }
+
+/* ── Theme toggle button ── */
+.btn-theme-toggle {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: 0.2s;
+  font-size: 16px;
+}
+.btn-theme-toggle:hover { color: var(--brand); border-color: var(--brand); background: var(--bg-hover); }
+
+/* ── Provider picker card ── */
+.provider-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: 0.2s;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+}
+.provider-card:hover { background: var(--bg-hover); }
+.provider-card.active {
+  border-color: var(--brand);
+  background: rgba(255,102,0,0.1);
+  color: var(--brand);
+}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 3px; }

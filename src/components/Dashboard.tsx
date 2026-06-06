@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
+import type { WeatherProvider } from "../lib/weather";
 
 type Feature = "weather" | "route" | "heatmap";
 
@@ -46,15 +47,22 @@ const ROUTE_PX: Record<string, { x:number; y:number }[]> = {
 export default function Dashboard() {
   const [feature, setFeature] = useState<Feature>("weather");
   const [logs, setLogs] = useState<{ ts: string; msg: string; ok: boolean }[]>([]);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
   const addLog = (msg: string, ok = true) =>
     setLogs(p => [{ ts: new Date().toLocaleTimeString("ro"), msg, ok }, ...p].slice(0, 30));
 
   return (
     <div id="dashboard">
       <div className="dashboard-grid">
-        <LeftPanel feature={feature} setFeature={setFeature} />
-        <CenterPanel feature={feature} onLog={addLog} />
-        <RightPanel feature={feature} onLog={addLog} />
+        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} />
+        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
       <BottomBar logs={logs} />
     </div>
@@ -68,15 +76,27 @@ const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
   { id: "heatmap", icon: "ti-map-2",       label: "Heatmap Terminal", sub: "Aglomerație zone"          },
 ];
 
-function LeftPanel({ feature, setFeature }: { feature: Feature; setFeature: (f: Feature) => void }) {
+function LeftPanel({
+  feature, setFeature, theme, setTheme,
+}: {
+  feature: Feature; setFeature: (f: Feature) => void;
+  theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
+}) {
   return (
     <div className="card sidebar-left">
       <div className="brand-header">
         <div className="brand-icon"><i className="ti ti-wifi" /></div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div className="brand-title">AirFlow Nexus</div>
           <div className="brand-sub">powered by Orange APIs</div>
         </div>
+        <button
+          className="btn-theme-toggle"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
+        </button>
       </div>
 
       <div className="section-title">Funcționalități</div>
@@ -120,10 +140,14 @@ function LeftPanel({ feature, setFeature }: { feature: Feature; setFeature: (f: 
 }
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
-function CenterPanel({ feature, onLog }: { feature: Feature; onLog: (m: string, ok?: boolean) => void }) {
+function CenterPanel({
+  feature, onLog, weatherProvider,
+}: {
+  feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
+}) {
   return (
     <div className="card main-center">
-      {feature === "weather" && <WeatherCenter onLog={onLog} />}
+      {feature === "weather" && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
       {feature === "route"   && <RouteCenter   onLog={onLog} />}
       {feature === "heatmap" && <HeatmapCenter onLog={onLog} />}
     </div>
@@ -203,25 +227,55 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="section-title" style={{ marginTop:16, marginBottom:8 }}>{children}</div>;
 }
 
-function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+const PROVIDER_LABELS: Record<WeatherProvider, string> = {
+  "open-meteo": "Open-Meteo",
+  "openweathermap": "OpenWeatherMap",
+  "meteoblue": "Meteoblue",
+  "accuweather": "AccuWeather",
+};
+
+function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void; provider: WeatherProvider }) {
   const [w, setW] = useState<WData|null>(null);
   const [m, setM] = useState<MData|null>(null);
   const [loading, setLoading] = useState(false);
   const [rwy, setRwy] = useState<"08"|"26">("08");
+  // Cache: avoid re-fetching the same provider (load-once in test mode)
+  const wCache = useRef<Partial<Record<WeatherProvider, WData>>>({});
+  const mCache = useRef<MData|null>(null);
 
   const load = async () => {
+    // Use cache if available (fixture data is never re-fetched)
+    if (wCache.current[provider]) {
+      setW(wCache.current[provider]!);
+      if (mCache.current) setM(mCache.current);
+      return;
+    }
     setLoading(true);
     try {
+      const metarPromise = mCache.current
+        ? Promise.resolve(mCache.current)
+        : fetch("/api/metar?station=LRIA").then(r => r.json());
       const [wd, md] = await Promise.all([
-        fetch("/api/weather").then(r => r.json()),
-        fetch("/api/metar?station=LRIA").then(r => r.json()),
+        fetch(`/api/weather-provider?provider=${provider}`).then(r => r.json()),
+        metarPromise,
       ]);
+      wCache.current[provider] = wd;
+      mCache.current = md;
       setW(wd); setM(md);
-      onLog(`METAR LRIA · ${md.flightCategory} · ${md.wind?.speedKt}kt ${md.wind?.directionDeg}°`);
+      onLog(`${PROVIDER_LABELS[provider]} · ${md.flightCategory} · ${md.wind?.speedKt}kt ${md.wind?.directionDeg}°`);
     } catch { onLog("Eroare fetch meteo", false); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+
+  const handleRefresh = () => {
+    // Don't re-fetch fixture data to save calls
+    if (w?.fromFixture) return;
+    delete wCache.current[provider];
+    mCache.current = null;
+    load();
+  };
+
+  useEffect(() => { load(); }, [provider]);
 
   const cat = m?.flightCategory ?? "VFR";
   const catColor = CAT_COL[cat] ?? "var(--success)";
@@ -248,15 +302,17 @@ function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         <div>
           <div className="map-title">Briefing Meteorologic — LRIA Iași</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
+            <span style={{ color:"var(--brand)", fontWeight:600 }}>{PROVIDER_LABELS[provider]}</span>
+            {" · "}
             {m?.observedAt ? new Date(m.observedAt).toLocaleString("ro", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"short" }) : "—"} UTC
-            {m?.fromFixture && <span style={{ marginLeft:8, color:"var(--warning)" }}>· fixture</span>}
+            {(w?.fromFixture || m?.fromFixture) && <span style={{ marginLeft:8, color:"var(--warning)" }}>· fixture</span>}
           </div>
         </div>
         <div className="badges">
           <div className="badge" style={{ background:`${catColor}22`, color:catColor, border:`1px solid ${catColor}44`, fontSize:13, fontWeight:700, padding:"6px 14px" }}>
             {cat}
           </div>
-          <button onClick={load} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"6px 12px", cursor:"pointer", fontSize:12 }}>
+          <button onClick={handleRefresh} disabled={w?.fromFixture} title={w?.fromFixture ? "Fixture — no re-fetch in test mode" : "Refresh"} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color: w?.fromFixture ? "var(--border-color)" : "var(--text-muted)", padding:"6px 12px", cursor: w?.fromFixture ? "default" : "pointer", fontSize:12 }}>
             <i className={`ti ti-refresh${loading?" spin":""}`} />
           </button>
         </div>
@@ -794,17 +850,32 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 }
 
 /* ═══════════════════════════ RIGHT PANEL ═══════════════════════════ */
-function RightPanel({ feature, onLog }: { feature: Feature; onLog:(m:string,ok?:boolean)=>void }) {
+function RightPanel({
+  feature, onLog, weatherProvider, setWeatherProvider,
+}: {
+  feature: Feature; onLog:(m:string,ok?:boolean)=>void;
+  weatherProvider: WeatherProvider; setWeatherProvider: (p: WeatherProvider) => void;
+}) {
   return (
     <div className="card sidebar-right">
-      {feature === "weather" && <WeatherRight />}
+      {feature === "weather" && <WeatherRight weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />}
       {feature === "route"   && <RouteRight onLog={onLog} />}
       {feature === "heatmap" && <HeatmapRight />}
     </div>
   );
 }
 
-function WeatherRight() {
+const WEATHER_PROVIDERS: { id: WeatherProvider; label: string; icon: string; sub: string }[] = [
+  { id: "open-meteo",      label: "Open-Meteo",      icon: "ti-cloud",       sub: "Gratuit · fără autentificare" },
+  { id: "openweathermap",  label: "OpenWeatherMap",   icon: "ti-cloud-storm", sub: "API Key · 60 req/min"         },
+  { id: "accuweather",     label: "AccuWeather",      icon: "ti-sun",         sub: "API Key · 50 req/zi"          },
+];
+
+function WeatherRight({
+  weatherProvider, setWeatherProvider,
+}: {
+  weatherProvider: WeatherProvider; setWeatherProvider: (p: WeatherProvider) => void;
+}) {
   const [m, setM] = useState<MData|null>(null);
   useEffect(() => {
     fetch("/api/metar?station=LRIA").then(r => r.json()).then(setM).catch(() => {});
@@ -827,6 +898,27 @@ function WeatherRight() {
 
   return (
     <>
+      {/* ── Provider picker ── */}
+      <div className="section-title">Furnizor Meteo</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:16, flexShrink:0 }}>
+        {WEATHER_PROVIDERS.map(p => (
+          <button
+            key={p.id}
+            className={`provider-card${weatherProvider === p.id ? " active" : ""}`}
+            onClick={() => setWeatherProvider(p.id)}
+          >
+            <i className={`ti ${p.icon}`} style={{ fontSize:18, flexShrink:0 }} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:600 }}>{p.label}</div>
+              <div style={{ fontSize:11, opacity:0.8 }}>{p.sub}</div>
+            </div>
+            {weatherProvider === p.id && (
+              <i className="ti ti-check" style={{ fontSize:14, flexShrink:0 }} />
+            )}
+          </button>
+        ))}
+      </div>
+
       <div className="section-title">Stația LRIA</div>
       <div className="stats-list" style={{ marginBottom:12 }}>
         {[
