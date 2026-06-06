@@ -1858,15 +1858,25 @@ const AIRPORT_COORDS: Record<string, { lat: number; lon: number; label: string }
 function RouteMapSVG({ dep, arr, progress }: {
   dep: string; arr: string; progress: number | null;
 }) {
-  const [portrait, setPortrait] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");
-    setPortrait(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setPortrait(e.matches);
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  if (isMobile) {
+    return (
+      <img
+        src="/harta_completa_vertical.svg"
+        alt={`Rută ${dep} → ${arr}`}
+        style={{ width:"100%", display:"block", borderRadius:"var(--radius-md)", border:"1px solid var(--border-color)" }}
+      />
+    );
+  }
 
   const from = AIRPORT_COORDS[dep];
   const to   = AIRPORT_COORDS[arr];
@@ -1877,12 +1887,11 @@ function RouteMapSVG({ dep, arr, progress }: {
     </div>
   );
 
-  // Portrait (mobile): tall canvas fills the screen; landscape (desktop): wide & compact
-  const W   = portrait ? 300 : 440;
-  const H   = portrait ? 440 : 200;
-  const PAD = portrait ? 50  : 32;
-  // Smaller minimum span on portrait so airports spread diagonally across the full canvas
-  const minSpan = portrait ? 1 : 2;
+  // Desktop: wide & compact landscape
+  const W   = 440;
+  const H   = 200;
+  const PAD = 32;
+  const minSpan = 2;
 
   const minLon = Math.min(from.lon, to.lon);
   const maxLon = Math.max(from.lon, to.lon);
@@ -1919,21 +1928,15 @@ function RouteMapSVG({ dep, arr, progress }: {
     planeAngle = Math.atan2(by2 - by, bx2 - bx) * (180 / Math.PI);
   }
 
-  // Grid lines: horizontal for portrait, vertical for landscape
-  const gridLines = portrait
-    ? [0.25, 0.5, 0.75].map(f => (
-        <line key={f} x1={PAD/2} y1={PAD + f*(H-2*PAD)} x2={W-PAD/2} y2={PAD + f*(H-2*PAD)}
-          stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4" />
-      ))
-    : [0.25, 0.5, 0.75].map(f => (
-        <line key={f} x1={PAD + f*(W-2*PAD)} y1={PAD/2} x2={PAD + f*(W-2*PAD)} y2={H-PAD/2}
-          stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4" />
-      ));
+  const gridLines = [0.25, 0.5, 0.75].map(f => (
+    <line key={f} x1={PAD + f*(W-2*PAD)} y1={PAD/2} x2={PAD + f*(W-2*PAD)} y2={H-PAD/2}
+      stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4" />
+  ));
 
-  const fontSize = portrait ? 13 : 10;
-  const citySize = portrait ? 11 : 9;
-  const dotR     = portrait ? 8  : 6;
-  const planeSize = portrait ? 11 : 8;
+  const fontSize = 10;
+  const citySize = 9;
+  const dotR     = 6;
+  const planeSize = 8;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:"auto", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:"1px solid var(--border-color)" }}>
