@@ -788,6 +788,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     ionica: SVG_STARTS.ionica,
     dorel:  SVG_STARTS.dorel,
   });
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
   const [locLoading, setLocLoading] = useState(false);
   const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
@@ -825,10 +827,30 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // Auto-zoom to fill container when entering/leaving portrait mode
   const isPortraitRef = useRef(isPortrait);
   isPortraitRef.current = isPortrait;
+  // Helper: compute pan to center SVG point (svgX, svgY) in a W×H container at zoom Z (portrait)
+  const centerOnSvgPoint = (svgX: number, svgY: number, W: number, H: number, Z: number) => {
+    const imgH = W / MAP_ASPECT; // image height in layer (objectFit:contain, width-bound)
+    const lx = (svgX / 2262) * W;
+    const ly = (H - imgH) / 2 + (svgY / 587) * imgH;
+    // After rotate(-90deg) + scale(Z): keep (lx,ly) at screen center
+    return { x: -Z * (ly - H / 2), y: Z * (lx - W / 2) };
+  };
+
   useEffect(() => {
     if (isPortrait) {
-      setMapZoom(MAP_ASPECT);
-      setMapPan({ x: 0, y: 0 });
+      requestAnimationFrame(() => {
+        const el = mapWrapRef.current;
+        const W = el?.getBoundingClientRect().width ?? 0;
+        const H = el?.getBoundingClientRect().height ?? 0;
+        const pos = positionsRef.current[activePerson];
+        if (W > 0 && pos) {
+          setMapZoom(MAP_ASPECT);
+          setMapPan(centerOnSvgPoint(pos.x, pos.y, W, H, MAP_ASPECT));
+        } else {
+          setMapZoom(MAP_ASPECT);
+          setMapPan({ x: 0, y: 0 });
+        }
+      });
     } else {
       setMapZoom(1);
       setMapPan({ x: 0, y: 0 });
@@ -853,15 +875,30 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         requestAnimationFrame(() => {
           const el = mapWrapRef.current;
           if (!el) return;
-          const { width, height } = el.getBoundingClientRect();
-          // Rotated map fits fully when Z = H/W (portrait: height > width)
-          setMapZoom(height > width ? height / width : 1);
-          setMapPan({ x: 0, y: 0 });
+          const { width: W, height: H } = el.getBoundingClientRect();
+          // Cover zoom: MAP_ASPECT fills width exactly, no black bars on sides
+          const Z = MAP_ASPECT;
+          // Anchor bottom of rotated map to bottom of screen
+          // Rotated image visual height = W * Z; pan so its bottom = H
+          const panY = (H - W * Z) / 2;
+          setMapZoom(Z);
+          setMapPan({ x: 0, y: panY });
         });
       } else if (isPortraitRef.current) {
-        // Back to normal portrait: restore fill zoom
-        setMapZoom(MAP_ASPECT);
-        setMapPan({ x: 0, y: 0 });
+        // Back to normal portrait: center on user
+        requestAnimationFrame(() => {
+          const el = mapWrapRef.current;
+          const W = el?.getBoundingClientRect().width ?? 0;
+          const H = el?.getBoundingClientRect().height ?? 0;
+          const pos = positionsRef.current[activePerson];
+          if (W > 0 && pos) {
+            setMapZoom(MAP_ASPECT);
+            setMapPan(centerOnSvgPoint(pos.x, pos.y, W, H, MAP_ASPECT));
+          } else {
+            setMapZoom(MAP_ASPECT);
+            setMapPan({ x: 0, y: 0 });
+          }
+        });
       }
     };
     document.addEventListener("fullscreenchange", handler);
@@ -887,18 +924,122 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     setCalTransform(saved.transform);
   }, []);
 
+  // Refs so native event handlers never capture stale closures
+  const calModeRef = useRef(calMode);
+  calModeRef.current = calMode;
+  const pixelLogRef = useRef(pixelLog);
+  pixelLogRef.current = pixelLog;
+  const mapZoomRef = useRef(mapZoom);
+  mapZoomRef.current = mapZoom;
+  const mapPanRef = useRef(mapPan);
+  mapPanRef.current = mapPan;
+
   useEffect(() => {
     const el = mapWrapRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (calMode || pixelLog) return;
+      if (calModeRef.current || pixelLogRef.current) return;
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.15 : 0.87;
       setMapZoom(z => Math.min(Math.max(z * factor, 0.5), 6));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [calMode, pixelLog]);
+  }, []);
+
+  // Native touch handlers (passive:false required for preventDefault)
+  // Supports single-touch pan + two-finger pinch-to-zoom
+  useEffect(() => {
+    const el = mapWrapRef.current;
+    if (!el) return;
+
+    type PinchState = { dist: number; midX: number; midY: number; zoom: number; panX: number; panY: number };
+    let pinch: PinchState | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (calModeRef.current || pixelLogRef.current) return;
+      if (e.touches.length === 1) {
+        const rect = el.getBoundingClientRect();
+        dragRef.current = {
+          startX: e.touches[0].clientX - rect.left,
+          startY: e.touches[0].clientY - rect.top,
+          panX: mapPanRef.current.x,
+          panY: mapPanRef.current.y,
+        };
+        setIsDragging(true);
+        pinch = null;
+      } else if (e.touches.length === 2) {
+        dragRef.current = null;
+        setIsDragging(false);
+        const rect = el.getBoundingClientRect();
+        pinch = {
+          dist: dist(e.touches),
+          midX: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+          midY: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+          zoom: mapZoomRef.current,
+          panX: mapPanRef.current.x,
+          panY: mapPanRef.current.y,
+        };
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (calModeRef.current || pixelLogRef.current) return;
+      if (e.touches.length === 1 && dragRef.current) {
+        const rect = el.getBoundingClientRect();
+        const { startX, startY, panX, panY } = dragRef.current;
+        const cx = e.touches[0].clientX - rect.left;
+        const cy = e.touches[0].clientY - rect.top;
+        setMapPan({ x: panX + cx - startX, y: panY + cy - startY });
+      } else if (e.touches.length === 2 && pinch) {
+        const newDist = dist(e.touches);
+        const rect = el.getBoundingClientRect();
+        const W = rect.width, H = rect.height;
+        const newMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+        const newMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+        const newZoom = Math.min(Math.max(pinch.zoom * (newDist / pinch.dist), 0.3), 10);
+        const ratio = newZoom / pinch.zoom;
+        // Zoom toward the initial pinch midpoint (in container-center coords)
+        const cmx = pinch.midX - W / 2;
+        const cmy = pinch.midY - H / 2;
+        // Pan to follow finger drift + zoom-to-point
+        const driftX = newMidX - pinch.midX;
+        const driftY = newMidY - pinch.midY;
+        const newPanX = cmx - (cmx - pinch.panX) * ratio + driftX;
+        const newPanY = cmy - (cmy - pinch.panY) * ratio + driftY;
+        setMapZoom(newZoom);
+        setMapPan({ x: newPanX, y: newPanY });
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        dragRef.current = null;
+        setIsDragging(false);
+        pinch = null;
+      } else if (e.touches.length === 1) {
+        pinch = null;
+        const rect = el.getBoundingClientRect();
+        dragRef.current = {
+          startX: e.touches[0].clientX - rect.left,
+          startY: e.touches[0].clientY - rect.top,
+          panX: mapPanRef.current.x,
+          panY: mapPanRef.current.y,
+        };
+      }
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove",  onTouchMove,  { passive: false });
+    el.addEventListener("touchend",   onTouchEnd,   { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove",  onTouchMove);
+      el.removeEventListener("touchend",   onTouchEnd);
+    };
+  }, []); // refs keep values fresh — no deps needed
 
   const startDrag = (clientX: number, clientY: number) => {
     if (calMode || pixelLog) return;
@@ -1120,9 +1261,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         onMouseMove={e => moveDrag(e.clientX, e.clientY)}
         onMouseUp={endDrag}
         onMouseLeave={endDrag}
-        onTouchStart={e => e.touches.length === 1 && startDrag(e.touches[0].clientX, e.touches[0].clientY)}
-        onTouchMove={e => { e.preventDefault(); e.touches.length === 1 && moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
-        onTouchEnd={endDrag}
       >
         {/* Zoom controls — hidden in calMode/pixelLog */}
         {!calMode && !pixelLog && (
@@ -1160,6 +1298,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           position: "absolute", inset: 0,
           transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
           transformOrigin: "center center",
+          willChange: "transform",
         }}>
           <img src="/harta_completa.svg" alt="Hartă T4 LRIA" draggable={false}
             style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
