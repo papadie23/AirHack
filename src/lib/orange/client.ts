@@ -6,18 +6,16 @@
  */
 
 import { getAccessToken } from "./token";
-
-async function getBearerToken(): Promise<string> {
-  // Direct API key takes priority over OAuth client credentials
-  if (process.env.ORANGE_API_KEY) {
-    return process.env.ORANGE_API_KEY;
-  }
-  return getAccessToken();
-}
 import path from "path";
 import fs from "fs";
 
-const USE_FIXTURES = process.env.USE_FIXTURES !== "false"; // default true
+async function getBearerToken(): Promise<string> {
+  const key = import.meta.env.ORANGE_API_KEY ?? process.env.ORANGE_API_KEY;
+  if (key) return key;
+  return getAccessToken();
+}
+
+const USE_FIXTURES = (import.meta.env.USE_FIXTURES ?? process.env.USE_FIXTURES) !== "false";
 
 export interface OrangeCallResult<T = unknown> {
   ok: boolean;
