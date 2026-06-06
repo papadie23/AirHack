@@ -3,3 +3,7 @@ dist/
 .env
 .env.local
 .astro/
+
+# Next.js artifacts
+.next/
+next-env.d.ts
