@@ -566,6 +566,12 @@ const OBSTACLES: { x: number; y: number; r: number }[] = [
 // Punct de referință traseu (waypoint calibrat manual)
 const SVG_WAYPOINT = { x: 1550, y: 272 };
 
+// Traseu nou — waypoints calibrate care ocolesc obstacolele din dreapta
+const SVG_WAYPOINTS_NEW = [
+  { x: 1454, y: 313 },
+  { x: 1435, y: 265 },
+];
+
 // Generează rută ortogonală (L-shape segmente) între două puncte, ocolind obstacole
 // Strategia: mers pe coridor Y comun (detour_y) ales să evite zona obstacolelor
 function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:number;y:number}[] {
@@ -599,9 +605,10 @@ function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:
 function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
   const seg1 = makeOrthoRoute(s, SVG_SECURITY);
-  const seg2 = makeOrthoRoute(SVG_SECURITY, SVG_WAYPOINT);
-  const seg3 = makeOrthoRoute(SVG_WAYPOINT, SVG_GATE);
-  return [...seg1, ...seg2.slice(1), ...seg3.slice(1)];
+  const seg2 = makeOrthoRoute(SVG_SECURITY, SVG_WAYPOINTS_NEW[0]);
+  const seg3 = makeOrthoRoute(SVG_WAYPOINTS_NEW[0], SVG_WAYPOINTS_NEW[1]);
+  const seg4 = makeOrthoRoute(SVG_WAYPOINTS_NEW[1], SVG_GATE);
+  return [...seg1, ...seg2.slice(1), ...seg3.slice(1), ...seg4.slice(1)];
 }
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
