@@ -434,7 +434,7 @@ html, body {
    RESPONSIVE — Phone ≤ 480px
    ══════════════════════════════════════════════════ */
 @media (max-width: 480px) {
-  #dashboard { padding: 8px; gap: 8px; }
+  #dashboard { padding: 8px; padding-top: 60px; gap: 8px; }
   .card { padding: 14px; }
   .info-grid { grid-template-columns: 1fr; }
   .weather-grid { grid-template-columns: 1fr; }

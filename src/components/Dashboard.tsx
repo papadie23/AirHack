@@ -555,6 +555,43 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const markerRef = useRef<google.maps.Marker|null>(null);
   const animRef = useRef<ReturnType<typeof setTimeout>|null>(null);
 
+  // Zoom / pan state
+  const [mapZoom, setMapZoom] = useState(1);
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+  const mapWrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = mapWrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 0.87;
+      setMapZoom(z => Math.min(Math.max(z * factor, 0.5), 6));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const startDrag = (clientX: number, clientY: number) => {
+    dragRef.current = { startX: clientX, startY: clientY, panX: mapPan.x, panY: mapPan.y };
+    setIsDragging(true);
+  };
+  const moveDrag = (clientX: number, clientY: number) => {
+    if (!dragRef.current) return;
+    const { startX, startY, panX, panY } = dragRef.current;
+    setMapPan({ x: panX + clientX - startX, y: panY + clientY - startY });
+  };
+  const endDrag = () => { dragRef.current = null; setIsDragging(false); };
+
+  const zoomBtnStyle: React.CSSProperties = {
+    width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+    background: "var(--bg-card)", border: "1px solid var(--border-color)",
+    borderRadius: "var(--radius-md)", color: "var(--text-main)", cursor: "pointer",
+    fontSize: 16, fontWeight: 700, lineHeight: 1, boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+  };
+
   const flight = FLIGHTS.find(f => f.id === selFlight) ?? null;
   const pts = flight ? ROUTE_SVG[flight.gate] : null;
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
@@ -664,58 +701,88 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         </div>
       </div>
 
-      {/* ── Three-layer map stack ── */}
-      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
+      {/* ── Zoomable / pannable map ── */}
+      <div
+        ref={mapWrapRef}
+        className="map-container"
+        style={{
+          position: "relative", flex: 1,
+          borderRadius: "var(--radius-md)", overflow: "hidden",
+          border: "1px solid var(--border-color)",
+          cursor: isDragging ? "grabbing" : "grab",
+          userSelect: "none",
+        }}
+        onMouseDown={e => startDrag(e.clientX, e.clientY)}
+        onMouseMove={e => moveDrag(e.clientX, e.clientY)}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
+        onTouchStart={e => e.touches.length === 1 && startDrag(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={e => { e.preventDefault(); e.touches.length === 1 && moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
+        onTouchEnd={endDrag}
+      >
+        {/* Zoom controls — top-right overlay */}
+        <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
+          <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.min(z * 1.25, 6))} title="Zoom in">+</button>
+          <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.max(z * 0.8, 0.5))} title="Zoom out">−</button>
+          <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { setMapZoom(1); setMapPan({ x:0, y:0 }); }} title="Reset">
+            <i className="ti ti-home-2" />
+          </button>
+        </div>
 
         {/* Layer 0: Google Maps — hidden, GPS tracking only */}
         <div ref={gmapRef} style={{ position:"absolute", inset:0, opacity:0, pointerEvents:"none", zIndex:0 }} />
 
-        {/* Layer 1: SVG floor plan — only visible map */}
-        <img
-          src="/harta_completa.svg"
-          alt="Hartă completă T4 LRIA"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", objectPosition:"center", display:"block", zIndex:1 }}
-        />
+        {/* Transformable wrapper — floor plan + route overlay move together */}
+        <div style={{
+          position: "absolute", inset: 0,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`,
+          transformOrigin: "center center",
+        }}>
+          {/* Layer 1: SVG floor plan */}
+          <img
+            src="/harta_completa.svg"
+            alt="Hartă completă T4 LRIA"
+            draggable={false}
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", objectPosition:"center", display:"block", zIndex:1 }}
+          />
 
-        {/* Layer 2: Interactive overlay — route polyline, gate marker, user dot */}
-        <svg
-          viewBox="0 0 2262 587"
-          preserveAspectRatio="xMidYMid meet"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:2 }}
-        >
-          <defs>
-            <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          </defs>
+          {/* Layer 2: Route overlay SVG */}
+          <svg
+            viewBox="0 0 2262 587"
+            preserveAspectRatio="xMidYMid meet"
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:2 }}
+          >
+            <defs>
+              <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
 
-          {/* Ruta animată */}
-          {pts && (
-            <polyline
-              points={polyline}
-              fill="none" stroke="#38BDF8" strokeWidth="4"
-              strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
-              style={{ animation:"moveDash 1.5s linear infinite", filter:"drop-shadow(0 0 6px rgba(56,189,248,0.8))" }}
-            />
-          )}
+            {pts && (
+              <polyline
+                points={polyline}
+                fill="none" stroke="#38BDF8" strokeWidth="4"
+                strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
+                style={{ animation:"moveDash 1.5s linear infinite", filter:"drop-shadow(0 0 6px rgba(56,189,248,0.8))" }}
+              />
+            )}
 
-          {/* Gate destination */}
-          {gatePos && (
+            {gatePos && (
+              <g filter="url(#glow2)">
+                <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
+                <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
+                <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">
+                  {flight ? GATE_LABELS[flight.gate] : ""}
+                </text>
+              </g>
+            )}
+
             <g filter="url(#glow2)">
-              <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
-              <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
-              <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">
-                {flight ? GATE_LABELS[flight.gate] : ""}
-              </text>
+              <circle cx={userPos.x} cy={userPos.y} r="14" fill="none" stroke="#38BDF8" strokeWidth="2" opacity="0.5" style={{animation:"pulse 2s infinite"}}/>
+              <circle cx={userPos.x} cy={userPos.y} r="7" fill="#38BDF8"/>
+              <circle cx={userPos.x} cy={userPos.y} r="3" fill="#fff"/>
             </g>
-          )}
-
-          {/* User dot */}
-          <g filter="url(#glow2)">
-            <circle cx={userPos.x} cy={userPos.y} r="14" fill="none" stroke="#38BDF8" strokeWidth="2" opacity="0.5" style={{animation:"pulse 2s infinite"}}/>
-            <circle cx={userPos.x} cy={userPos.y} r="7" fill="#38BDF8"/>
-            <circle cx={userPos.x} cy={userPos.y} r="3" fill="#fff"/>
-          </g>
-          <text x={userPos.x} y={userPos.y+26} fill="#E0F2FE" fontSize="11" textAnchor="middle">Tu ești aici</text>
-        </svg>
+            <text x={userPos.x} y={userPos.y+26} fill="#E0F2FE" fontSize="11" textAnchor="middle">Tu ești aici</text>
+          </svg>
+        </div>
 
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
