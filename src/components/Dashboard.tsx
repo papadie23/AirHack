@@ -1481,15 +1481,33 @@ function HeatmapRight() {
 }
 
 /* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
+const PHONE_HISTORY_KEY = "airhack_phone_history";
+
+function loadPhoneHistory(): string[] {
+  try { return JSON.parse(localStorage.getItem(PHONE_HISTORY_KEY) ?? "[]"); }
+  catch { return []; }
+}
+function savePhoneHistory(num: string) {
+  const prev = loadPhoneHistory().filter(n => n !== num);
+  localStorage.setItem(PHONE_HISTORY_KEY, JSON.stringify([num, ...prev].slice(0, 10)));
+}
+
 function BottomBar({ activePerson, setActivePerson }: {
   activePerson: string; setActivePerson: (id:string)=>void;
 }) {
   const [phone, setPhone] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
+
+  useEffect(() => { setHistory(loadPhoneHistory()); }, []);
 
   const handlePhone = (val: string) => {
     setPhone(val);
     const match = PHONE_PERSONS[val.trim()];
-    if (match) setActivePerson(match);
+    if (match) {
+      setActivePerson(match);
+      savePhoneHistory(val.trim());
+      setHistory(loadPhoneHistory());
+    }
   };
 
   const person = PEOPLE.find(p => p.id === activePerson && p.id !== "you");
@@ -1511,8 +1529,13 @@ function BottomBar({ activePerson, setActivePerson }: {
       {/* Phone input + matched passenger info */}
       <div style={{ flex:1, display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
         <div style={{ flex:1, position:"relative", minWidth:0 }}>
+          {/* datalist for autocomplete from history */}
+          <datalist id="phone-history">
+            {history.map(n => <option key={n} value={n} />)}
+          </datalist>
           <input
             type="tel"
+            list="phone-history"
             className="phone-input"
             placeholder="Introdu numărul de telefon"
             value={phone}
@@ -1530,7 +1553,7 @@ function BottomBar({ activePerson, setActivePerson }: {
             </span>
           </div>
         )}
-        {!person && !isAdmin && (
+        {!person && !isAdmin && phone.length > 4 && (
           <span style={{ fontSize:12, color:"var(--text-muted)", whiteSpace:"nowrap" }}>
             Număr nerecunoscut
           </span>

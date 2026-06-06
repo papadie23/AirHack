@@ -67,8 +67,13 @@ html, body {
   overflow: hidden;
 }
 
-/* ── Bottom bar ── */
+/* ── Bottom bar — fixed to viewport bottom ── */
 .bottom-bar {
+  position: fixed;
+  bottom: 12px;
+  left: 16px;
+  right: 16px;
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -76,8 +81,11 @@ html, body {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: 8px 12px;
-  flex-shrink: 0;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
 }
+
+/* Prevent content from being hidden under fixed bottom bar */
+#dashboard { padding-bottom: 72px; }
 
 .activity-log {
   flex: 1;
@@ -419,7 +427,9 @@ html, body {
 @media (max-width: 900px) {
   html, body { overflow: auto; height: auto; }
 
-  #dashboard { height: auto; min-height: 100svh; padding: 10px; gap: 10px; }
+  #dashboard { height: auto; min-height: 100svh; padding: 10px; gap: 10px; padding-bottom: 76px; }
+
+  .bottom-bar { bottom: 0; left: 0; right: 0; border-radius: 0; border-left: none; border-right: none; border-bottom: none; }
 
   .dashboard-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
 
