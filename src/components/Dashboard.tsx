@@ -611,7 +611,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 }
 
 /* ── SVG affine calibration ── */
-const CAL_KEY = "svg_cal_v1";
+const CAL_KEY = "svg_cal_v2";
 interface CalPoint { svgX: number; svgY: number; lat: number; lng: number }
 interface CalTransform { A:number; B:number; C:number; D:number; E:number; F:number }
 
@@ -654,9 +654,10 @@ function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:numb
 }
 
 const defaultPoints: CalPoint[] = [
-  { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // control check / masa echipei
-  { svgX: 2244, svgY: 256, lat: 47.17406410, lng: 27.61970100 }, // destinație pasageri / dozator
-  { svgX: 100,  svgY: 500, lat: 47.17460000, lng: 27.61850000 }, // colț stânga-jos (estimat)
+  { svgX: 70,   svgY: 335, lat: 47.1746342,  lng: 27.6192034  }, // baza scări (calibrat)
+  { svgX: 2207, svgY: 269, lat: 47.1740641,  lng: 27.6197010  }, // baie spate (calibrat)
+  { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // masa echipei / securitate
+  { svgX: 2244, svgY: 256, lat: 47.17406410, lng: 27.61970100 }, // dozator / poartă
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
@@ -692,9 +693,65 @@ const GATE_SVG: Record<string, { x: number; y: number }> = {
   "4": SVG_GATE, "5": SVG_GATE, "6": SVG_GATE, "T3": SVG_GATE,
 };
 
-function makeRoute(personId: string) {
+// Obstacole din pixel log (SVG coords) — fiecare e un dreptunghi cx±r, cy±r
+const OBSTACLES: { x: number; y: number; r: number }[] = [
+  { x: 306,  y: 365, r: 30 },
+  { x: 397,  y: 373, r: 30 },
+  { x: 468,  y: 373, r: 30 },
+  { x: 566,  y: 374, r: 30 },
+  { x: 1518, y: 300, r: 30 },
+  { x: 1516, y: 321, r: 30 },
+  { x: 1520, y: 344, r: 30 },
+];
+
+// Punct de referință traseu (waypoint calibrat manual)
+const SVG_WAYPOINT = { x: 1550, y: 272 };
+
+// Traseu nou — waypoints calibrate care ocolesc obstacolele din dreapta
+const SVG_WAYPOINTS_NEW = [
+  { x: 1454, y: 313 },
+  { x: 1435, y: 265 },
+];
+
+// Generează rută ortogonală (L-shape segmente) între două puncte, ocolind obstacole
+// Strategia: mers pe coridor Y comun (detour_y) ales să evite zona obstacolelor
+function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:number;y:number}[] {
+  // Detectează dacă segmentul orizontal la y=detourY intersectează vreun obstacol
+  const blocked = (y: number, x1: number, x2: number) => {
+    const xMin = Math.min(x1, x2), xMax = Math.max(x1, x2);
+    return OBSTACLES.some(o => Math.abs(o.y - y) < o.r && o.x + o.r > xMin && o.x - o.r < xMax);
+  };
+
+  // Încearcă coridor direct (from.y → to.x)
+  if (!blocked(from.y, from.x, to.x) && !blocked(to.y, from.x, to.x)) {
+    // L-shape simplu: merge orizontal la from.y, apoi vertical
+    return [from, { x: to.x, y: from.y }, to];
+  }
+
+  // Găsește un y de detour deasupra sau dedesubtul obstacolelor
+  const obsTop    = Math.min(...OBSTACLES.map(o => o.y - o.r)) - 20;
+  const obsBottom = Math.max(...OBSTACLES.map(o => o.y + o.r)) + 20;
+
+  // Alege detour-ul mai aproape de from.y
+  const detourY = Math.abs(obsTop - from.y) < Math.abs(obsBottom - from.y) ? obsTop : obsBottom;
+
+  return [
+    from,
+    { x: from.x, y: detourY },   // coboară/urcă vertical
+    { x: to.x,   y: detourY },   // merge orizontal pe culoarul liber
+    to,                           // ajunge la destinație
+  ];
+}
+
+function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
-  return [s, SVG_SECURITY, { x: 1600, y: 300 }, SVG_GATE];
+  const waypoints = [s, SVG_SECURITY, SVG_WAYPOINTS_NEW[0], SVG_WAYPOINTS_NEW[1], SVG_GATE];
+  const result: {x:number;y:number}[] = [waypoints[0]];
+  for (let i = 1; i < waypoints.length; i++) {
+    const segs = makeOrthoRoute(waypoints[i-1], waypoints[i]);
+    result.push(...segs.slice(1));
+  }
+  return result;
 }
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
@@ -752,6 +809,19 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
 
+  // Dead-zone: only update position if moved > DEAD_ZONE_M metres
+  const lastGps = useRef<Record<string, {lat:number;lng:number}>>({});
+  const DEAD_ZONE_M = 5;
+
+  // Haversine distance between two GPS points (in metres)
+  const haversineM = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
   useEffect(() => {
     const saved = loadCalibration();
     setCalPoints(saved.points);
@@ -790,35 +860,62 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     fontSize: 16, fontWeight: 700, lineHeight: 1, boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
   };
 
+  const [dynamicRoute, setDynamicRoute] = useState<{x:number;y:number}[]|null>(null);
+
   const person = PEOPLE.find(p => p.id === activePerson)!;
   const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
-  const pts = flight ? ROUTE_SVG[flight.gate] : null;
+  const pts = activePerson === "you" && dynamicRoute ? dynamicRoute : (flight ? ROUTE_SVG[flight.gate] : null);
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
   const placeOnMap = (lat: number, lng: number, personId: string) => {
-    if (calTransform) {
-      setPositions(prev => ({ ...prev, [personId]: svgFromGps(calTransform, lat, lng) }));
+    if (!calTransform) return;
+    const prev = lastGps.current[personId];
+    if (prev && haversineM(prev.lat, prev.lng, lat, lng) < DEAD_ZONE_M) return;
+    lastGps.current[personId] = { lat, lng };
+    const svgPos = svgFromGps(calTransform, lat, lng);
+    setPositions(p => ({ ...p, [personId]: svgPos }));
+    if (personId === "you") {
+      // Traseu dinamic: din pozitia GPS curenta → waypoints existente → poarta
+      const baseRoute = makeRoute("you");
+      const route = [svgPos, ...baseRoute.slice(1)];
+      setDynamicRoute(route);
     }
   };
 
-  const getLocation = async () => {
+  // Auto-trigger permission prompt on mount for activePerson === "you"
+  const locationAsked = useRef(false);
+  useEffect(() => {
+    if (activePerson === "you" && navigator.geolocation && !locationAsked.current) {
+      locationAsked.current = true;
+      navigator.geolocation.getCurrentPosition(
+        () => {}, // doar cere permisiunea, fără a face nimic
+        () => {}, // ignoră eroarea — utilizatorul poate refuza
+        { timeout: 5000 }
+      );
+    }
+  }, [activePerson]);
+
+  const getLocation = () => {
+    if (!navigator.geolocation) {
+      onLog("Geolocația nu e suportată de acest browser", false);
+      return;
+    }
     setLocLoading(true);
-    try {
-      const r = await fetch("/api/location", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ person: activePerson }),
-      });
-      const d = await r.json();
-      const lat = d.location?.latitude, lng = d.location?.longitude;
-      if (lat && lng) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
         placeOnMap(lat, lng, activePerson);
-        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)}${d.fromFixture ? " (mock)" : ""}`);
-      } else {
-        onLog(`${person.name}: ${d.error ?? "fără locație"}`, false);
-      }
-    } catch { onLog("Eroare locație", false); }
-    finally { setLocLoading(false); }
+        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} (acuratețe ${pos.coords.accuracy.toFixed(0)}m)`);
+        setLocLoading(false);
+      },
+      (err) => {
+        onLog(`Eroare locație: ${err.message}`, false);
+        setLocLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
   };
 
   // ── Calibration handlers ──
@@ -986,6 +1083,15 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
                 strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
                 style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
             )}
+
+            {/* Obstacole */}
+            {!calMode && OBSTACLES.map((o, i) => (
+              <g key={i}>
+                <rect x={o.x-o.r} y={o.y-o.r} width={o.r*2} height={o.r*2} rx="6"
+                  fill="rgba(239,68,68,0.15)" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4 2"/>
+                <text x={o.x} y={o.y+4} textAnchor="middle" fill="#EF4444" fontSize="10" fontWeight="700">⚠</text>
+              </g>
+            ))}
 
             {/* Gate */}
             {!calMode && gatePos && (
