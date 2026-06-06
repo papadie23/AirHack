@@ -484,8 +484,7 @@ html, body {
     gap: 6px;
   }
 
-  /* Ensure route map is always visible on mobile */
-  .map-container { min-height: 240px; }
+  /* Map height handled by inline style (isPortrait ? calc(100svh - 195px) : flex:1) */
 
   /* ETA card stacks neatly on mobile */
   .route-eta-card { flex-wrap: wrap; gap: 8px; }

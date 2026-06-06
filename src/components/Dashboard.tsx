@@ -804,7 +804,11 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Zoom / pan state (disabled in calMode / pixelLog)
-  const [mapZoom, setMapZoom] = useState(1);
+  const MAP_ASPECT = 2262 / 587; // landscape map aspect ratio — used for portrait fill zoom
+  const [mapZoom, setMapZoom] = useState(() => {
+    if (typeof window === "undefined") return 1;
+    return window.innerWidth < 900 && window.innerHeight > window.innerWidth ? 2262 / 587 : 1;
+  });
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
@@ -821,6 +825,52 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     setIsPortrait(mq.matches);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  // Auto-zoom to fill container when entering/leaving portrait mode
+  const isPortraitRef = useRef(isPortrait);
+  isPortraitRef.current = isPortrait;
+  useEffect(() => {
+    if (isPortrait) {
+      setMapZoom(MAP_ASPECT);
+      setMapPan({ x: 0, y: 0 });
+    } else {
+      setMapZoom(1);
+      setMapPan({ x: 0, y: 0 });
+    }
+  }, [isPortrait]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fullscreen state + toggle
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      mapWrapRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  };
+  useEffect(() => {
+    const handler = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (fs) {
+        // Wait one frame for the browser to resize the fullscreen element
+        requestAnimationFrame(() => {
+          const el = mapWrapRef.current;
+          if (!el) return;
+          const { width, height } = el.getBoundingClientRect();
+          // Rotated map fits fully when Z = H/W (portrait: height > width)
+          setMapZoom(height > width ? height / width : 1);
+          setMapPan({ x: 0, y: 0 });
+        });
+      } else if (isPortraitRef.current) {
+        // Back to normal portrait: restore fill zoom
+        setMapZoom(MAP_ASPECT);
+        setMapPan({ x: 0, y: 0 });
+      }
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Dead-zone: only update position if moved > DEAD_ZONE_M metres
   const lastGps = useRef<Record<string, {lat:number;lng:number}>>({});
@@ -1064,6 +1114,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         className="map-container"
         style={{
           position: "relative", flex: 1,
+          ...(isPortrait ? { height: "calc(100svh - 195px)", minHeight: 300 } : {}),
           borderRadius: "var(--radius-md)", overflow: "hidden",
           border: `1px solid ${calMode?"var(--brand)":pixelLog?"#F59E0B":"var(--border-color)"}`,
           cursor: calMode||pixelLog ? "crosshair" : (isDragging ? "grabbing" : "grab"),
@@ -1082,8 +1133,11 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
             <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.min(z * 1.25, 6))} title="Zoom in">+</button>
             <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.max(z * 0.8, 0.5))} title="Zoom out">−</button>
-            <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { setMapZoom(1); setMapPan({ x:0, y:0 }); }} title="Reset">
+            <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { setMapZoom(isPortrait ? MAP_ASPECT : 1); setMapPan({ x:0, y:0 }); }} title="Reset">
               <i className="ti ti-home-2" />
+            </button>
+            <button style={{ ...zoomBtnStyle, fontSize:14 }} onClick={toggleFullscreen} title={isFullscreen ? "Ieși din ecran complet" : "Ecran complet"}>
+              <i className={`ti ti-arrows-${isFullscreen ? "minimize" : "maximize"}`} />
             </button>
           </div>
         )}
