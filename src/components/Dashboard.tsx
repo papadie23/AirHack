@@ -438,31 +438,29 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
   );
 }
 
-// SVG waypoints în spațiul viewBox="0 0 1200 600" al hărții Gemini
-// Nivel 0: check-in (210,490) → securitate (510,430) → acces etaj (640,400)
-// Nivel 1: porți T4 sus (1-6), culoar T3 dreapta
+// SVG waypoints în spațiul viewBox="0 0 2262 587" al hărții harta_completa.svg
+// Rescalate din 0-1200×0-600 → 0-2262×0-587 (scaleX=1.885, scaleY=0.978)
 const GATE_SVG: Record<string, { x: number; y: number }> = {
-  "1":  { x: 150, y: 230 }, "2":  { x: 320, y: 230 }, "3":  { x: 490, y: 230 },
-  "4":  { x: 660, y: 230 }, "5":  { x: 830, y: 230 }, "6":  { x: 1000, y: 230 },
-  "T3": { x: 1050, y: 430 },
+  "1":  { x: 283,  y: 225 }, "2":  { x: 603,  y: 225 }, "3":  { x: 924,  y: 225 },
+  "4":  { x: 1244, y: 225 }, "5":  { x: 1565, y: 225 }, "6":  { x: 1885, y: 225 },
+  "T3": { x: 1979, y: 421 },
 };
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
-  "1":  [{x:210,y:490},{x:210,y:400},{x:380,y:400},{x:150,y:300},{x:150,y:230}],
-  "2":  [{x:210,y:490},{x:210,y:400},{x:380,y:400},{x:320,y:300},{x:320,y:230}],
-  "3":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:490,y:300},{x:490,y:230}],
-  "4":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:660,y:300},{x:660,y:230}],
-  "5":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:830,y:300},{x:830,y:230}],
-  "6":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:1000,y:300},{x:1000,y:230}],
-  "T3": [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:960,y:400},{x:1050,y:430}],
+  "1":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:283,y:294},{x:283,y:225}],
+  "2":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:603,y:294},{x:603,y:225}],
+  "3":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:924,y:294},{x:924,y:225}],
+  "4":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1244,y:294},{x:1244,y:225}],
+  "5":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1565,y:294},{x:1565,y:225}],
+  "6":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1885,y:294},{x:1885,y:225}],
+  "T3": [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1810,y:391},{x:1979,y:421}],
 };
 
 function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [selFlight, setSelFlight] = useState<string|null>(null);
-  const [userPos, setUserPos] = useState<{x:number;y:number}>({x:210,y:490});
+  const [userPos, setUserPos] = useState<{x:number;y:number}>({x:396,y:479});
   const [userGps, setUserGps] = useState<{lat:number;lng:number}|null>(null);
   const [locLoading, setLocLoading] = useState(false);
-  const [mapMode, setMapMode] = useState<"floor"|"satellite">("floor");
   const gmapRef = useRef<HTMLDivElement>(null);
   const gmapInstance = useRef<google.maps.Map|null>(null);
   const markerRef = useRef<google.maps.Marker|null>(null);
@@ -486,12 +484,11 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     return () => { if (animRef.current) clearTimeout(animRef.current); };
   }, [selFlight]);
 
-  // Init Google Maps satellite view
+  // Init Google Maps hidden underneath — always on mount, for GPS accuracy
   useEffect(() => {
-    if (mapMode !== "satellite") return;
     const key = (window as any).__GOOGLE_MAPS_KEY__;
     if (!key || !gmapRef.current) return;
-    if (gmapInstance.current) return; // already init
+    if (gmapInstance.current) return;
 
     const loader = new (require("@googlemaps/js-api-loader").Loader)({ apiKey: key, version: "weekly" });
     loader.load().then(() => {
@@ -501,7 +498,7 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         zoom: 18,
         mapTypeId: "satellite",
         disableDefaultUI: true,
-        zoomControl: true,
+        zoomControl: false,
         tilt: 0,
       });
       gmapInstance.current = map;
@@ -512,7 +509,7 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
       });
     }).catch(() => {});
-  }, [mapMode]);
+  }, []);
 
   // Update marker when GPS changes
   useEffect(() => {
@@ -535,8 +532,8 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         setUserGps({ lat, lng });
         // Convert GPS → floor plan pixel → SVG %
         const px = gpsToPixel({ lat, lng });
-        const svgX = (px.x / IMG_W) * 1200;
-        const svgY = (px.y / IMG_H) * 600;
+        const svgX = (px.x / IMG_W) * 2262;
+        const svgY = (px.y / IMG_H) * 587;
         setUserPos({ x: svgX, y: svgY });
         onLog(`Orange Location · lat ${lat.toFixed(4)} lng ${lng.toFixed(4)}`);
       }
@@ -544,60 +541,44 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     finally { setLocLoading(false); }
   };
 
-  // Floor plan image crop — zoom to terminal area
-  // Image is 13500x5000px, terminal starts around x=7500
-  const cropLeft = 55; // % from left to crop (zoom into terminal)
-
   return (
     <>
       <div className="map-header">
         <div>
-          <div className="map-title">My Route — Terminal T4 Iași</div>
+          <div className="map-title">My Route — Terminal T4 LRIA (Hartă Completă)</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
             {userGps ? `GPS: ${userGps.lat.toFixed(5)}, ${userGps.lng.toFixed(5)}` : "Locație neprimită încă"}
           </div>
         </div>
         <div className="badges">
-          <button
-            onClick={() => setMapMode(m => m === "floor" ? "satellite" : "floor")}
-            style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}
-          >
-            <i className={`ti ${mapMode === "floor" ? "ti-satellite" : "ti-map"}`}/> {mapMode === "floor" ? "Satelit" : "Plan"}
-          </button>
           <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
             <i className={`ti ti-navigation${locLoading?" spin":""}`}/> Orange Location
           </button>
         </div>
       </div>
 
-      {/* ── Floor plan view ── */}
-      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", display: mapMode === "floor" ? "flex" : "none" }}>
-        {/* Harta reală JPEG */}
+      {/* ── Three-layer map stack ── */}
+      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
+
+        {/* Layer 0: Google Maps — hidden, GPS tracking only */}
+        <div ref={gmapRef} style={{ position:"absolute", inset:0, opacity:0, pointerEvents:"none", zIndex:0 }} />
+
+        {/* Layer 1: SVG floor plan — only visible map */}
         <img
-          src="/Plan%20parter%20fluxuri%20ON.jpg"
-          alt="Plan parter T4"
-          style={{ width:"100%", height:"100%", objectFit:"cover", objectPosition:`${cropLeft}% 50%`, display:"block", opacity:0.75, filter:"brightness(0.9) contrast(1.1)" }}
+          src="/harta_completa.svg"
+          alt="Hartă completă T4 LRIA"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", objectPosition:"center", display:"block", zIndex:1 }}
         />
-        {/* SVG overlay calibrat — rută + dots */}
+
+        {/* Layer 2: Interactive overlay — route polyline, gate marker, user dot */}
         <svg
-          viewBox="0 0 1200 600"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none" }}
+          viewBox="0 0 2262 587"
           preserveAspectRatio="xMidYMid meet"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:2 }}
         >
           <defs>
             <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
-
-          {/* Zone labels calibrate */}
-          {[
-            { label: "Intrare T4",     x: 210, y: 510 },
-            { label: "Check-in 1-5",   x: 210, y: 370 },
-            { label: "Check-in 10-15", x: 380, y: 370 },
-            { label: "Securitate",     x: 510, y: 410 },
-            { label: "Baza Scări",     x: 215, y: 490 },
-          ].map(l => (
-            <text key={l.label} x={l.x} y={l.y} fill="rgba(255,255,255,0.6)" fontSize="11" textAnchor="middle">{l.label}</text>
-          ))}
 
           {/* Ruta animată */}
           {pts && (
@@ -634,12 +615,6 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
         `}</style>
       </div>
-
-      {/* ── Satellite view ── */}
-      <div
-        ref={gmapRef}
-        style={{ flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", display: mapMode === "satellite" ? "block" : "none", minHeight:200 }}
-      />
 
       {/* Info strip */}
       {flight && (
