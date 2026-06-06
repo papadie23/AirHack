@@ -1404,13 +1404,10 @@ function heatColor(density: number): string {
 
 /* ═══════════════════════════ HEATMAP ═══════════════════════════ */
 
-// Zonele aeroportului cu coordonatele SVG exacte (harta_completa.svg, viewBox 0 0 1920 587)
-// Scalate proporțional față de viewBox 2262 (original) → 1920
-const SCALE = 1920 / 2262;
-
+// Zonele aeroportului cu coordonatele SVG exacte
 const AIRPORT_ZONES: {
   id: string; label: string; svgX: number; svgY: number;
-  baseLoad: number; // 0-1, cât de aglomerat e în mod normal
+  baseLoad: number;
   radius: number;
   icon: string;
 }[] = [
@@ -1422,25 +1419,21 @@ const AIRPORT_ZONES: {
   { id: "bord",      label: "La bord",             svgX:1777, svgY: 271, baseLoad: 0.4, radius: 75,  icon: "ti-armchair" },
 ];
 
-// Simulare date sintetice în stilul Orange Population Density API
-// Valorile oscilează realist în timp (±20% față de baseLoad)
 function generateSyntheticDensity(tick: number): { id: string; density: number; pax: number }[] {
   return AIRPORT_ZONES.map(z => {
-    // Undă sinusoidală cu fază diferită per zonă + zgomot
     const wave = Math.sin(tick * 0.08 + AIRPORT_ZONES.indexOf(z) * 1.3) * 0.15;
     const noise = (Math.sin(tick * 0.31 + AIRPORT_ZONES.indexOf(z) * 2.7) * 0.05);
     const raw = Math.max(0.05, Math.min(1, z.baseLoad + wave + noise));
-    // Pax estimat: 0-250 persoane per zonă
     const pax = Math.round(raw * 250);
     return { id: z.id, density: raw, pax };
   });
 }
 
 function zoneColor(intensity: number): string {
-  if (intensity > 0.75) return "#EF5350";   // roșu — aglomerat
-  if (intensity > 0.50) return "#FFA726";   // portocaliu — moderat
-  if (intensity > 0.25) return "#FFEE58";   // galben — OK
-  return "#66BB6A";                          // verde — liber
+  if (intensity > 0.75) return "#EF5350";
+  if (intensity > 0.50) return "#FFA726";
+  if (intensity > 0.25) return "#FFEE58";
+  return "#66BB6A";
 }
 
 function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
@@ -1463,50 +1456,15 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   }, [tick]);
 
   const data = generateSyntheticDensity(tick);
+  const maxDensity = Math.max(...data.map(d => d.density), 0.01);
   const totalPax = data.reduce((s, d) => s + d.pax, 0);
+  const avgDensity = data.reduce((s, d) => s + d.density, 0) / data.length;
   const alertZones = data.filter(d => d.density > 0.7);
+
   const selectedData = selected ? data.find(d => d.id === selected) : null;
   const selectedZone = selected ? AIRPORT_ZONES.find(z => z.id === selected) : null;
 
-  // ── Heatmap grid computation ──────────────────────────────────────
-  // Terminal T4 reprezentat ca dreptunghi 1920×400 (proportional cu harta)
-  // Coordonatele zonelor sunt în spațiul 1920×587 → scalăm Y la 400
-  const HM_W = 1920, HM_H = 400;
-  const Y_SCALE = HM_H / 587;
-
-  // Rezoluție grid: 96 coloane × 40 rânduri
-  const COLS = 96, ROWS = 40;
-  const CW = HM_W / COLS, CH = HM_H / ROWS;
-
-  // Funcție gaussiană 2D pentru influența fiecărei zone
-  const gaussian = (dx: number, dy: number, sigma: number) =>
-    Math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
-
-  // Calculează intensitatea fiecărei celule ca sumă ponderată a zonelor
-  const grid: number[][] = Array.from({ length: ROWS }, (_, row) =>
-    Array.from({ length: COLS }, (_, col) => {
-      const cx = (col + 0.5) * CW;
-      const cy = (row + 0.5) * CH;
-      let val = 0;
-      AIRPORT_ZONES.forEach(z => {
-        const d = data.find(x => x.id === z.id)!;
-        const dx = cx - z.svgX;
-        const dy = cy - (z.svgY * Y_SCALE);
-        const sigma = z.radius * 1.2; // influență mai mare
-        val += d.density * gaussian(dx, dy, sigma);
-      });
-      return Math.min(1, val);
-    })
-  );
-
-  // Culoare heatmap: albastru/verde (rece) → galben → roșu (fierbinte)
-  function cellColor(v: number): string {
-    if (v < 0.15) return `rgba(30,120,60,${0.15 + v * 2})`;      // verde închis — zone libere
-    if (v < 0.30) return `rgba(80,200,80,${0.3 + v})`;            // verde deschis
-    if (v < 0.50) return `rgba(255,230,50,${0.5 + v * 0.5})`;    // galben
-    if (v < 0.70) return `rgba(255,140,20,${0.65 + v * 0.3})`;   // portocaliu
-    return `rgba(230,30,30,${0.75 + v * 0.25})`;                  // roșu — aglomerat
-  }
+  const VB_W = 1920, VB_H = 587;
 
   return (
     <>
@@ -1518,7 +1476,7 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
             Heatmap Terminal T4 — LRIA
           </div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
-            Orange Population Density (date sintetice) · {totalPax} pax detectați
+            Orange Population Density (date sintetice) · {totalPax} pax detectați · Aglomerare medie: {Math.round(avgDensity * 100)}%
           </div>
         </div>
         <div className="badges">
@@ -1542,93 +1500,138 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           {alertZones.map(az => {
             const z = AIRPORT_ZONES.find(z => z.id === az.id)!;
             return (
-              <div key={az.id} style={{ display:"flex", alignItems:"center", gap:5, padding:"3px 9px", borderRadius:5, background:"rgba(239,83,80,0.12)", border:"1px solid #EF535044", fontSize:11, color:"#EF5350" }}>
-                <i className={`ti ${z.icon}`} /> {z.label} · {az.pax} pax
+              <div key={az.id} style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 10px", borderRadius:6, background:"rgba(239,83,80,0.12)", border:"1px solid #EF535044", fontSize:11, color:"#EF5350" }}>
+                <i className={`ti ${z.icon}`} />
+                {z.label} · {az.pax} pax
               </div>
             );
           })}
         </div>
       )}
 
-      {/* ── Heatmap rect ── */}
+      {/* ── Hartă cu heatmap overlay ── */}
       <div
-        style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", background:"#0d1a0d", cursor:"pointer" }}
+        className="map-container"
+        style={{
+          position:"relative",
+          flex:1,
+          borderRadius:"var(--radius-md)",
+          overflow:"hidden",
+          border:"1px solid var(--border-color)",
+          cursor:"pointer",
+          background:"#000",
+        }}
         onClick={() => setSelected(null)}
       >
-        <svg
-          viewBox={`0 0 ${HM_W} ${HM_H}`}
-          preserveAspectRatio="xMidYMid meet"
-          style={{ width:"100%", height:"100%", display:"block" }}
-        >
-          {/* ── Grid cells ── */}
-          {grid.map((row, ri) =>
-            row.map((val, ci) => (
-              <rect
-                key={`${ri}-${ci}`}
-                x={ci * CW} y={ri * CH}
-                width={CW + 0.5} height={CH + 0.5}
-                fill={cellColor(val)}
-              />
-            ))
-          )}
+        {/* Harta SVG completă pe fundal */}
+        <img
+          src="/harta_completa.svg"
+          alt="Hartă T4"
+          style={{
+            position:"absolute",
+            inset:0,
+            width:"100%",
+            height:"100%",
+            objectFit:"contain",
+            display:"block",
+            zIndex:1,
+            opacity:0.3,
+          }}
+        />
 
-          {/* ── Zone markers ── */}
+        {/* Heatmap overlay SVG */}
+        <svg
+          viewBox={`0 0 ${VB_W} ${VB_H}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}
+        >
+          <defs>
+            {/* Gradiente radiale pentru fiecare zonă */}
+            {AIRPORT_ZONES.map(z => {
+              const d = data.find(x => x.id === z.id)!;
+              const color = zoneColor(d.density);
+              return (
+                <radialGradient key={z.id} id={`hg_${z.id}`} cx="50%" cy="50%" r="50%">
+                  <stop offset="0%"   stopColor={color} stopOpacity={0.7 + d.density * 0.25} />
+                  <stop offset="50%"  stopColor={color} stopOpacity={0.35 + d.density * 0.15} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0.05} />
+                </radialGradient>
+              );
+            })}
+          </defs>
+
+          {/* Heat blobs — blob-uri mari cu gradient */}
           {AIRPORT_ZONES.map(z => {
             const d = data.find(x => x.id === z.id)!;
             const color = zoneColor(d.density);
-            const cy = z.svgY * Y_SCALE;
+            // Raza adaptiveă — mai mare cât mai aglomerat
+            const r = z.radius * (0.6 + d.density * 0.6);
             const isSelected = selected === z.id;
-            const pulseR = 14 + d.density * 10;
+            
             return (
-              <g
-                key={z.id}
-                onClick={(e) => { e.stopPropagation(); setSelected(selected === z.id ? null : z.id); }}
-                style={{ cursor:"pointer" }}
-              >
-                {/* Pulse ring */}
-                <circle cx={z.svgX} cy={cy} r={pulseR + 8} fill="none" stroke={color} strokeWidth="1.5" opacity="0.3" strokeDasharray="4,3" />
-                {/* Core dot */}
-                <circle cx={z.svgX} cy={cy} r={pulseR} fill={color} opacity={0.85} />
-                <circle cx={z.svgX} cy={cy} r={pulseR * 0.5} fill="white" opacity={0.6} />
-                {/* Selection highlight */}
+              <g key={z.id} style={{ cursor:"pointer" }} onClick={(e) => { e.stopPropagation(); setSelected(selected === z.id ? null : z.id); }}>
+                {/* Outer glow blob — mare, transparent, gradient */}
+                <circle
+                  cx={z.svgX}
+                  cy={z.svgY}
+                  r={r}
+                  fill={`url(#hg_${z.id})`}
+                  style={{ transition:"r 0.8s ease" }}
+                />
+
+                {/* Inner pulsing core — mic, solid, intens */}
+                <circle
+                  cx={z.svgX}
+                  cy={z.svgY}
+                  r={6 + d.density * 6}
+                  fill={color}
+                  opacity={0.85 + d.density * 0.15}
+                  style={{ transition:"r 0.8s ease" }}
+                />
+
+                {/* Selection ring */}
                 {isSelected && (
-                  <circle cx={z.svgX} cy={cy} r={pulseR + 18} fill="none" stroke={color} strokeWidth="2.5" opacity="0.7" />
+                  <circle cx={z.svgX} cy={z.svgY} r={r + 8} fill="none" stroke={color} strokeWidth="2.5" strokeDasharray="6,4" opacity="0.9" />
                 )}
-                {/* Label pill */}
-                <rect x={z.svgX - 58} y={cy - pulseR - 34} width="116" height="22" rx="5" fill="#000000bb" stroke={color} strokeWidth="0.8" />
-                <text x={z.svgX} y={cy - pulseR - 19} textAnchor="middle" fontSize="10" fill={color} fontWeight="700">{z.label}</text>
-                <text x={z.svgX} y={cy - pulseR - 8} textAnchor="middle" fontSize="8.5" fill={color} opacity="0.8">{d.pax} pax · {Math.round(d.density * 100)}%</text>
+
+                {/* Label tooltip pe hover/select */}
+                {isSelected && (
+                  <>
+                    <rect
+                      x={z.svgX - 60} y={z.svgY - r - 35}
+                      width="120" height="24" rx="5"
+                      fill="#0d1117dd" stroke={color} strokeWidth="1"
+                    />
+                    <text
+                      x={z.svgX} y={z.svgY - r - 17}
+                      textAnchor="middle" fontSize="11" fill={color} fontWeight="700"
+                    >
+                      {z.label}
+                    </text>
+                  </>
+                )}
               </g>
             );
           })}
 
-          {/* ── Legendă scală culori ── */}
-          <defs>
-            <linearGradient id="legendGrad" x1="0%" x2="100%" y1="0%" y2="0%">
-              <stop offset="0%"   stopColor="#1e783c" />
-              <stop offset="33%"  stopColor="#50c850" />
-              <stop offset="55%"  stopColor="#ffe632" />
-              <stop offset="75%"  stopColor="#ff8c14" />
-              <stop offset="100%" stopColor="#e61e1e" />
-            </linearGradient>
-          </defs>
-          <rect x={HM_W - 180} y={HM_H - 26} width="160" height="10" rx="4" fill="url(#legendGrad)" opacity="0.85" />
-          <text x={HM_W - 180} y={HM_H - 30} fontSize="8" fill="#aaa">Liber</text>
-          <text x={HM_W - 24}  y={HM_H - 30} fontSize="8" fill="#aaa" textAnchor="end">Aglomerat</text>
+          {/* Harta SVG completă pe fundal la z-index mai mic */}
+          <image
+            href="/harta_completa.svg"
+            x="0" y="0" width={VB_W} height={VB_H}
+            opacity="0.2"
+            style={{ pointerEvents:"none" }}
+          />
 
-          {/* ── Orange API badge ── */}
-          <rect x="6" y="6" width="160" height="18" rx="3" fill="#000000bb" />
-          <text x="12" y="18" fontSize="9" fill="#ff6600" fontWeight="700">Orange Population Density API</text>
-          <text x="175" y="18" fontSize="8" fill="#aaaaaa">· synthetic</text>
-
-          {/* ── Axă zone (linie orizontală de referință) ── */}
-          <line x1="0" y1={HM_H - 1} x2={HM_W} y2={HM_H - 1} stroke="#ffffff11" strokeWidth="1" />
+          {/* Orange API watermark */}
+          <rect x="4" y="4" width="148" height="18" rx="3" fill="#0d1117bb" />
+          <text x="10" y="16" fontSize="9" fill="#ff6600" fontWeight="700">Orange Population Density API</text>
+          <text x="152" y="16" fontSize="8" fill="#aaaaaa"> · synthetic</text>
         </svg>
       </div>
 
-      {/* ── Detail card ── */}
+      {/* ── Detail card la click pe zonă ── */}
       {selectedZone && selectedData && (
-        <div className="fade-in" style={{ marginTop:10, padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}55`, flexShrink:0 }}>
+        <div className="fade-in" style={{ marginTop:10, padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}44`, flexShrink:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <i className={`ti ${selectedZone.icon}`} style={{ fontSize:20, color:zoneColor(selectedData.density) }} />
             <div style={{ flex:1 }}>
@@ -1640,6 +1643,8 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
               <div style={{ fontSize:10, color:"var(--text-muted)" }}>persoane detectate</div>
             </div>
           </div>
+
+          {/* Progress bar intensitate */}
           <div style={{ marginTop:10 }}>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"var(--text-muted)", marginBottom:3 }}>
               <span>Densitate</span>
@@ -1649,12 +1654,13 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
               <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), borderRadius:3, transition:"width 0.8s", boxShadow:`0 0 8px ${zoneColor(selectedData.density)}` }} />
             </div>
           </div>
+
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginTop:10 }}>
-            {([
+            {[
               ["Status", selectedData.density > 0.7 ? "⚠ Aglomerat" : selectedData.density > 0.4 ? "⚡ Moderat" : "✓ Liber"],
               ["ETA așteptare", selectedData.density > 0.7 ? `~${Math.round(selectedData.density * 25)} min` : "< 5 min"],
               ["Trend", tick % 3 === 0 ? "↗ Crește" : tick % 3 === 1 ? "→ Stabil" : "↘ Scade"],
-            ] as [string,string][]).map(([l, v]) => (
+            ].map(([l, v]) => (
               <div key={l} style={{ textAlign:"center", padding:"6px 8px", background:"var(--bg-hover)", borderRadius:6 }}>
                 <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>{l}</div>
                 <div style={{ fontSize:12, fontWeight:600 }}>{v}</div>
