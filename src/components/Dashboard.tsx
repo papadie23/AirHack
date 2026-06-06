@@ -711,7 +711,7 @@ function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
 
 // Puncte fixe calibrate
 const SVG_SECURITY  = { x: 852,  y: 349 }; // control check / masa echipei
-const SVG_GATE      = { x: 2244, y: 256 }; // destinație / dozator
+const SVG_GATE      = { x: 1435, y: 265 }; // destinație / dozator
 
 // Puncte de start diferite pentru fiecare persoană
 const SVG_STARTS: Record<string, {x:number;y:number}> = {
@@ -733,8 +733,7 @@ const ZONES: Zone[] = [
   { id: "control-securitate",   label: "Control Securitate",    x: 417,  y: 252, color: "#F97316", w: 180, h: 90 },
   { id: "verificare-documente", label: "Verificare Documente",  x: 793,  y: 323, color: "#A78BFA", w: 180, h: 90 },
   { id: "sosire-poarta",        label: "Sosire la Poartă",      x: 1435, y: 265, color: "#34D399", w: 170, h: 90 },
-  { id: "imbarcare",            label: "Îmbarcare",             x: 1800, y: 265, color: "#FBBF24", w: 150, h: 90 },
-  { id: "in-avion",             label: "La bord",               x: 2150, y: 265, color: "#F472B6", w: 140, h: 90 },
+  { id: "imbarcare",            label: "Îmbarcare",             x: 2150, y: 265, color: "#FBBF24", w: 140, h: 90 },
 ];
 
 // Waypoints traseu = centrele zonelor calibrate + gate final
@@ -793,39 +792,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const positionsRef = useRef(positions);
   positionsRef.current = positions;
 
-  // Smooth movement: interpolate displayed position toward target at constant SVG px/s
-  const SMOOTH_SPEED = 60; // SVG units per second
-  const targetPosRef = useRef<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
-  const smoothPosRef = useRef<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
-  const [smoothPositions, setSmoothPositions] = useState<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
-  const rafRef = useRef<number|null>(null);
-  const lastFrameRef = useRef<number>(0);
-
-  useEffect(() => {
-    const animate = (now: number) => {
-      const dt = Math.min((now - lastFrameRef.current) / 1000, 0.1);
-      lastFrameRef.current = now;
-      let changed = false;
-      const next = { ...smoothPosRef.current };
-      for (const id of Object.keys(targetPosRef.current)) {
-        const target = targetPosRef.current[id];
-        const cur = smoothPosRef.current[id] ?? target;
-        const dx = target.x - cur.x, dy = target.y - cur.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < 0.5) { next[id] = target; }
-        else {
-          const step = Math.min(SMOOTH_SPEED * dt, dist);
-          next[id] = { x: cur.x + dx/dist*step, y: cur.y + dy/dist*step };
-          changed = true;
-        }
-      }
-      smoothPosRef.current = next;
-      if (changed) setSmoothPositions({ ...next });
-      rafRef.current = requestAnimationFrame(animate);
-    };
-    rafRef.current = requestAnimationFrame(animate);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, []);
   const [locLoading, setLocLoading] = useState(false);
   const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
@@ -1174,10 +1140,30 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
-    targetPosRef.current[personId] = svgPos;
+    // Pan map to keep active person centered, only if inside SVG bounds
+    const SVG_W = 2262, SVG_H = 587;
+    const inBounds = svgPos.x >= 0 && svgPos.x <= SVG_W && svgPos.y >= 0 && svgPos.y <= SVG_H;
+    if (personId === activePerson && inBounds) {
+      setMapPan(pan => {
+        const containerEl = mapWrapRef.current;
+        if (!containerEl) return pan;
+        const { width, height } = containerEl.getBoundingClientRect();
+        return { x: width / 2 - svgPos.x * mapZoom, y: height / 2 - svgPos.y * mapZoom };
+      });
+    }
     if (personId !== "you") return;
     // Zone proximity check — auto-advance task when entering active zone
     // We compare SVG distance (approx 1 SVG unit ≈ 0.04m at LRIA scale)
+    // Recalculate route from current position if route is active
+    setTaskIdx(idx => {
+      setDynamicRoute(prev => {
+        if (!prev) return prev;
+        const zone = ZONES[idx];
+        if (!zone) return prev;
+        return makeOrthoRoute(svgPos, { x: zone.x, y: zone.y });
+      });
+      return idx;
+    });
     setBoardingPhase(phase => {
       if (phase !== "task") return phase;
       return phase; // handled below via setState callback trick
@@ -1395,6 +1381,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         <div style={{
           position: "absolute", inset: 0,
           transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
+          transition: "transform 0.4s ease-out",
           transformOrigin: "center center",
           willChange: "transform",
           // Smooth when auto-following; instant when the user is dragging/pinching
@@ -1466,18 +1453,17 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             {/* Gate */}
             {!calMode && gatePos && (
               <g filter="url(#glow2)">
-                <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
-                <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
-                <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">{GATE_LABELS[flight?.gate ?? ""]}</text>
+                <circle cx={gatePos.x - 40} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" style={{animation:"pulse 2s infinite"}}/>
+                <circle cx={gatePos.x - 40} cy={gatePos.y} r="7" fill="#10B981"/>
               </g>
             )}
 
             {/* All person dots — use smoothPositions for fluid movement */}
             {!calMode && PEOPLE.map(p => {
-              const pos = smoothPositions[p.id] ?? positions[p.id];
+              const pos = positions[p.id];
               return (
                 <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
-                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
+                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?16:10} fill="none" stroke={p.color} strokeWidth="2.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
                   <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?7:5} fill={p.color}/>
                   <circle cx={pos.x} cy={pos.y} r="2" fill="#fff"/>
                   <text x={pos.x} y={pos.y+20} textAnchor="middle" fill={p.color} fontSize="10" fontWeight="600">{p.name}</text>
@@ -1503,7 +1489,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
-          @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
+          @keyframes pulse { 0%,100%{opacity:0.2} 50%{opacity:0.8} }
         `}</style>
       </div>
 
@@ -1560,17 +1546,16 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
       {/* ── Boarding task overlay ── */}
       {boardingPhase === "confirming" && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:16, padding:"28px 32px", maxWidth:340, width:"90%", textAlign:"center" }}>
-            <div style={{ fontSize:28, marginBottom:12 }}>✈️</div>
-            <div style={{ fontSize:18, fontWeight:700, marginBottom:8 }}>Începeți procesul de îmbarcare?</div>
-            <div style={{ fontSize:13, color:"var(--text-muted)", marginBottom:24 }}>Vă vom ghida pas cu pas până la avion.</div>
-            <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
-              <button onClick={() => setBoardingPhase("awaiting-location")}
-                style={{ flex:1, padding:"10px 0", background:"var(--brand)", border:"none", borderRadius:8, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Da</button>
-              <button onClick={() => setBoardingPhase("idle")}
-                style={{ flex:1, padding:"10px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:8, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>Nu</button>
-            </div>
+        <div style={{ marginTop:8, padding:"14px 16px", background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:12, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:22 }}>✈️</span>
+            <span style={{ fontWeight:700, fontSize:15 }}>Începeți procesul de îmbarcare?</span>
+          </div>
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={() => setBoardingPhase("awaiting-location")}
+              style={{ flex:1, padding:"10px 0", background:"var(--brand)", border:"none", borderRadius:8, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Da</button>
+            <button onClick={() => setBoardingPhase("idle")}
+              style={{ flex:1, padding:"10px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:8, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>Nu</button>
           </div>
         </div>
       )}
