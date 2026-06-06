@@ -827,27 +827,69 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // Auto-zoom to fill container when entering/leaving portrait mode
   const isPortraitRef = useRef(isPortrait);
   isPortraitRef.current = isPortrait;
+  const activePersonRef = useRef(activePerson);
+  activePersonRef.current = activePerson;
+
+  // Track container dimensions for pan clamping
+  const containerSizeRef = useRef({ W: 0, H: 0 });
+  useEffect(() => {
+    const el = mapWrapRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      containerSizeRef.current = { W: r.width, H: r.height };
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Clamp pan so the map image never shows empty/black areas (portrait only)
+  // After rotate(-90deg)+scale(Z): image visual = (W/MAP_ASPECT)*Z wide × W*Z tall
+  const clampPan = (panX: number, panY: number, zoom: number) => {
+    if (!isPortraitRef.current) return { x: panX, y: panY };
+    const { W, H } = containerSizeRef.current;
+    if (W === 0) return { x: panX, y: panY };
+    const maxX = Math.max(0, ((W / MAP_ASPECT) * zoom - W) / 2);
+    const maxY = Math.max(0, (W * zoom - H) / 2);
+    return {
+      x: Math.max(-maxX, Math.min(maxX, panX)),
+      y: Math.max(-maxY, Math.min(maxY, panY)),
+    };
+  };
+
   // Helper: compute pan to center SVG point (svgX, svgY) in a W×H container at zoom Z (portrait)
   const centerOnSvgPoint = (svgX: number, svgY: number, W: number, H: number, Z: number) => {
-    const imgH = W / MAP_ASPECT; // image height in layer (objectFit:contain, width-bound)
+    const imgH = W / MAP_ASPECT;
     const lx = (svgX / 2262) * W;
     const ly = (H - imgH) / 2 + (svgY / 587) * imgH;
-    // After rotate(-90deg) + scale(Z): keep (lx,ly) at screen center
-    return { x: -Z * (ly - H / 2), y: Z * (lx - W / 2) };
+    return clampPan(-Z * (ly - H / 2), Z * (lx - W / 2), Z);
   };
+
+  // Auto-follow: when the active person moves, keep them centred (like Google Maps)
+  const [isFollowing, setIsFollowing] = useState(true);
+  const isFollowingRef = useRef(true);
+  useEffect(() => {
+    if (!isFollowingRef.current || !isPortraitRef.current) return;
+    const { W, H } = containerSizeRef.current;
+    if (W === 0) return;
+    const pos = positionsRef.current[activePersonRef.current];
+    if (!pos) return;
+    setMapPan(centerOnSvgPoint(pos.x, pos.y, W, H, mapZoomRef.current));
+  }, [positions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isPortrait) {
+      setIsFollowing(true);
+      isFollowingRef.current = true;
       requestAnimationFrame(() => {
-        const el = mapWrapRef.current;
-        const W = el?.getBoundingClientRect().width ?? 0;
-        const H = el?.getBoundingClientRect().height ?? 0;
+        const { W, H } = containerSizeRef.current;
         const pos = positionsRef.current[activePerson];
+        setMapZoom(MAP_ASPECT);
         if (W > 0 && pos) {
-          setMapZoom(MAP_ASPECT);
           setMapPan(centerOnSvgPoint(pos.x, pos.y, W, H, MAP_ASPECT));
         } else {
-          setMapZoom(MAP_ASPECT);
           setMapPan({ x: 0, y: 0 });
         }
       });
@@ -870,36 +912,20 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const handler = () => {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
-      if (fs) {
-        // Wait one frame for the browser to resize the fullscreen element
-        requestAnimationFrame(() => {
-          const el = mapWrapRef.current;
-          if (!el) return;
-          const { width: W, height: H } = el.getBoundingClientRect();
-          // Cover zoom: MAP_ASPECT fills width exactly, no black bars on sides
-          const Z = MAP_ASPECT;
-          // Anchor bottom of rotated map to bottom of screen
-          // Rotated image visual height = W * Z; pan so its bottom = H
-          const panY = (H - W * Z) / 2;
-          setMapZoom(Z);
+      requestAnimationFrame(() => {
+        const { W, H } = containerSizeRef.current;
+        if (W === 0) return;
+        if (fs) {
+          // Cover zoom, anchor map bottom to screen bottom — no black bars
+          const panY = clampPan(0, (H - W * MAP_ASPECT) / 2, MAP_ASPECT).y;
+          setMapZoom(MAP_ASPECT);
           setMapPan({ x: 0, y: panY });
-        });
-      } else if (isPortraitRef.current) {
-        // Back to normal portrait: center on user
-        requestAnimationFrame(() => {
-          const el = mapWrapRef.current;
-          const W = el?.getBoundingClientRect().width ?? 0;
-          const H = el?.getBoundingClientRect().height ?? 0;
-          const pos = positionsRef.current[activePerson];
-          if (W > 0 && pos) {
-            setMapZoom(MAP_ASPECT);
-            setMapPan(centerOnSvgPoint(pos.x, pos.y, W, H, MAP_ASPECT));
-          } else {
-            setMapZoom(MAP_ASPECT);
-            setMapPan({ x: 0, y: 0 });
-          }
-        });
-      }
+        } else if (isPortraitRef.current) {
+          const pos = positionsRef.current[activePersonRef.current];
+          setMapZoom(MAP_ASPECT);
+          setMapPan(pos ? centerOnSvgPoint(pos.x, pos.y, W, H, MAP_ASPECT) : { x: 0, y: 0 });
+        }
+      });
     };
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
@@ -940,12 +966,19 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const onWheel = (e: WheelEvent) => {
       if (calModeRef.current || pixelLogRef.current) return;
       e.preventDefault();
+      isFollowingRef.current = false;
+      setIsFollowing(false);
+      const minZ = isPortraitRef.current ? MAP_ASPECT : 0.5;
       const factor = e.deltaY < 0 ? 1.15 : 0.87;
-      setMapZoom(z => Math.min(Math.max(z * factor, 0.5), 6));
+      setMapZoom(z => {
+        const nz = Math.min(Math.max(z * factor, minZ), 10);
+        setMapPan(p => clampPan(p.x, p.y, nz));
+        return nz;
+      });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Native touch handlers (passive:false required for preventDefault)
   // Supports single-touch pan + two-finger pinch-to-zoom
@@ -959,6 +992,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
     const onTouchStart = (e: TouchEvent) => {
       if (calModeRef.current || pixelLogRef.current) return;
+      // Any touch = stop auto-follow
+      isFollowingRef.current = false;
+      setIsFollowing(false);
       if (e.touches.length === 1) {
         const rect = el.getBoundingClientRect();
         dragRef.current = {
@@ -992,25 +1028,24 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         const { startX, startY, panX, panY } = dragRef.current;
         const cx = e.touches[0].clientX - rect.left;
         const cy = e.touches[0].clientY - rect.top;
-        setMapPan({ x: panX + cx - startX, y: panY + cy - startY });
+        const raw = { x: panX + cx - startX, y: panY + cy - startY };
+        setMapPan(clampPan(raw.x, raw.y, mapZoomRef.current));
       } else if (e.touches.length === 2 && pinch) {
         const newDist = dist(e.touches);
         const rect = el.getBoundingClientRect();
         const W = rect.width, H = rect.height;
         const newMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
         const newMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
-        const newZoom = Math.min(Math.max(pinch.zoom * (newDist / pinch.dist), 0.3), 10);
+        const minZ = isPortraitRef.current ? MAP_ASPECT : 0.3;
+        const newZoom = Math.min(Math.max(pinch.zoom * (newDist / pinch.dist), minZ), 10);
         const ratio = newZoom / pinch.zoom;
-        // Zoom toward the initial pinch midpoint (in container-center coords)
         const cmx = pinch.midX - W / 2;
         const cmy = pinch.midY - H / 2;
-        // Pan to follow finger drift + zoom-to-point
         const driftX = newMidX - pinch.midX;
         const driftY = newMidY - pinch.midY;
-        const newPanX = cmx - (cmx - pinch.panX) * ratio + driftX;
-        const newPanY = cmy - (cmy - pinch.panY) * ratio + driftY;
+        const rawPan = { x: cmx - (cmx - pinch.panX) * ratio + driftX, y: cmy - (cmy - pinch.panY) * ratio + driftY };
         setMapZoom(newZoom);
-        setMapPan({ x: newPanX, y: newPanY });
+        setMapPan(clampPan(rawPan.x, rawPan.y, newZoom));
       }
     };
 
@@ -1265,11 +1300,37 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         {/* Zoom controls — hidden in calMode/pixelLog */}
         {!calMode && !pixelLog && (
           <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
-            <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.min(z * 1.25, 6))} title="Zoom in">+</button>
-            <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.max(z * 0.8, 0.5))} title="Zoom out">−</button>
-            <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { setMapZoom(isPortrait ? MAP_ASPECT : 1); setMapPan({ x:0, y:0 }); }} title="Reset">
+            <button style={zoomBtnStyle} onClick={() => {
+              isFollowingRef.current = false; setIsFollowing(false);
+              setMapZoom(z => { const nz = Math.min(z * 1.25, 10); setMapPan(p => clampPan(p.x, p.y, nz)); return nz; });
+            }} title="Zoom in">+</button>
+            <button style={zoomBtnStyle} onClick={() => {
+              isFollowingRef.current = false; setIsFollowing(false);
+              const minZ = isPortrait ? MAP_ASPECT : 0.5;
+              setMapZoom(z => { const nz = Math.max(z * 0.8, minZ); setMapPan(p => clampPan(p.x, p.y, nz)); return nz; });
+            }} title="Zoom out">−</button>
+            <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => {
+              isFollowingRef.current = true; setIsFollowing(true);
+              const Z = isPortrait ? MAP_ASPECT : 1;
+              const { W, H } = containerSizeRef.current;
+              const pos = positionsRef.current[activePerson];
+              setMapZoom(Z);
+              setMapPan(isPortrait && pos && W > 0 ? centerOnSvgPoint(pos.x, pos.y, W, H, Z) : { x: 0, y: 0 });
+            }} title="Centrează pe mine">
               <i className="ti ti-home-2" />
             </button>
+            {/* Follow-me indicator: blue when following, muted when free */}
+            {isPortrait && (
+              <button style={{ ...zoomBtnStyle, color: isFollowing ? "#38BDF8" : "var(--text-muted)", borderColor: isFollowing ? "#38BDF8" : "var(--border-color)" }}
+                onClick={() => {
+                  isFollowingRef.current = true; setIsFollowing(true);
+                  const { W, H } = containerSizeRef.current;
+                  const pos = positionsRef.current[activePerson];
+                  if (pos && W > 0) setMapPan(centerOnSvgPoint(pos.x, pos.y, W, H, mapZoomRef.current));
+                }} title="Urmărire automată">
+                <i className="ti ti-navigation" style={{ fontSize:13 }} />
+              </button>
+            )}
             <button style={{ ...zoomBtnStyle, fontSize:14 }} onClick={toggleFullscreen} title={isFullscreen ? "Ieși din ecran complet" : "Ecran complet"}>
               <i className={`ti ti-arrows-${isFullscreen ? "minimize" : "maximize"}`} />
             </button>
@@ -1299,6 +1360,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
           transformOrigin: "center center",
           willChange: "transform",
+          // Smooth when auto-following; instant when the user is dragging/pinching
+          transition: (isFollowing && !isDragging) ? "transform 0.45s cubic-bezier(0.25,0.46,0.45,0.94)" : "none",
         }}>
           <img src="/harta_completa.svg" alt="Hartă T4 LRIA" draggable={false}
             style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
