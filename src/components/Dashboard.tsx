@@ -1249,9 +1249,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             {/* Gate */}
             {!calMode && gatePos && (
               <g filter="url(#glow2)">
-                <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" style={{animation:"pulse 2s infinite"}}/>
-                <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
-                <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">{GATE_LABELS[flight?.gate ?? ""]}</text>
+                <circle cx={gatePos.x - 40} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" style={{animation:"pulse 2s infinite"}}/>
+                <circle cx={gatePos.x - 40} cy={gatePos.y} r="7" fill="#10B981"/>
               </g>
             )}
 
