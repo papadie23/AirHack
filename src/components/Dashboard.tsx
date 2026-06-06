@@ -730,9 +730,8 @@ const ZONES: Zone[] = [
   { id: "checkin",              label: "Check-in",              x: 108,  y: 407, color: "#38BDF8", w: 160, h: 90 },
   { id: "control-securitate",   label: "Control Securitate",    x: 417,  y: 252, color: "#F97316", w: 180, h: 90 },
   { id: "verificare-documente", label: "Verificare Documente",  x: 793,  y: 323, color: "#A78BFA", w: 180, h: 90 },
-  { id: "sosire-poarta",        label: "Sosire la Poartă",      x: 1435, y: 265, color: "#34D399", w: 170, h: 90 },
-  { id: "imbarcare",            label: "Îmbarcare",             x: 1800, y: 265, color: "#FBBF24", w: 150, h: 90 },
-  { id: "in-avion",             label: "La bord",               x: 2150, y: 265, color: "#F472B6", w: 140, h: 90 },
+  { id: "sosire-poarta",        label: "Boarding",              x: 1435, y: 265, color: "#34D399", w: 170, h: 90 },
+  { id: "imbarcare",            label: "Îmbarcare",             x: 2150, y: 265, color: "#FBBF24", w: 140, h: 90 },
 ];
 
 // Waypoints traseu = centrele zonelor calibrate + gate final
@@ -1250,7 +1249,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             {/* Gate */}
             {!calMode && gatePos && (
               <g filter="url(#glow2)">
-                <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
+                <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" style={{animation:"pulse 2s infinite"}}/>
                 <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
                 <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">{GATE_LABELS[flight?.gate ?? ""]}</text>
               </g>
@@ -1261,7 +1260,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               const pos = positions[p.id];
               return (
                 <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
-                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
+                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?16:10} fill="none" stroke={p.color} strokeWidth="2.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
                   <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?7:5} fill={p.color}/>
                   <circle cx={pos.x} cy={pos.y} r="2" fill="#fff"/>
                   <text x={pos.x} y={pos.y+20} textAnchor="middle" fill={p.color} fontSize="10" fontWeight="600">{p.name}</text>
@@ -1287,7 +1286,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
-          @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
+          @keyframes pulse { 0%,100%{opacity:0.2} 50%{opacity:0.8} }
         `}</style>
       </div>
 
