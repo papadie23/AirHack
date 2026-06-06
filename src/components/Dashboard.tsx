@@ -510,9 +510,9 @@ function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:numb
 }
 
 const defaultPoints: CalPoint[] = [
-  { svgX: 100, svgY: 500, lat: 47.174617, lng: 27.619244 },
-  { svgX: 2000, svgY: 100, lat: 47.1740641, lng: 27.619701 },
-  { svgX: 1100, svgY: 80, lat: 47.17480000, lng: 27.62200000 },
+  { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // control check / masa echipei
+  { svgX: 2244, svgY: 256, lat: 47.17406410, lng: 27.61970100 }, // destinație pasageri / dozator
+  { svgX: 100,  svgY: 500, lat: 47.17460000, lng: 27.61850000 }, // colț stânga-jos (estimat)
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
@@ -531,22 +531,23 @@ function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
   localStorage.setItem(CAL_KEY, JSON.stringify({ points, transform }));
 }
 
-// SVG waypoints în spațiul viewBox="0 0 2262 587" al hărții harta_completa.svg
-// Rescalate din 0-1200×0-600 → 0-2262×0-587 (scaleX=1.885, scaleY=0.978)
+// SVG waypoints calibrate pe harta reală
+// Masa echipei / control check: (852, 349)
+// Destinație pasageri (gate): (2244, 256)
 const GATE_SVG: Record<string, { x: number; y: number }> = {
-  "1":  { x: 283,  y: 225 }, "2":  { x: 603,  y: 225 }, "3":  { x: 924,  y: 225 },
-  "4":  { x: 1244, y: 225 }, "5":  { x: 1565, y: 225 }, "6":  { x: 1885, y: 225 },
-  "T3": { x: 1979, y: 421 },
+  "1":  { x: 2244, y: 256 }, "2":  { x: 2244, y: 256 }, "3":  { x: 2244, y: 256 },
+  "4":  { x: 2244, y: 256 }, "5":  { x: 2244, y: 256 }, "6":  { x: 2244, y: 256 },
+  "T3": { x: 2244, y: 256 },
 };
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
-  "1":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:283,y:294},{x:283,y:225}],
-  "2":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:603,y:294},{x:603,y:225}],
-  "3":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:924,y:294},{x:924,y:225}],
-  "4":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1244,y:294},{x:1244,y:225}],
-  "5":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1565,y:294},{x:1565,y:225}],
-  "6":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1885,y:294},{x:1885,y:225}],
-  "T3": [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1810,y:391},{x:1979,y:421}],
+  "1":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
+  "2":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
+  "3":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
+  "4":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
+  "5":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
+  "6":  [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
+  "T3": [{x:852,y:349},{x:1200,y:349},{x:1800,y:300},{x:2244,y:256}],
 };
 
 /* ── People config ── */
@@ -559,7 +560,7 @@ const PEOPLE: Person[] = [
 ];
 
 function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>void; activePerson: string }) {
-  const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({ you:{x:396,y:479}, misu:{x:396,y:479}, ionica:{x:396,y:479}, dorel:{x:396,y:479} });
+  const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({ you:{x:852,y:349}, misu:{x:852,y:349}, ionica:{x:2244,y:256}, dorel:{x:2244,y:256} });
   const [locLoading, setLocLoading] = useState(false);
   const [pixelLog, setPixelLog] = useState(false);
   const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
