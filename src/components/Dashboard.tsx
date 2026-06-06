@@ -1102,11 +1102,10 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const goToZone = () => {
     const zone = TASKS[taskIdx]?.zone;
-    if (!zone || !positions[activePerson]) return;
-    const from = positions[activePerson];
-    const to = { x: zone.x, y: zone.y };
-    setDynamicRoute(makeOrthoRoute(from, to));
-    setShowTaskPopup(false); // close popup — route is now visible on the map
+    const from = positionsRef.current[activePerson];
+    if (!zone || !from) return;
+    setDynamicRoute(makeOrthoRoute(from, { x: zone.x, y: zone.y }));
+    setShowTaskPopup(false);
   };
 
   // Reset dynamic route when the active person changes
@@ -1209,6 +1208,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         placeOnMap(lat, lng, activePerson);
         onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${pos.coords.accuracy.toFixed(0)}m`);
         setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
+        // Always re-enable following so map stays on user
+        isFollowingRef.current = true;
+        setIsFollowing(true);
         setLocLoading(false);
         setLocationLoaded(true);
       },
@@ -1545,7 +1547,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
                     </div>
                   </div>
                   <div style={{ display:"flex", gap:10 }}>
-                    <button onClick={() => { setBoardingPhase("task"); setTaskIdx(0); }}
+                    <button onClick={() => { setBoardingPhase("awaiting-location"); getLocation(); setTaskIdx(0); }}
                       style={{ flex:1, padding:"13px 0", background:"var(--brand)", border:"none", borderRadius:12, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer" }}>
                       Da, începe
                     </button>
