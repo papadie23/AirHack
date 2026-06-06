@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
+import type { WeatherProvider } from "../lib/weather";
 
 type Feature = "weather" | "route" | "heatmap";
 
@@ -46,15 +47,22 @@ const ROUTE_PX: Record<string, { x:number; y:number }[]> = {
 export default function Dashboard() {
   const [feature, setFeature] = useState<Feature>("weather");
   const [logs, setLogs] = useState<{ ts: string; msg: string; ok: boolean }[]>([]);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
   const addLog = (msg: string, ok = true) =>
     setLogs(p => [{ ts: new Date().toLocaleTimeString("ro"), msg, ok }, ...p].slice(0, 30));
 
   return (
     <div id="dashboard">
       <div className="dashboard-grid">
-        <LeftPanel feature={feature} setFeature={setFeature} />
-        <CenterPanel feature={feature} onLog={addLog} />
-        <RightPanel feature={feature} onLog={addLog} />
+        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} />
+        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
       <BottomBar logs={logs} />
     </div>
@@ -68,15 +76,27 @@ const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
   { id: "heatmap", icon: "ti-map-2",       label: "Heatmap Terminal", sub: "Aglomerație zone"          },
 ];
 
-function LeftPanel({ feature, setFeature }: { feature: Feature; setFeature: (f: Feature) => void }) {
+function LeftPanel({
+  feature, setFeature, theme, setTheme,
+}: {
+  feature: Feature; setFeature: (f: Feature) => void;
+  theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
+}) {
   return (
     <div className="card sidebar-left">
       <div className="brand-header">
         <div className="brand-icon"><i className="ti ti-wifi" /></div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div className="brand-title">AirFlow Nexus</div>
           <div className="brand-sub">powered by Orange APIs</div>
         </div>
+        <button
+          className="btn-theme-toggle"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
+        </button>
       </div>
 
       <div className="section-title">Funcționalități</div>
@@ -120,10 +140,14 @@ function LeftPanel({ feature, setFeature }: { feature: Feature; setFeature: (f: 
 }
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
-function CenterPanel({ feature, onLog }: { feature: Feature; onLog: (m: string, ok?: boolean) => void }) {
+function CenterPanel({
+  feature, onLog, weatherProvider,
+}: {
+  feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
+}) {
   return (
     <div className="card main-center">
-      {feature === "weather" && <WeatherCenter onLog={onLog} />}
+      {feature === "weather" && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
       {feature === "route"   && <RouteCenter   onLog={onLog} />}
       {feature === "heatmap" && <HeatmapCenter onLog={onLog} />}
     </div>
@@ -203,25 +227,55 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="section-title" style={{ marginTop:16, marginBottom:8 }}>{children}</div>;
 }
 
-function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+const PROVIDER_LABELS: Record<WeatherProvider, string> = {
+  "open-meteo": "Open-Meteo",
+  "openweathermap": "OpenWeatherMap",
+  "meteoblue": "Meteoblue",
+  "accuweather": "AccuWeather",
+};
+
+function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void; provider: WeatherProvider }) {
   const [w, setW] = useState<WData|null>(null);
   const [m, setM] = useState<MData|null>(null);
   const [loading, setLoading] = useState(false);
   const [rwy, setRwy] = useState<"08"|"26">("08");
+  // Cache: avoid re-fetching the same provider (load-once in test mode)
+  const wCache = useRef<Partial<Record<WeatherProvider, WData>>>({});
+  const mCache = useRef<MData|null>(null);
 
   const load = async () => {
+    // Use cache if available (fixture data is never re-fetched)
+    if (wCache.current[provider]) {
+      setW(wCache.current[provider]!);
+      if (mCache.current) setM(mCache.current);
+      return;
+    }
     setLoading(true);
     try {
+      const metarPromise = mCache.current
+        ? Promise.resolve(mCache.current)
+        : fetch("/api/metar?station=LRIA").then(r => r.json());
       const [wd, md] = await Promise.all([
-        fetch("/api/weather").then(r => r.json()),
-        fetch("/api/metar?station=LRIA").then(r => r.json()),
+        fetch(`/api/weather-provider?provider=${provider}`).then(r => r.json()),
+        metarPromise,
       ]);
+      wCache.current[provider] = wd;
+      mCache.current = md;
       setW(wd); setM(md);
-      onLog(`METAR LRIA · ${md.flightCategory} · ${md.wind?.speedKt}kt ${md.wind?.directionDeg}°`);
+      onLog(`${PROVIDER_LABELS[provider]} · ${md.flightCategory} · ${md.wind?.speedKt}kt ${md.wind?.directionDeg}°`);
     } catch { onLog("Eroare fetch meteo", false); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+
+  const handleRefresh = () => {
+    // Don't re-fetch fixture data to save calls
+    if (w?.fromFixture) return;
+    delete wCache.current[provider];
+    mCache.current = null;
+    load();
+  };
+
+  useEffect(() => { load(); }, [provider]);
 
   const cat = m?.flightCategory ?? "VFR";
   const catColor = CAT_COL[cat] ?? "var(--success)";
@@ -248,15 +302,17 @@ function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         <div>
           <div className="map-title">Briefing Meteorologic — LRIA Iași</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
+            <span style={{ color:"var(--brand)", fontWeight:600 }}>{PROVIDER_LABELS[provider]}</span>
+            {" · "}
             {m?.observedAt ? new Date(m.observedAt).toLocaleString("ro", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"short" }) : "—"} UTC
-            {m?.fromFixture && <span style={{ marginLeft:8, color:"var(--warning)" }}>· fixture</span>}
+            {(w?.fromFixture || m?.fromFixture) && <span style={{ marginLeft:8, color:"var(--warning)" }}>· fixture</span>}
           </div>
         </div>
         <div className="badges">
           <div className="badge" style={{ background:`${catColor}22`, color:catColor, border:`1px solid ${catColor}44`, fontSize:13, fontWeight:700, padding:"6px 14px" }}>
             {cat}
           </div>
-          <button onClick={load} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"6px 12px", cursor:"pointer", fontSize:12 }}>
+          <button onClick={handleRefresh} disabled={w?.fromFixture} title={w?.fromFixture ? "Fixture — no re-fetch in test mode" : "Refresh"} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color: w?.fromFixture ? "var(--border-color)" : "var(--text-muted)", padding:"6px 12px", cursor: w?.fromFixture ? "default" : "pointer", fontSize:12 }}>
             <i className={`ti ti-refresh${loading?" spin":""}`} />
           </button>
         </div>
@@ -382,31 +438,29 @@ function WeatherCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   );
 }
 
-// SVG waypoints în spațiul viewBox="0 0 1200 600" al hărții Gemini
-// Nivel 0: check-in (210,490) → securitate (510,430) → acces etaj (640,400)
-// Nivel 1: porți T4 sus (1-6), culoar T3 dreapta
+// SVG waypoints în spațiul viewBox="0 0 2262 587" al hărții harta_completa.svg
+// Rescalate din 0-1200×0-600 → 0-2262×0-587 (scaleX=1.885, scaleY=0.978)
 const GATE_SVG: Record<string, { x: number; y: number }> = {
-  "1":  { x: 150, y: 230 }, "2":  { x: 320, y: 230 }, "3":  { x: 490, y: 230 },
-  "4":  { x: 660, y: 230 }, "5":  { x: 830, y: 230 }, "6":  { x: 1000, y: 230 },
-  "T3": { x: 1050, y: 430 },
+  "1":  { x: 283,  y: 225 }, "2":  { x: 603,  y: 225 }, "3":  { x: 924,  y: 225 },
+  "4":  { x: 1244, y: 225 }, "5":  { x: 1565, y: 225 }, "6":  { x: 1885, y: 225 },
+  "T3": { x: 1979, y: 421 },
 };
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
-  "1":  [{x:210,y:490},{x:210,y:400},{x:380,y:400},{x:150,y:300},{x:150,y:230}],
-  "2":  [{x:210,y:490},{x:210,y:400},{x:380,y:400},{x:320,y:300},{x:320,y:230}],
-  "3":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:490,y:300},{x:490,y:230}],
-  "4":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:660,y:300},{x:660,y:230}],
-  "5":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:830,y:300},{x:830,y:230}],
-  "6":  [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:1000,y:300},{x:1000,y:230}],
-  "T3": [{x:210,y:490},{x:210,y:400},{x:510,y:400},{x:640,y:400},{x:960,y:400},{x:1050,y:430}],
+  "1":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:283,y:294},{x:283,y:225}],
+  "2":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:603,y:294},{x:603,y:225}],
+  "3":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:924,y:294},{x:924,y:225}],
+  "4":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1244,y:294},{x:1244,y:225}],
+  "5":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1565,y:294},{x:1565,y:225}],
+  "6":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1885,y:294},{x:1885,y:225}],
+  "T3": [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1810,y:391},{x:1979,y:421}],
 };
 
 function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [selFlight, setSelFlight] = useState<string|null>(null);
-  const [userPos, setUserPos] = useState<{x:number;y:number}>({x:210,y:490});
+  const [userPos, setUserPos] = useState<{x:number;y:number}>({x:396,y:479});
   const [userGps, setUserGps] = useState<{lat:number;lng:number}|null>(null);
   const [locLoading, setLocLoading] = useState(false);
-  const [mapMode, setMapMode] = useState<"floor"|"satellite">("floor");
   const gmapRef = useRef<HTMLDivElement>(null);
   const gmapInstance = useRef<google.maps.Map|null>(null);
   const markerRef = useRef<google.maps.Marker|null>(null);
@@ -430,33 +484,34 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     return () => { if (animRef.current) clearTimeout(animRef.current); };
   }, [selFlight]);
 
-  // Init Google Maps satellite view
+  // Init Google Maps hidden underneath — always on mount, for GPS accuracy
   useEffect(() => {
-    if (mapMode !== "satellite") return;
     const key = (window as any).__GOOGLE_MAPS_KEY__;
     if (!key || !gmapRef.current) return;
-    if (gmapInstance.current) return; // already init
+    if (gmapInstance.current) return;
 
-    const loader = new (require("@googlemaps/js-api-loader").Loader)({ apiKey: key, version: "weekly" });
-    loader.load().then(() => {
-      if (!gmapRef.current) return;
-      const map = new google.maps.Map(gmapRef.current, {
-        center: { lat: 47.1744, lng: 27.6193 },
-        zoom: 18,
-        mapTypeId: "satellite",
-        disableDefaultUI: true,
-        zoomControl: true,
-        tilt: 0,
-      });
-      gmapInstance.current = map;
-      markerRef.current = new google.maps.Marker({
-        map,
-        position: { lat: 47.1744, lng: 27.6193 },
-        title: "Tu ești aici",
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
-      });
+    import("@googlemaps/js-api-loader").then(({ Loader }) => {
+      const loader = new Loader({ apiKey: key, version: "weekly" });
+      loader.load().then(() => {
+        if (!gmapRef.current) return;
+        const map = new google.maps.Map(gmapRef.current, {
+          center: { lat: 47.1744, lng: 27.6193 },
+          zoom: 18,
+          mapTypeId: "satellite",
+          disableDefaultUI: true,
+          zoomControl: false,
+          tilt: 0,
+        });
+        gmapInstance.current = map;
+        markerRef.current = new google.maps.Marker({
+          map,
+          position: { lat: 47.1744, lng: 27.6193 },
+          title: "Tu ești aici",
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
+        });
+      }).catch(() => {});
     }).catch(() => {});
-  }, [mapMode]);
+  }, []);
 
   // Update marker when GPS changes
   useEffect(() => {
@@ -479,8 +534,8 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         setUserGps({ lat, lng });
         // Convert GPS → floor plan pixel → SVG %
         const px = gpsToPixel({ lat, lng });
-        const svgX = (px.x / IMG_W) * 1200;
-        const svgY = (px.y / IMG_H) * 600;
+        const svgX = (px.x / IMG_W) * 2262;
+        const svgY = (px.y / IMG_H) * 587;
         setUserPos({ x: svgX, y: svgY });
         onLog(`Orange Location · lat ${lat.toFixed(4)} lng ${lng.toFixed(4)}`);
       }
@@ -488,60 +543,44 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     finally { setLocLoading(false); }
   };
 
-  // Floor plan image crop — zoom to terminal area
-  // Image is 13500x5000px, terminal starts around x=7500
-  const cropLeft = 55; // % from left to crop (zoom into terminal)
-
   return (
     <>
       <div className="map-header">
         <div>
-          <div className="map-title">My Route — Terminal T4 Iași</div>
+          <div className="map-title">My Route — Terminal T4 LRIA (Hartă Completă)</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
             {userGps ? `GPS: ${userGps.lat.toFixed(5)}, ${userGps.lng.toFixed(5)}` : "Locație neprimită încă"}
           </div>
         </div>
         <div className="badges">
-          <button
-            onClick={() => setMapMode(m => m === "floor" ? "satellite" : "floor")}
-            style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}
-          >
-            <i className={`ti ${mapMode === "floor" ? "ti-satellite" : "ti-map"}`}/> {mapMode === "floor" ? "Satelit" : "Plan"}
-          </button>
           <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
             <i className={`ti ti-navigation${locLoading?" spin":""}`}/> Orange Location
           </button>
         </div>
       </div>
 
-      {/* ── Floor plan view ── */}
-      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", display: mapMode === "floor" ? "flex" : "none" }}>
-        {/* Harta reală JPEG */}
+      {/* ── Three-layer map stack ── */}
+      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
+
+        {/* Layer 0: Google Maps — hidden, GPS tracking only */}
+        <div ref={gmapRef} style={{ position:"absolute", inset:0, opacity:0, pointerEvents:"none", zIndex:0 }} />
+
+        {/* Layer 1: SVG floor plan — only visible map */}
         <img
-          src="/Plan%20parter%20fluxuri%20ON.jpg"
-          alt="Plan parter T4"
-          style={{ width:"100%", height:"100%", objectFit:"cover", objectPosition:`${cropLeft}% 50%`, display:"block", opacity:0.75, filter:"brightness(0.9) contrast(1.1)" }}
+          src="/harta_completa.svg"
+          alt="Hartă completă T4 LRIA"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", objectPosition:"center", display:"block", zIndex:1 }}
         />
-        {/* SVG overlay calibrat — rută + dots */}
+
+        {/* Layer 2: Interactive overlay — route polyline, gate marker, user dot */}
         <svg
-          viewBox="0 0 1200 600"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none" }}
+          viewBox="0 0 2262 587"
           preserveAspectRatio="xMidYMid meet"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:2 }}
         >
           <defs>
             <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
-
-          {/* Zone labels calibrate */}
-          {[
-            { label: "Intrare T4",     x: 210, y: 510 },
-            { label: "Check-in 1-5",   x: 210, y: 370 },
-            { label: "Check-in 10-15", x: 380, y: 370 },
-            { label: "Securitate",     x: 510, y: 410 },
-            { label: "Baza Scări",     x: 215, y: 490 },
-          ].map(l => (
-            <text key={l.label} x={l.x} y={l.y} fill="rgba(255,255,255,0.6)" fontSize="11" textAnchor="middle">{l.label}</text>
-          ))}
 
           {/* Ruta animată */}
           {pts && (
@@ -578,12 +617,6 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
         `}</style>
       </div>
-
-      {/* ── Satellite view ── */}
-      <div
-        ref={gmapRef}
-        style={{ flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", display: mapMode === "satellite" ? "block" : "none", minHeight:200 }}
-      />
 
       {/* Info strip */}
       {flight && (
@@ -681,24 +714,26 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     const apiKey = (window as any).__GOOGLE_MAPS_KEY__ as string | undefined;
     if (!apiKey) { setHasGoogleKey(false); return; }
 
-    const loader = new (require("@googlemaps/js-api-loader").Loader)({
-      apiKey,
-      version: "weekly",
-      libraries: ["visualization"],
-    });
-    loader.load().then(() => {
-      if (!mapRef.current) return;
-      const map = new google.maps.Map(mapRef.current, {
-        center: LRIA_CENTER,
-        zoom: 16,
-        mapTypeId: "satellite",
-        disableDefaultUI: true,
-        zoomControl: true,
-        styles: [{ featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] }],
+    import("@googlemaps/js-api-loader").then(({ Loader }) => {
+      const loader = new Loader({
+        apiKey,
+        version: "weekly",
+        libraries: ["visualization"],
       });
-      googleMapRef.current = map;
-      heatmapLayerRef.current = new google.maps.visualization.HeatmapLayer({ map, radius: 40 });
-      setMapReady(true);
+      loader.load().then(() => {
+        if (!mapRef.current) return;
+        const map = new google.maps.Map(mapRef.current, {
+          center: LRIA_CENTER,
+          zoom: 16,
+          mapTypeId: "satellite",
+          disableDefaultUI: true,
+          zoomControl: true,
+          styles: [{ featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] }],
+        });
+        googleMapRef.current = map;
+        heatmapLayerRef.current = new google.maps.visualization.HeatmapLayer({ map, radius: 40 });
+        setMapReady(true);
+      }).catch(() => setHasGoogleKey(false));
     }).catch(() => setHasGoogleKey(false));
   }, []);
 
@@ -794,17 +829,32 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 }
 
 /* ═══════════════════════════ RIGHT PANEL ═══════════════════════════ */
-function RightPanel({ feature, onLog }: { feature: Feature; onLog:(m:string,ok?:boolean)=>void }) {
+function RightPanel({
+  feature, onLog, weatherProvider, setWeatherProvider,
+}: {
+  feature: Feature; onLog:(m:string,ok?:boolean)=>void;
+  weatherProvider: WeatherProvider; setWeatherProvider: (p: WeatherProvider) => void;
+}) {
   return (
     <div className="card sidebar-right">
-      {feature === "weather" && <WeatherRight />}
+      {feature === "weather" && <WeatherRight weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />}
       {feature === "route"   && <RouteRight onLog={onLog} />}
       {feature === "heatmap" && <HeatmapRight />}
     </div>
   );
 }
 
-function WeatherRight() {
+const WEATHER_PROVIDERS: { id: WeatherProvider; label: string; icon: string; sub: string }[] = [
+  { id: "open-meteo",      label: "Open-Meteo",      icon: "ti-cloud",       sub: "Gratuit · fără autentificare" },
+  { id: "openweathermap",  label: "OpenWeatherMap",   icon: "ti-cloud-storm", sub: "API Key · 60 req/min"         },
+  { id: "accuweather",     label: "AccuWeather",      icon: "ti-sun",         sub: "API Key · 50 req/zi"          },
+];
+
+function WeatherRight({
+  weatherProvider, setWeatherProvider,
+}: {
+  weatherProvider: WeatherProvider; setWeatherProvider: (p: WeatherProvider) => void;
+}) {
   const [m, setM] = useState<MData|null>(null);
   useEffect(() => {
     fetch("/api/metar?station=LRIA").then(r => r.json()).then(setM).catch(() => {});
@@ -827,6 +877,27 @@ function WeatherRight() {
 
   return (
     <>
+      {/* ── Provider picker ── */}
+      <div className="section-title">Furnizor Meteo</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:16, flexShrink:0 }}>
+        {WEATHER_PROVIDERS.map(p => (
+          <button
+            key={p.id}
+            className={`provider-card${weatherProvider === p.id ? " active" : ""}`}
+            onClick={() => setWeatherProvider(p.id)}
+          >
+            <i className={`ti ${p.icon}`} style={{ fontSize:18, flexShrink:0 }} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:600 }}>{p.label}</div>
+              <div style={{ fontSize:11, opacity:0.8 }}>{p.sub}</div>
+            </div>
+            {weatherProvider === p.id && (
+              <i className="ti ti-check" style={{ fontSize:14, flexShrink:0 }} />
+            )}
+          </button>
+        ))}
+      </div>
+
       <div className="section-title">Stația LRIA</div>
       <div className="stats-list" style={{ marginBottom:12 }}>
         {[
