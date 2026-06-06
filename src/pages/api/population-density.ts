@@ -1,36 +1,34 @@
 import type { APIRoute } from "astro";
-import { orangePostWithKey } from "../../lib/orange/client";
 
-// LRIA airport bounding polygon (lat/lon)
-const LRIA_POLYGON = [
-  { latitude: 47.1710, longitude: 27.6195 },
-  { latitude: 47.1710, longitude: 27.6285 },
-  { latitude: 47.1748, longitude: 27.6285 },
-  { latitude: 47.1748, longitude: 27.6195 },
-];
-
-const ENDPOINT = "https://api.orange.com/camara/playground/api/population-density-data/v0.2/retrieve";
-
-export const POST: APIRoute = async ({ request }) => {
-  const body = await request.json().catch(() => ({}));
-  const now = new Date();
-  const startTime = body.startTime ?? new Date(now.getTime() - 30 * 60000).toISOString();
-  const endTime = body.endTime ?? now.toISOString();
-
-  const apiKey = import.meta.env.ORANGE_POPULATION_KEY ?? process.env.ORANGE_POPULATION_KEY;
-
-  const result = await orangePostWithKey(
-    apiKey,
-    "population-density.json",
-    ENDPOINT,
-    { area: { areaType: "POLYGON", boundary: LRIA_POLYGON }, startTime, endTime, precision: 7 }
-  );
-
-  if (!result.ok) {
-    return new Response(JSON.stringify({ error: result.error }), { status: 502 });
+function encodeGeohash(lat: number, lng: number, precision = 7) {
+  const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
+  let latR = [-90.0, 90.0], lngR = [-180.0, 180.0];
+  let hash = "", bit = 0, ch = 0, isLng = true;
+  while (hash.length < precision) {
+    const mid = isLng ? (lngR[0] + lngR[1]) / 2 : (latR[0] + latR[1]) / 2;
+    const val = isLng ? lng : lat;
+    if (val > mid) { ch |= (1 << (4 - bit)); (isLng ? lngR : latR)[0] = mid; }
+    else { (isLng ? lngR : latR)[1] = mid; }
+    isLng = !isLng;
+    if (bit < 4) bit++; else { hash += BASE32[ch]; bit = 0; ch = 0; }
   }
+  return hash;
+}
 
-  return new Response(JSON.stringify({ ...(result.data as object), fromFixture: result.fromFixture }), {
-    headers: { "Content-Type": "application/json" },
-  });
+export const POST: APIRoute = async () => {
+  const hashMasa    = encodeGeohash(47.17439229, 27.61903507);
+  const hashDozator = encodeGeohash(47.17406410, 27.61970100);
+
+  return new Response(JSON.stringify({
+    status: "SUCCESS",
+    fromFixture: true,
+    timedPopulationDensityData: [{
+      startTime: new Date().toISOString(),
+      endTime:   new Date().toISOString(),
+      cellPopulationDensityData: [
+        { geohash: hashMasa,    dataType: "DENSITY_ESTIMATION", pplDensity: 185 },
+        { geohash: hashDozator, dataType: "DENSITY_ESTIMATION", pplDensity: 95  },
+      ],
+    }],
+  }), { headers: { "Content-Type": "application/json" } });
 };

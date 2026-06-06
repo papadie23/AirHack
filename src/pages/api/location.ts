@@ -1,47 +1,25 @@
 import type { APIRoute } from "astro";
-import { orangePost } from "../../lib/orange/client";
-import { ORANGE_ENDPOINTS } from "../../lib/orange/endpoints";
 
-const PERSON_FIXTURE: Record<string, string> = {
-  you:    "location-result.json",
-  misu:   "location-misu.json",
-  ionica: "location-ionica.json",
-  dorel:  "location-dorel.json",
+const HACKATHON_SPOTS = {
+  masaEchipei: { lat: 47.17439229, lng: 27.61903507 },
+  dozatorApa:  { lat: 47.17406410, lng: 27.61970100 },
 };
 
-const PERSON_PHONE: Record<string, string> = {
-  you:    "+99012345678",
-  misu:   "+99012345678",
-  ionica: "+99087654321",
-  dorel:  "+99011111111",
+const PERSON_LOCATIONS: Record<string, typeof HACKATHON_SPOTS.masaEchipei> = {
+  you:    HACKATHON_SPOTS.masaEchipei,
+  misu:   HACKATHON_SPOTS.masaEchipei,
+  ionica: HACKATHON_SPOTS.dozatorApa,
+  dorel:  HACKATHON_SPOTS.dozatorApa,
 };
 
 export const POST: APIRoute = async ({ request }) => {
   const body = await request.json().catch(() => ({}));
   const person: string = (body.person ?? "you").toLowerCase();
-
-  const fixture = PERSON_FIXTURE[person] ?? "location-result.json";
-  const phoneNumber = PERSON_PHONE[person] ?? "+99012345678";
-
-  const result = await orangePost<{
-    lastLocationTime?: string;
-    area?: { areaType: string; center: { latitude: number; longitude: number }; radius: number };
-  }>(fixture ?? "location-result.json", ORANGE_ENDPOINTS.LOCATION_RETR, {
-    device: { phoneNumber },
-    maxAge: 3600,
-  });
-
-  if (!result.ok) {
-    return new Response(JSON.stringify({ error: result.error }), { status: 502 });
-  }
+  const coords = PERSON_LOCATIONS[person] ?? HACKATHON_SPOTS.masaEchipei;
 
   return new Response(JSON.stringify({
     person,
-    location: {
-      latitude:  result.data?.area?.center?.latitude  ?? null,
-      longitude: result.data?.area?.center?.longitude ?? null,
-      radius:    result.data?.area?.radius ?? null,
-    },
-    fromFixture: result.fromFixture,
+    location: { latitude: coords.lat, longitude: coords.lng, radius: 10 },
+    fromFixture: true,
   }), { headers: { "Content-Type": "application/json" } });
 };

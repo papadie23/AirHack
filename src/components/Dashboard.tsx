@@ -2,7 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
 
-type Feature = "weather" | "route" | "heatmap";
+type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements";
+
+export interface Announcement {
+  id: number; type: "info" | "warning" | "danger"; text: string; time: string;
+}
 
 /* ── flights / route ── */
 const FLIGHTS = [
@@ -45,15 +49,17 @@ const ROUTE_PX: Record<string, { x:number; y:number }[]> = {
 
 /* ═══════════════════════════ DASHBOARD ═══════════════════════════ */
 export default function Dashboard() {
-  const [feature, setFeature] = useState<Feature>("weather");
+  const [feature, setFeature] = useState<Feature>("route");
   const [logs, setLogs] = useState<{ ts: string; msg: string; ok: boolean }[]>([]);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
   const [activePerson, setActivePerson] = useState<string>("you");
+  const [announcements, setAnnouncements] = useState<Announcement[]>([
+    { id: 1, type: "info",    text: "Zborul RO 321 începe îmbarcarea la Poarta T4 (Dozator Apă).", time: "12:15" },
+    { id: 2, type: "warning", text: "Aglomerare la Filtrul de Securitate (Masa Echipei). Timp estimat: 25 min.", time: "12:22" },
+  ]);
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
+  useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
   const addLog = (msg: string, ok = true) =>
     setLogs(p => [{ ts: new Date().toLocaleTimeString("ro"), msg, ok }, ...p].slice(0, 30));
@@ -61,8 +67,8 @@ export default function Dashboard() {
   return (
     <div id="dashboard">
       <div className="dashboard-grid">
-        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} />
+        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} announcements={announcements} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
       <BottomBar logs={logs} activePerson={activePerson} setActivePerson={setActivePerson} />
@@ -78,10 +84,11 @@ const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
 ];
 
 function LeftPanel({
-  feature, setFeature, theme, setTheme,
+  feature, setFeature, theme, setTheme, announcements,
 }: {
   feature: Feature; setFeature: (f: Feature) => void;
   theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
+  announcements: Announcement[];
 }) {
   return (
     <div className="card sidebar-left">
@@ -130,6 +137,21 @@ function LeftPanel({
             </div>
           </div>
         ))}
+
+        <div style={{ marginTop: 12 }}>
+          <div className="section-title">Operațiuni & Securitate</div>
+        </div>
+        {([
+          { id:"flow-prediction",  icon:"ti-clock-play",           label:"Flow Prediction",      sub:"Estimează ETA cozi" },
+          { id:"boarding-verify",  icon:"ti-shield-check",          label:"Verificare Boarding",  sub:"Prevenție fraudă SIM" },
+          { id:"admin",            icon:"ti-settings-automation",   label:"Control Panel Admin",  sub:"QoD & Gestiune crize" },
+          { id:"announcements",    icon:"ti-megaphone",             label:"Anunțuri Pasageri",    sub:`${announcements.length} alerte active` },
+        ] as {id:Feature;icon:string;label:string;sub:string}[]).map(n => (
+          <div key={n.id} className={`api-card${feature===n.id?" active":""}`} onClick={() => setFeature(n.id)}>
+            <div className="api-card-header"><i className={`ti ${n.icon}`}/> {n.label}</div>
+            <div className="api-val">{n.sub}</div>
+          </div>
+        ))}
       </div>
 
       <div className="alert-box" style={{ marginTop: 12 }}>
@@ -142,15 +164,20 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider, activePerson,
+  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements,
 }: {
-  feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider; activePerson: string;
+  feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
+  activePerson: string; announcements: Announcement[]; setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
 }) {
   return (
     <div className="card main-center">
-      {feature === "weather" && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
-      {feature === "route"   && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
-      {feature === "heatmap" && <HeatmapCenter onLog={onLog} />}
+      {feature === "weather"          && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
+      {feature === "route"            && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
+      {feature === "heatmap"          && <HeatmapCenter onLog={onLog} />}
+      {feature === "flow-prediction"  && <FlowPredictionCenter onLog={onLog} />}
+      {feature === "boarding-verify"  && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
+      {feature === "admin"            && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
+      {feature === "announcements"    && <AnnouncementsCenter announcements={announcements} />}
     </div>
   );
 }
@@ -1183,6 +1210,110 @@ function BottomBar({ logs, activePerson, setActivePerson }: { logs:{ts:string;ms
       <button className="btn-tab" style={{ flex:"0 0 auto" }}>
         <i className="ti ti-help-circle"/> Ajutor
       </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════ NEW FEATURE COMPONENTS ═══════════════════════════ */
+
+function FlowPredictionCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+  const [securityLanes, setSecurityLanes] = useState(2);
+  const securityETA = Math.ceil((185 * 45) / securityLanes / 60);
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-trending-up"/> Predictor Fluxuri T4</h2>
+      <div style={{ padding:15, background:"rgba(255,255,255,0.03)", borderRadius:8, marginTop:20 }}>
+        <h3>Filtru Securitate (Masa Echipei)</h3>
+        <div style={{ fontSize:28, fontWeight:"bold", margin:"10px 0", color:securityETA>15?"var(--warning)":"var(--success)" }}>
+          {securityETA} min <span style={{ fontSize:14, fontWeight:"normal", color:"var(--text-muted)" }}>așteptare estimată</span>
+        </div>
+        <p>Pasageri detectați de Orange API: <strong>185</strong></p>
+        <label style={{ fontSize:12, color:"var(--text-muted)", display:"block", marginBottom:5 }}>Linii de filtrare deschise:</label>
+        <div style={{ display:"flex", gap:8 }}>
+          {[1,2,3,4].map(n => (
+            <button key={n} onClick={() => { setSecurityLanes(n); onLog(`Filtre securitate: ${n} linii active`); }}
+              style={{ padding:"6px 12px", background:securityLanes===n?"var(--brand)":"rgba(255,255,255,0.1)", border:"none", borderRadius:4, cursor:"pointer", color:"#fff" }}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BoardingVerifyCenter({ activePerson, onLog }: { activePerson:string; onLog:(m:string,ok?:boolean)=>void }) {
+  const [status, setStatus] = useState<"idle"|"verified"|"flagged">("idle");
+  const run = () => {
+    setStatus("idle");
+    onLog("Inițiere protocol securitate...");
+    setTimeout(() => {
+      if (activePerson === "dorel") { setStatus("flagged"); onLog("ALERTĂ: SIM Swap detectat pentru Dorel!", false); }
+      else { setStatus("verified"); onLog("Identitate validată. Număr confirmat."); }
+    }, 1000);
+  };
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-shield-lock"/> Verificare Boarding</h2>
+      <div style={{ padding:20, background:"rgba(255,255,255,0.02)", borderRadius:8, marginTop:20 }}>
+        <button onClick={run} style={{ padding:"10px 20px", background:"var(--brand)", border:"none", borderRadius:4, fontWeight:"bold", cursor:"pointer", color:"#fff" }}>
+          Verifică Pasagerul Curent ({activePerson})
+        </button>
+        {status==="verified" && (
+          <div style={{ background:"rgba(40,167,69,0.1)", border:"1px solid var(--success)", padding:15, borderRadius:6, marginTop:20 }}>
+            <div style={{ color:"var(--success)", fontWeight:"bold" }}><i className="ti ti-circle-check"/> VALIDAT DIGITAL</div>
+            <p style={{ fontSize:13 }}>Nu s-au detectat modificări recente ale cartelei SIM.</p>
+          </div>
+        )}
+        {status==="flagged" && (
+          <div style={{ background:"rgba(220,53,69,0.1)", border:"1px solid var(--danger)", padding:15, borderRadius:6, marginTop:20 }}>
+            <div style={{ color:"var(--danger)", fontWeight:"bold" }}><i className="ti ti-alert-triangle"/> ACCES BLOCAT</div>
+            <p style={{ fontSize:13 }}>SIM_SWAP suspect detectat. Interdicție îmbarcare.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminCenter({ onLog, setAnnouncements }: { onLog:(m:string,ok?:boolean)=>void; setAnnouncements:React.Dispatch<React.SetStateAction<Announcement[]>> }) {
+  const [inputText, setInputText] = useState("");
+  const handleBroadcast = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+    setAnnouncements(prev => [{ id:Date.now(), type:"warning", text:inputText, time:new Date().toLocaleTimeString() }, ...prev]);
+    onLog(`[ADMIN] Anunț trimis: "${inputText}"`);
+    setInputText("");
+  };
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-settings-automation"/> Control Panel Admin</h2>
+      <div style={{ padding:15, background:"rgba(255,255,255,0.02)", borderRadius:8, marginTop:20 }}>
+        <h3>Emite Anunț Pasageri</h3>
+        <form onSubmit={handleBroadcast} style={{ marginTop:10 }}>
+          <textarea value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Scrie un anunț..."
+            style={{ width:"100%", height:70, background:"#111", border:"1px solid #333", borderRadius:4, color:"#fff", padding:8, boxSizing:"border-box" }}/>
+          <button type="submit" style={{ background:"var(--brand)", color:"#fff", border:"none", padding:"6px 14px", borderRadius:4, marginTop:10, cursor:"pointer" }}>
+            Trimite pe Monitor
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AnnouncementsCenter({ announcements }: { announcements:Announcement[] }) {
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-presentation"/> Monitoare Informare Pasageri</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:20 }}>
+        {announcements.map(a => (
+          <div key={a.id} style={{ padding:15, background:"rgba(255,255,255,0.02)", borderLeft:`5px solid var(--${a.type})`, borderRadius:"0 6px 6px 0" }}>
+            <p style={{ margin:0, fontSize:14, fontWeight:500 }}>{a.text}</p>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:5 }}>{a.time}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
