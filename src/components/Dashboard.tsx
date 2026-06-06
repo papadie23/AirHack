@@ -1308,8 +1308,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         ref={mapWrapRef}
         className="map-container"
         style={{
-          position: "relative", flex: 1,
-          ...(isPortrait ? { height: "calc(100svh - 195px)", minHeight: 300 } : {}),
+          position: "relative", flex: 1, minHeight: 0,
           borderRadius: "var(--radius-md)", overflow: "hidden",
           border: `1px solid ${calMode?"var(--brand)":pixelLog?"#F59E0B":"var(--border-color)"}`,
           cursor: calMode||pixelLog ? "crosshair" : (isDragging ? "grabbing" : "grab"),
@@ -1381,7 +1380,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         <div style={{
           position: "absolute", inset: 0,
           transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
-          transition: "transform 0.4s ease-out",
           transformOrigin: "center center",
           willChange: "transform",
           // Smooth when auto-following; instant when the user is dragging/pinching
@@ -1459,17 +1457,18 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             )}
 
             {/* All person dots — use smoothPositions for fluid movement */}
-            {!calMode && PEOPLE.map(p => {
+            {!calMode && (() => {
+              const p = PEOPLE.find(p => p.id === activePerson);
+              if (!p) return null;
               const pos = positions[p.id];
               return (
-                <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
-                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?16:10} fill="none" stroke={p.color} strokeWidth="2.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
-                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?7:5} fill={p.color}/>
-                  <circle cx={pos.x} cy={pos.y} r="2" fill="#fff"/>
-                  <text x={pos.x} y={pos.y+20} textAnchor="middle" fill={p.color} fontSize="10" fontWeight="600">{p.name}</text>
+                <g filter="url(#glow2)">
+                  <circle cx={pos.x} cy={pos.y} r="12" fill={p.color} opacity="0.3" style={{animation:"pulse 2s infinite"}}/>
+                  <circle cx={pos.x} cy={pos.y} r="7" fill={p.color}/>
+                  <circle cx={pos.x} cy={pos.y} r="2.5" fill="#fff"/>
                 </g>
               );
-            })}
+            })()}
 
           {/* Calibration points */}
           {calMode && calPoints.map((p, i) => (
