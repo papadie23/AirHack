@@ -28,6 +28,9 @@
     "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
-    "@types/ngeohash": "^0.6.8"
+    "@astrojs/check": "^0.9.9",
+    "@types/ngeohash": "^0.6.8",
+    "@types/node": "^25.9.2",
+    "typescript": "^6.0.3"
   }
 }

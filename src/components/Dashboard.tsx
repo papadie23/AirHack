@@ -2,7 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
 
-type Feature = "weather" | "route" | "heatmap";
+type Feature = "weather" | "route" | "heatmap" | "flow-prediction" | "boarding-verify" | "admin" | "announcements" | "status-api" | "account" | "settings";
+
+export interface Announcement {
+  id: number; type: "info" | "warning" | "danger"; text: string; time: string;
+}
 
 /* ── flights / route ── */
 const FLIGHTS = [
@@ -45,14 +49,17 @@ const ROUTE_PX: Record<string, { x:number; y:number }[]> = {
 
 /* ═══════════════════════════ DASHBOARD ═══════════════════════════ */
 export default function Dashboard() {
-  const [feature, setFeature] = useState<Feature>("weather");
+  const [feature, setFeature] = useState<Feature>("route");
   const [logs, setLogs] = useState<{ ts: string; msg: string; ok: boolean }[]>([]);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [weatherProvider, setWeatherProvider] = useState<WeatherProvider>("open-meteo");
+  const [activePerson, setActivePerson] = useState<string>("you");
+  const [announcements, setAnnouncements] = useState<Announcement[]>([
+    { id: 1, type: "info",    text: "Zborul RO 321 începe îmbarcarea la Poarta T4 (Dozator Apă).", time: "12:15" },
+    { id: 2, type: "warning", text: "Aglomerare la Filtrul de Securitate (Masa Echipei). Timp estimat: 25 min.", time: "12:22" },
+  ]);
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
+  useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
   const addLog = (msg: string, ok = true) =>
     setLogs(p => [{ ts: new Date().toLocaleTimeString("ro"), msg, ok }, ...p].slice(0, 30));
@@ -60,11 +67,11 @@ export default function Dashboard() {
   return (
     <div id="dashboard">
       <div className="dashboard-grid">
-        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} logs={logs} />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} />
+        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} logs={logs} announcements={announcements} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
-      <BottomBar logs={logs} />
+      <BottomBar logs={logs} activePerson={activePerson} setActivePerson={setActivePerson} feature={feature} setFeature={setFeature} />
     </div>
   );
 }
@@ -85,11 +92,12 @@ const USER_NAV = [
 ];
 
 function LeftPanel({
-  feature, setFeature, theme, setTheme, logs,
+  feature, setFeature, theme, setTheme, logs, announcements,
 }: {
   feature: Feature; setFeature: (f: Feature) => void;
   theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
   logs: { ts: string; msg: string; ok: boolean }[];
+  announcements: Announcement[];
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -217,6 +225,21 @@ function LeftPanel({
               </div>
             </div>
           ))}
+
+          <div style={{ marginTop: 12 }}>
+            <div className="section-title">Operațiuni & Securitate</div>
+          </div>
+          {([
+            { id:"flow-prediction",  icon:"ti-clock-play",           label:"Flow Prediction",      sub:"Estimează ETA cozi" },
+            { id:"boarding-verify",  icon:"ti-shield-check",          label:"Verificare Boarding",  sub:"Prevenție fraudă SIM" },
+            { id:"admin",            icon:"ti-settings-automation",   label:"Control Panel Admin",  sub:"QoD & Gestiune crize" },
+            { id:"announcements",    icon:"ti-megaphone",             label:"Anunțuri Pasageri",    sub:`${announcements.length} alerte active` },
+          ] as {id:Feature;icon:string;label:string;sub:string}[]).map(n => (
+            <div key={n.id} className={`api-card${feature===n.id?" active":""}`} onClick={() => setFeature(n.id)}>
+              <div className="api-card-header"><i className={`ti ${n.icon}`}/> {n.label}</div>
+              <div className="api-val">{n.sub}</div>
+            </div>
+          ))}
         </div>
 
         <div className="alert-box" style={{ marginTop: 12 }}>
@@ -230,15 +253,24 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider,
+  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements,
 }: {
   feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
+  activePerson: string; announcements: Announcement[]; setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
 }) {
   return (
     <div className="card main-center">
-      {feature === "weather" && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
-      {feature === "route"   && <RouteCenter   onLog={onLog} />}
-      {feature === "heatmap" && <HeatmapCenter onLog={onLog} />}
+      {feature === "weather"          && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
+      {feature === "route"            && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
+      {feature === "heatmap"          && <HeatmapCenter onLog={onLog} />}
+      {feature === "flow-prediction"  && <FlowPredictionCenter onLog={onLog} />}
+      {feature === "boarding-verify"  && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
+      {feature === "admin"            && activePerson === "you" && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
+      {feature === "admin"            && activePerson !== "you" && <AnnouncementsCenter announcements={announcements} />}
+      {feature === "announcements"    && <AnnouncementsCenter announcements={announcements} />}
+      {feature === "status-api"       && <StatusApiCenter />}
+      {feature === "account"          && <AccountCenter activePerson={activePerson} />}
+      {feature === "settings"         && <SettingsCenter />}
     </div>
   );
 }
@@ -527,35 +559,130 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
   );
 }
 
-// SVG waypoints în spațiul viewBox="0 0 2262 587" al hărții harta_completa.svg
-// Rescalate din 0-1200×0-600 → 0-2262×0-587 (scaleX=1.885, scaleY=0.978)
-const GATE_SVG: Record<string, { x: number; y: number }> = {
-  "1":  { x: 283,  y: 225 }, "2":  { x: 603,  y: 225 }, "3":  { x: 924,  y: 225 },
-  "4":  { x: 1244, y: 225 }, "5":  { x: 1565, y: 225 }, "6":  { x: 1885, y: 225 },
-  "T3": { x: 1979, y: 421 },
+/* ── SVG affine calibration ── */
+const CAL_KEY = "svg_cal_v1";
+interface CalPoint { svgX: number; svgY: number; lat: number; lng: number }
+interface CalTransform { A:number; B:number; C:number; D:number; E:number; F:number }
+
+function solveAffine(pts: CalPoint[]): CalTransform | null {
+  if (pts.length < 3) return null;
+  // Least-squares: z = a*x + b*y + c
+  function solve(getZ: (p: CalPoint) => number): [number,number,number] {
+    let s00=0,s10=0,s01=0,s20=0,s11=0,s02=0,sz0=0,sz1=0,sz2=0;
+    for (const p of pts) {
+      s00+=1; s10+=p.svgX; s01+=p.svgY;
+      s20+=p.svgX**2; s11+=p.svgX*p.svgY; s02+=p.svgY**2;
+      const z=getZ(p); sz0+=z; sz1+=z*p.svgX; sz2+=z*p.svgY;
+    }
+    const n=pts.length;
+    // Build 3x3 normal equations
+    const M=[[s20,s11,s10],[s11,s02,s01],[s10,s01,n]];
+    const b=[sz1,sz2,sz0];
+    const det=(m:number[][])=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+    const D=det(M);
+    if (Math.abs(D)<1e-15) return [0,0,0];
+    return [0,1,2].map(i=>{ const N=M.map(r=>[...r]); for(let r=0;r<3;r++) N[r][i]=b[r]; return det(N)/D; }) as [number,number,number];
+  }
+  const [A,B,C]=solve(p=>p.lat);
+  const [D,E,F]=solve(p=>p.lng);
+  return {A,B,C,D,E,F};
+}
+
+function applyTransform(t: CalTransform, svgX: number, svgY: number): {lat:number;lng:number} {
+  return { lat: t.A*svgX + t.B*svgY + t.C, lng: t.D*svgX + t.E*svgY + t.F };
+}
+
+function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:number} {
+  // Invert 2x2: [A B; D E] * [x;y] = [lat-C; lng-F]
+  const det = t.A*t.E - t.B*t.D;
+  if (Math.abs(det)<1e-20) return {x:0,y:0};
+  return {
+    x: (t.E*(lat-t.C) - t.B*(lng-t.F))/det,
+    y: (t.A*(lng-t.F) - t.D*(lat-t.C))/det,
+  };
+}
+
+const defaultPoints: CalPoint[] = [
+  { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // control check / masa echipei
+  { svgX: 2244, svgY: 256, lat: 47.17406410, lng: 27.61970100 }, // destinație pasageri / dozator
+  { svgX: 100,  svgY: 500, lat: 47.17460000, lng: 27.61850000 }, // colț stânga-jos (estimat)
+];
+
+function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
+  try {
+    const raw = localStorage.getItem(CAL_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (saved.points?.length >= 3) return saved;
+    }
+  } catch { /* ignore */ }
+  if (defaultPoints.length >= 3) return { points: defaultPoints, transform: solveAffine(defaultPoints) };
+  return { points: [], transform: null };
+}
+
+function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
+  localStorage.setItem(CAL_KEY, JSON.stringify({ points, transform }));
+}
+
+// Puncte fixe calibrate
+const SVG_SECURITY  = { x: 852,  y: 349 }; // control check / masa echipei
+const SVG_GATE      = { x: 2244, y: 256 }; // destinație / dozator
+
+// Puncte de start diferite pentru fiecare persoană
+const SVG_STARTS: Record<string, {x:number;y:number}> = {
+  you:    { x: 150, y: 500 },
+  misu:   { x: 400, y: 480 },
+  ionica: { x: 150, y: 150 },
+  dorel:  { x: 400, y: 150 },
 };
+
+const GATE_SVG: Record<string, { x: number; y: number }> = {
+  "1": SVG_GATE, "2": SVG_GATE, "3": SVG_GATE,
+  "4": SVG_GATE, "5": SVG_GATE, "6": SVG_GATE, "T3": SVG_GATE,
+};
+
+function makeRoute(personId: string) {
+  const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
+  return [s, SVG_SECURITY, { x: 1600, y: 300 }, SVG_GATE];
+}
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
-  "1":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:283,y:294},{x:283,y:225}],
-  "2":  [{x:396,y:479},{x:396,y:391},{x:716,y:391},{x:603,y:294},{x:603,y:225}],
-  "3":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:924,y:294},{x:924,y:225}],
-  "4":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1244,y:294},{x:1244,y:225}],
-  "5":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1565,y:294},{x:1565,y:225}],
-  "6":  [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1885,y:294},{x:1885,y:225}],
-  "T3": [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1810,y:391},{x:1979,y:421}],
+  "1": makeRoute("you"), "2": makeRoute("misu"),
+  "3": makeRoute("ionica"), "4": makeRoute("dorel"),
+  "5": makeRoute("you"), "6": makeRoute("you"), "T3": makeRoute("you"),
 };
 
-function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const [selFlight, setSelFlight] = useState<string|null>(null);
-  const [userPos, setUserPos] = useState<{x:number;y:number}>({x:396,y:479});
-  const [userGps, setUserGps] = useState<{lat:number;lng:number}|null>(null);
-  const [locLoading, setLocLoading] = useState(false);
-  const gmapRef = useRef<HTMLDivElement>(null);
-  const gmapInstance = useRef<google.maps.Map|null>(null);
-  const markerRef = useRef<google.maps.Marker|null>(null);
-  const animRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+/* ── People config ── */
+interface Person { id: string; name: string; flightId: string; color: string }
+const PEOPLE: Person[] = [
+  { id: "you",    name: "You",    flightId: "1", color: "#38BDF8" },
+  { id: "misu",   name: "Misu",   flightId: "2", color: "#F97316" },
+  { id: "ionica", name: "Ionica", flightId: "3", color: "#A78BFA" },
+  { id: "dorel",  name: "Dorel",  flightId: "4", color: "#34D399" },
+];
 
-  // Zoom / pan state
+function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>void; activePerson: string }) {
+  const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({
+    you:    SVG_STARTS.you,
+    misu:   SVG_STARTS.misu,
+    ionica: SVG_STARTS.ionica,
+    dorel:  SVG_STARTS.dorel,
+  });
+  const [locLoading, setLocLoading] = useState(false);
+  const [pixelLog, setPixelLog] = useState(false);
+  const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
+  const [pixelEntries, setPixelEntries] = useState<{x:number;y:number;label:string}[]>([]);
+  const [pixelLabel, setPixelLabel] = useState("");
+
+  // Calibration state
+  const [calMode, setCalMode] = useState(false);
+  const [calPoints, setCalPoints] = useState<CalPoint[]>([]);
+  const [calTransform, setCalTransform] = useState<CalTransform|null>(null);
+  const [pendingPin, setPendingPin] = useState<{svgX:number;svgY:number}|null>(null);
+  const [gpsInput, setGpsInput] = useState("");
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Zoom / pan state (disabled in calMode / pixelLog)
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -563,18 +690,26 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const mapWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const saved = loadCalibration();
+    setCalPoints(saved.points);
+    setCalTransform(saved.transform);
+  }, []);
+
+  useEffect(() => {
     const el = mapWrapRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      if (calMode || pixelLog) return;
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.15 : 0.87;
       setMapZoom(z => Math.min(Math.max(z * factor, 0.5), 6));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [calMode, pixelLog]);
 
   const startDrag = (clientX: number, clientY: number) => {
+    if (calMode || pixelLog) return;
     dragRef.current = { startX: clientX, startY: clientY, panX: mapPan.x, panY: mapPan.y };
     setIsDragging(true);
   };
@@ -592,124 +727,128 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     fontSize: 16, fontWeight: 700, lineHeight: 1, boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
   };
 
-  const flight = FLIGHTS.find(f => f.id === selFlight) ?? null;
+  const person = PEOPLE.find(p => p.id === activePerson)!;
+  const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
   const pts = flight ? ROUTE_SVG[flight.gate] : null;
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
-  // Animate user dot along SVG route
-  useEffect(() => {
-    if (animRef.current) clearTimeout(animRef.current);
-    if (!pts) { setUserPos({x:210,y:490}); return; }
-    let i = 0;
-    const step = () => {
-      if (i < pts.length) { setUserPos(pts[i]); i++; animRef.current = setTimeout(step, 500); }
-    };
-    setUserPos(pts[0]);
-    animRef.current = setTimeout(step, 400);
-    return () => { if (animRef.current) clearTimeout(animRef.current); };
-  }, [selFlight]);
-
-  // Init Google Maps hidden underneath — always on mount, for GPS accuracy
-  useEffect(() => {
-    const key = (window as any).__GOOGLE_MAPS_KEY__;
-    if (!key || !gmapRef.current) return;
-    if (gmapInstance.current) return;
-
-    import("@googlemaps/js-api-loader").then(({ Loader }) => {
-      const loader = new Loader({ apiKey: key, version: "weekly" });
-      loader.load().then(() => {
-        if (!gmapRef.current) return;
-        const map = new google.maps.Map(gmapRef.current, {
-          center: { lat: 47.1744, lng: 27.6193 },
-          zoom: 18,
-          mapTypeId: "satellite",
-          disableDefaultUI: true,
-          zoomControl: false,
-          tilt: 0,
-        });
-        gmapInstance.current = map;
-        markerRef.current = new google.maps.Marker({
-          map,
-          position: { lat: 47.1744, lng: 27.6193 },
-          title: "Tu ești aici",
-          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
-        });
-      }).catch(() => {});
-    }).catch(() => {});
-  }, []);
-
-  // Update marker when GPS changes
-  useEffect(() => {
-    if (!userGps || !markerRef.current) return;
-    markerRef.current.setPosition(userGps);
-    gmapInstance.current?.panTo(userGps);
-  }, [userGps]);
+  const placeOnMap = (lat: number, lng: number, personId: string) => {
+    if (calTransform) {
+      setPositions(prev => ({ ...prev, [personId]: svgFromGps(calTransform, lat, lng) }));
+    }
+  };
 
   const getLocation = async () => {
     setLocLoading(true);
     try {
       const r = await fetch("/api/location", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ phoneNumber: "+99012345678" }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ person: activePerson }),
       });
       const d = await r.json();
-      const lat = d.location?.latitude;
-      const lng = d.location?.longitude;
+      const lat = d.location?.latitude, lng = d.location?.longitude;
       if (lat && lng) {
-        setUserGps({ lat, lng });
-        // Convert GPS → floor plan pixel → SVG %
-        const px = gpsToPixel({ lat, lng });
-        const svgX = (px.x / IMG_W) * 2262;
-        const svgY = (px.y / IMG_H) * 587;
-        setUserPos({ x: svgX, y: svgY });
-        onLog(`Orange Location · lat ${lat.toFixed(4)} lng ${lng.toFixed(4)}`);
+        placeOnMap(lat, lng, activePerson);
+        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)}${d.fromFixture ? " (mock)" : ""}`);
+      } else {
+        onLog(`${person.name}: ${d.error ?? "fără locație"}`, false);
       }
-    } catch { onLog("Eroare Orange Location API", false); }
+    } catch { onLog("Eroare locație", false); }
     finally { setLocLoading(false); }
   };
 
+  // ── Calibration handlers ──
+  const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!calMode || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const svgX = ((e.clientX - rect.left) / rect.width) * 2262;
+    const svgY = ((e.clientY - rect.top) / rect.height) * 587;
+    setPendingPin({ svgX, svgY });
+    setGpsInput("");
+  };
+
+  const confirmCalPoint = () => {
+    if (!pendingPin) return;
+    const parts = gpsInput.split(",").map(s => parseFloat(s.trim()));
+    if (parts.length !== 2 || parts.some(isNaN)) return;
+    const [lat, lng] = parts;
+    const newPoints = [...calPoints, { svgX: pendingPin.svgX, svgY: pendingPin.svgY, lat, lng }];
+    const newTransform = solveAffine(newPoints);
+    setCalPoints(newPoints); setCalTransform(newTransform);
+    saveCalibration(newPoints, newTransform);
+    setPendingPin(null); setGpsInput("");
+    onLog(`Cal point ${newPoints.length}: (${pendingPin.svgX.toFixed(0)}, ${pendingPin.svgY.toFixed(0)}) → ${lat}, ${lng}`);
+  };
+
+  const clearCalibration = () => {
+    setCalPoints([]); setCalTransform(null); setPendingPin(null);
+    saveCalibration([], null);
+  };
+
+  const userPos = positions[activePerson];
+
   return (
     <>
-      <div className="map-header">
-        <div style={{ flex:1, minWidth:0 }}>
-          <div className="map-title">My Route — Terminal T4 LRIA</div>
-          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
-            {userGps ? `GPS: ${userGps.lat.toFixed(5)}, ${userGps.lng.toFixed(5)}` : "Locație neprimită încă"}
-          </div>
+      {/* ── Controls row ── */}
+      <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ width:8, height:8, borderRadius:"50%", background:person.color, display:"inline-block" }}/>
+          <span style={{ fontSize:13, fontWeight:600, color:person.color }}>{person.name}</span>
+          {flight && <span style={{ fontSize:12, color:"var(--text-muted)" }}>· {flight.flight} → {flight.dest}</span>}
         </div>
-        <div className="badges" style={{ gap:8, flexShrink:0 }}>
-          {/* Flight dropdown */}
-          <select
-            value={selFlight ?? ""}
-            onChange={e => setSelFlight(e.target.value || null)}
-            style={{
-              background:"var(--bg-hover)", border:"1px solid var(--border-color)",
-              borderRadius:"var(--radius-md)", color:"var(--text-main)",
-              padding:"5px 10px", fontSize:12, cursor:"pointer",
-              fontFamily:"inherit", outline:"none",
-            }}
-          >
-            <option value="">— Selectează zborul —</option>
-            {FLIGHTS.map(f => (
-              <option key={f.id} value={f.id}>{f.flight} → {f.dest} · {f.departs}</option>
-            ))}
-          </select>
-          <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"5px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
-            <i className={`ti ti-navigation${locLoading?" spin":""}`}/> Orange Location
-          </button>
-        </div>
+        <button onClick={getLocation} disabled={locLoading} style={{
+          marginLeft:"auto", padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
+          border:"1px solid var(--border-color)", background:"var(--bg-hover)", color:"var(--text-muted)",
+          display:"flex", alignItems:"center", gap:6,
+        }}>
+          <i className={`ti ti-map-pin${locLoading?" spin":""}`}/> Localizează
+        </button>
+        <button onClick={() => { setCalMode(m => !m); setPendingPin(null); }} style={{
+          padding:"6px 10px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
+          border:`1px solid ${calMode?"var(--brand)":"var(--border-color)"}`,
+          background: calMode ? "rgba(255,102,0,0.2)" : "var(--bg-hover)",
+          color: calMode ? "var(--brand)" : "var(--text-muted)",
+        }}>
+          <i className="ti ti-ruler-measure"/>
+        </button>
+        <button onClick={() => { setPixelLog(m => !m); }} style={{
+          padding:"6px 10px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
+          border:`1px solid ${pixelLog?"#F59E0B":"var(--border-color)"}`,
+          background: pixelLog ? "rgba(245,158,11,0.15)" : "var(--bg-hover)",
+          color: pixelLog ? "#F59E0B" : "var(--text-muted)",
+        }} title="Pixel Logger">
+          <i className="ti ti-crosshair"/>
+        </button>
       </div>
 
-      {/* ── Zoomable / pannable map ── */}
+      {/* Calibration banner */}
+      {calMode && (
+        <div style={{ margin:"0 0 6px", padding:"8px 12px", background:"rgba(255,102,0,0.1)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", fontSize:12, color:"var(--brand)", display:"flex", alignItems:"center", gap:10 }}>
+          <i className="ti ti-info-circle" style={{ fontSize:16 }}/>
+          <span>Click pe hartă → introdu GPS. Minim 3 puncte.</span>
+          {calPoints.length >= 3 && (
+            <button onClick={async () => {
+              const r = await fetch("/api/save-calibration", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ points: calPoints }) });
+              const d = await r.json();
+              onLog(d.ok ? `✓ ${calPoints.length} puncte salvate în cod` : `Eroare: ${d.error}`, d.ok);
+            }} style={{ background:"var(--brand)", border:"none", borderRadius:4, color:"#fff", padding:"2px 10px", cursor:"pointer", fontSize:11 }}>
+              Salvează în cod
+            </button>
+          )}
+          <button onClick={clearCalibration} style={{ marginLeft:"auto", background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"2px 8px", cursor:"pointer", fontSize:11 }}>Resetează</button>
+        </div>
+      )}
+
+      {/* Map — zoomable/pannable (pan/wheel disabled in calMode/pixelLog) */}
       <div
         ref={mapWrapRef}
         className="map-container"
         style={{
           position: "relative", flex: 1,
           borderRadius: "var(--radius-md)", overflow: "hidden",
-          border: "1px solid var(--border-color)",
-          cursor: isDragging ? "grabbing" : "grab",
+          border: `1px solid ${calMode?"var(--brand)":pixelLog?"#F59E0B":"var(--border-color)"}`,
+          cursor: calMode||pixelLog ? "crosshair" : (isDragging ? "grabbing" : "grab"),
           userSelect: "none",
         }}
         onMouseDown={e => startDrag(e.clientX, e.clientY)}
@@ -720,96 +859,148 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         onTouchMove={e => { e.preventDefault(); e.touches.length === 1 && moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
         onTouchEnd={endDrag}
       >
-        {/* Zoom controls — top-right overlay */}
-        <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
-          <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.min(z * 1.25, 6))} title="Zoom in">+</button>
-          <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.max(z * 0.8, 0.5))} title="Zoom out">−</button>
-          <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { setMapZoom(1); setMapPan({ x:0, y:0 }); }} title="Reset">
-            <i className="ti ti-home-2" />
-          </button>
+        {/* Zoom controls — hidden in calMode/pixelLog */}
+        {!calMode && !pixelLog && (
+          <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
+            <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.min(z * 1.25, 6))} title="Zoom in">+</button>
+            <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.max(z * 0.8, 0.5))} title="Zoom out">−</button>
+            <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { setMapZoom(1); setMapPan({ x:0, y:0 }); }} title="Reset">
+              <i className="ti ti-home-2" />
+            </button>
+          </div>
+        )}
+
+      {calMode && pendingPin && (
+        <div style={{ margin:"0 0 6px", padding:"8px 12px", background:"var(--bg-card)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:12, color:"var(--text-muted)", whiteSpace:"nowrap" }}>SVG ({pendingPin.svgX.toFixed(0)}, {pendingPin.svgY.toFixed(0)})</span>
+          <input autoFocus placeholder="lat, lng" value={gpsInput} onChange={e => setGpsInput(e.target.value)} onKeyDown={e => e.key==="Enter" && confirmCalPoint()}
+            style={{ flex:1, background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-main)", padding:"4px 8px", fontSize:12, outline:"none" }} />
+          <button onClick={confirmCalPoint} style={{ background:"var(--brand)", border:"none", borderRadius:4, color:"#fff", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>OK</button>
+          <button onClick={() => setPendingPin(null)} style={{ background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"4px 8px", cursor:"pointer", fontSize:12 }}>✕</button>
         </div>
+      )}
 
-        {/* Layer 0: Google Maps — hidden, GPS tracking only */}
-        <div ref={gmapRef} style={{ position:"absolute", inset:0, opacity:0, pointerEvents:"none", zIndex:0 }} />
+        {/* Pixel logger hover coords — outside transform so it stays fixed top-left */}
+        {pixelLog && hoverPos && (
+          <div style={{ position:"absolute", top:8, left:8, zIndex:10, background:"rgba(11,17,32,0.92)", border:"1px solid #F59E0B", borderRadius:6, padding:"6px 10px", fontSize:12, color:"#F59E0B", pointerEvents:"none" }}>
+            x: <b>{hoverPos.x.toFixed(0)}</b> · y: <b>{hoverPos.y.toFixed(0)}</b>
+          </div>
+        )}
 
-        {/* Transformable wrapper — floor plan + route overlay move together */}
+        {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
           position: "absolute", inset: 0,
           transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`,
           transformOrigin: "center center",
         }}>
-          {/* Layer 1: SVG floor plan */}
-          <img
-            src="/harta_completa.svg"
-            alt="Hartă completă T4 LRIA"
-            draggable={false}
-            style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", objectPosition:"center", display:"block", zIndex:1 }}
-          />
+          <img src="/harta_completa.svg" alt="Hartă T4 LRIA" draggable={false}
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
 
-          {/* Layer 2: Route overlay SVG */}
-          <svg
-            viewBox="0 0 2262 587"
-            preserveAspectRatio="xMidYMid meet"
-            style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:2 }}
-          >
+          <svg ref={svgRef} viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
+            onClick={e => {
+              if (pixelLog && svgRef.current) {
+                const rect = svgRef.current.getBoundingClientRect();
+                const x = ((e.clientX-rect.left)/rect.width)*2262;
+                const y = ((e.clientY-rect.top)/rect.height)*587;
+                const label = window.prompt(`SVG (${x.toFixed(0)}, ${y.toFixed(0)}) — ce este acest punct?`) ?? "";
+                if (label) setPixelEntries(prev => [...prev, {x, y, label}]);
+              } else { handleSvgClick(e); }
+            }}
+            onMouseMove={e => {
+              if (!pixelLog || !svgRef.current) { setHoverPos(null); return; }
+              const rect = svgRef.current.getBoundingClientRect();
+              setHoverPos({ x:((e.clientX-rect.left)/rect.width)*2262, y:((e.clientY-rect.top)/rect.height)*587 });
+            }}
+            onMouseLeave={() => setHoverPos(null)}
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode||pixelLog ? "all" : "none", zIndex:2 }}>
             <defs>
               <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
             </defs>
 
-            {pts && (
-              <polyline
-                points={polyline}
-                fill="none" stroke="#38BDF8" strokeWidth="4"
+            {/* Route for active person */}
+            {!calMode && pts && (
+              <polyline points={polyline} fill="none" stroke={person.color} strokeWidth="4"
                 strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
-                style={{ animation:"moveDash 1.5s linear infinite", filter:"drop-shadow(0 0 6px rgba(56,189,248,0.8))" }}
-              />
+                style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
             )}
 
-            {gatePos && (
+            {/* Gate */}
+            {!calMode && gatePos && (
               <g filter="url(#glow2)">
                 <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
                 <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
-                <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">
-                  {flight ? GATE_LABELS[flight.gate] : ""}
-                </text>
+                <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">{GATE_LABELS[flight?.gate ?? ""]}</text>
               </g>
             )}
 
-            <g filter="url(#glow2)">
-              <circle cx={userPos.x} cy={userPos.y} r="14" fill="none" stroke="#38BDF8" strokeWidth="2" opacity="0.5" style={{animation:"pulse 2s infinite"}}/>
-              <circle cx={userPos.x} cy={userPos.y} r="7" fill="#38BDF8"/>
-              <circle cx={userPos.x} cy={userPos.y} r="3" fill="#fff"/>
+            {/* All person dots */}
+            {!calMode && PEOPLE.map(p => {
+              const pos = positions[p.id];
+              return (
+                <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
+                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
+                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?7:5} fill={p.color}/>
+                  <circle cx={pos.x} cy={pos.y} r="2" fill="#fff"/>
+                  <text x={pos.x} y={pos.y+20} textAnchor="middle" fill={p.color} fontSize="10" fontWeight="600">{p.name}</text>
+                </g>
+              );
+            })}
+
+          {/* Calibration points */}
+          {calMode && calPoints.map((p, i) => (
+            <g key={i}>
+              <circle cx={p.svgX} cy={p.svgY} r="7" fill="#ff6600" stroke="#fff" strokeWidth="1.5"/>
+              <text x={p.svgX+10} y={p.svgY+4} fill="#ff6600" fontSize="10">{i+1}</text>
             </g>
-            <text x={userPos.x} y={userPos.y+26} fill="#E0F2FE" fontSize="11" textAnchor="middle">Tu ești aici</text>
+          ))}
+          {calMode && pendingPin && (
+            <g>
+              <line x1={pendingPin.svgX} y1={pendingPin.svgY-14} x2={pendingPin.svgX} y2={pendingPin.svgY+14} stroke="#ff6600" strokeWidth="2"/>
+              <line x1={pendingPin.svgX-14} y1={pendingPin.svgY} x2={pendingPin.svgX+14} y2={pendingPin.svgY} stroke="#ff6600" strokeWidth="2"/>
+              <circle cx={pendingPin.svgX} cy={pendingPin.svgY} r="5" fill="none" stroke="#ff6600" strokeWidth="2"/>
+            </g>
+          )}
           </svg>
         </div>
-
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
           @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
         `}</style>
       </div>
 
-      {/* Info strip */}
-      {flight && (
-        <div className="fade-in" style={{ marginTop:10, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid var(--brand)`, background:"rgba(255,102,0,0.1)", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
-          <i className="ti ti-plane" style={{color:"var(--brand)",fontSize:20}}/>
-          <div style={{flex:1}}>
-            <div style={{fontWeight:600,fontSize:14}}>{flight.flight} → {flight.dest}</div>
-            <div style={{fontSize:12,color:"var(--text-muted)"}}>
-              {GATE_LABELS[flight.gate]} · Decolare {flight.departs} · Urci la etaj după securitate
+      {/* Pixel log panel */}
+      {pixelLog && pixelEntries.length > 0 && (
+        <div style={{ marginTop:8, padding:"8px 12px", background:"rgba(245,158,11,0.08)", border:"1px solid #F59E0B44", borderRadius:"var(--radius-md)", fontSize:11, flexShrink:0 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+            <span style={{ color:"#F59E0B", fontWeight:600 }}>Pixel Log</span>
+            <button onClick={() => { navigator.clipboard.writeText(pixelEntries.map(e=>`{ svgX: ${e.x.toFixed(0)}, svgY: ${e.y.toFixed(0)} } // ${e.label}`).join("\n")); }}
+              style={{ background:"transparent", border:"none", color:"#F59E0B", cursor:"pointer", fontSize:11 }}>
+              📋 Copy
+            </button>
+            <button onClick={() => setPixelEntries([])} style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"pointer", fontSize:11 }}>✕ Clear</button>
+          </div>
+          {pixelEntries.map((e,i) => (
+            <div key={i} style={{ fontFamily:"monospace", color:"var(--text-muted)", lineHeight:1.6 }}>
+              <span style={{ color:"#F59E0B" }}>({e.x.toFixed(0)}, {e.y.toFixed(0)})</span> — {e.label}
             </div>
+          ))}
+        </div>
+      )}
+
+      {/* Flight info strip */}
+      {flight && (
+        <div style={{ marginTop:8, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid ${person.color}44`, background:`${person.color}11`, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <i className="ti ti-plane" style={{color:person.color,fontSize:20}}/>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:14,color:person.color}}>{person.name} · {flight.flight} → {flight.dest}</div>
+            <div style={{fontSize:12,color:"var(--text-muted)"}}>{GATE_LABELS[flight.gate]} · Decolare {flight.departs}</div>
           </div>
         </div>
       )}
     </>
   );
 }
-
 /* ── Heatmap center — Google Maps + Orange Population Density ── */
-
-// LRIA airport center
-const LRIA_CENTER = { lat: 47.1729, lng: 27.6240 };
 
 // Zone labels mapped to geohash approximate positions on the T4 terminal
 // Used for the SVG overlay on top of the map
@@ -857,78 +1048,43 @@ function heatColor(density: number): string {
 }
 
 function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const googleMapRef = useRef<google.maps.Map | null>(null);
-  const heatmapLayerRef = useRef<google.maps.visualization.HeatmapLayer | null>(null);
   const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [loading, setLoading] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
   const [fromFixture, setFromFixture] = useState(false);
-  const [hasGoogleKey, setHasGoogleKey] = useState(true);
-  const [tick, setTick] = useState(0);
 
   const fetchDensity = async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/population-density", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const r = await fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
       const d: DensityResponse = await r.json();
       const cells = d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? [];
       setDensityData(cells);
       setFromFixture(!!d.fromFixture);
-      setTick(p => p + 1);
-      onLog(`Population Density · ${cells.length} celule · Orange API${d.fromFixture ? " (fixture)" : ""}`);
+      onLog(`Population Density · ${cells.length} celule${d.fromFixture?" (fixture)":""}`);
     } catch { onLog("Eroare Population Density API", false); }
     finally { setLoading(false); }
   };
 
-  // Init Google Maps
-  useEffect(() => {
-    const apiKey = (window as any).__GOOGLE_MAPS_KEY__ as string | undefined;
-    if (!apiKey) { setHasGoogleKey(false); return; }
-
-    import("@googlemaps/js-api-loader").then(({ Loader }) => {
-      const loader = new Loader({
-        apiKey,
-        version: "weekly",
-        libraries: ["visualization"],
-      });
-      loader.load().then(() => {
-        if (!mapRef.current) return;
-        const map = new google.maps.Map(mapRef.current, {
-          center: LRIA_CENTER,
-          zoom: 16,
-          mapTypeId: "satellite",
-          disableDefaultUI: true,
-          zoomControl: true,
-          styles: [{ featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] }],
-        });
-        googleMapRef.current = map;
-        heatmapLayerRef.current = new google.maps.visualization.HeatmapLayer({ map, radius: 40 });
-        setMapReady(true);
-      }).catch(() => setHasGoogleKey(false));
-    }).catch(() => setHasGoogleKey(false));
-  }, []);
-
-  // Update heatmap layer when density data changes
-  useEffect(() => {
-    if (!mapReady || !heatmapLayerRef.current || !densityData.length) return;
-    const points = densityData
-      .filter(c => c.dataType === "DENSITY_ESTIMATION" && c.pplDensity)
-      .map(c => {
-        const { lat, lng } = decodeGeohash(c.geohash);
-        return { location: new google.maps.LatLng(lat, lng), weight: c.pplDensity! };
-      });
-    heatmapLayerRef.current.setData(points);
-  }, [tick, mapReady]);
-
-  // Auto-refresh 30s
   useEffect(() => {
     fetchDensity();
     const t = setInterval(fetchDensity, 30000);
     return () => clearInterval(t);
   }, []);
 
-  const totalPpl = Math.round(densityData.filter(c => c.pplDensity).reduce((s,c) => s + (c.pplDensity ?? 0), 0));
+  // Map celule direct pe pozițiile SVG cunoscute (nu depinde de calibrare)
+  const SVG_ZONE_MAP = [SVG_SECURITY, SVG_GATE];
+  const maxDensity = Math.max(...densityData.map(c => c.pplDensity ?? 0), 1);
+
+  const circles = densityData
+    .filter(c => c.pplDensity)
+    .map((c, i) => {
+      const pos = SVG_ZONE_MAP[i] ?? SVG_ZONE_MAP[0];
+      const intensity = (c.pplDensity ?? 0) / maxDensity;
+      const r = 40 + intensity * 80;
+      const color = intensity > 0.7 ? "#EF5350" : intensity > 0.35 ? "#FFA726" : "#66BB6A";
+      const label = i === 0 ? "Security Check" : "Boarding Gate";
+      return { ...pos, r, color, intensity, density: c.pplDensity ?? 0, label };
+    });
 
   return (
     <>
@@ -936,8 +1092,7 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         <div>
           <div className="map-title">Heatmap Terminal T4 — LRIA</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
-            Orange Population Density API · geohash precision 7
-            {fromFixture && <span style={{ color:"var(--warning)", marginLeft:8 }}>· fixture</span>}
+            Orange Population Density API{fromFixture && <span style={{ color:"var(--warning)", marginLeft:6 }}>· fixture</span>}
           </div>
         </div>
         <div className="badges">
@@ -949,52 +1104,26 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
       </div>
 
       <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
-        {/* Google Maps div */}
-        <div ref={mapRef} style={{ width:"100%", height:"100%", display: hasGoogleKey ? "block" : "none" }}/>
-
-        {/* Fallback SVG când nu e Google Maps key */}
-        {!hasGoogleKey && (
-          <svg viewBox="0 0 600 400" style={{ width:"100%", height:"100%", background:"#0B1120" }} preserveAspectRatio="xMidYMid meet">
-            <text x="300" y="205" textAnchor="middle" fill="var(--text-muted)" fontSize="13">Culoar principal de acces</text>
-            {/* Zone colorate din date Orange */}
-            {TERMINAL_ZONES.map((z, i) => {
-              const cell = densityData[i];
-              const density = cell?.pplDensity ?? z.base;
-              const color = heatColor(density);
-              const positions = [
-                { x:20,  y:20,  w:160, h:130 },
-                { x:200, y:20,  w:155, h:130 },
-                { x:165, y:255, w:155, h:120 },
-                { x:340, y:255, w:245, h:120 },
-              ];
-              const p = positions[i];
-              return (
-                <g key={z.id}>
-                  <rect x={p.x} y={p.y} width={p.w} height={p.h} rx="12"
-                    fill={`${color === "var(--danger)" ? "rgba(239,83,80" : color === "var(--warning)" ? "rgba(255,167,38" : "rgba(102,187,106"},0.18)`}
-                    stroke={color} strokeWidth="2"
-                  />
-                  <text x={p.x+p.w/2} y={p.y+p.h/2-8}  textAnchor="middle" fill={color} fontSize="14" fontWeight="600">{z.label}</text>
-                  <text x={p.x+p.w/2} y={p.y+p.h/2+12} textAnchor="middle" fill={color} fontSize="12" opacity="0.85">~{Math.round(density)} pax/km²</text>
-                </g>
-              );
-            })}
-          </svg>
-        )}
-
-        {/* Badge total */}
-        {totalPpl > 0 && (
-          <div style={{ position:"absolute", top:10, left:10, background:"rgba(11,17,32,0.85)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"6px 12px", fontSize:12, color:"var(--text-main)", backdropFilter:"blur(4px)" }}>
-            <span style={{ color:"var(--text-muted)" }}>Densitate totală: </span>
-            <span style={{ fontWeight:700, color:"var(--brand)" }}>{totalPpl.toLocaleString()} pax/km²</span>
-          </div>
-        )}
-
-        {!hasGoogleKey && (
-          <div style={{ position:"absolute", bottom:8, left:0, right:0, textAlign:"center", fontSize:11, color:"var(--text-muted)" }}>
-            Adaugă <code style={{color:"var(--brand)"}}>GOOGLE_MAPS_API_KEY</code> în <code>.env</code> pentru harta satelit
-          </div>
-        )}
+        <img src="/harta_completa.svg" alt="Hartă T4" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}/>
+        <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}>
+          <defs>
+            {circles.map((c, i) => (
+              <radialGradient key={i} id={`hg${i}`} cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor={c.color} stopOpacity={0.6 + c.intensity * 0.3}/>
+                <stop offset="100%" stopColor={c.color} stopOpacity="0"/>
+              </radialGradient>
+            ))}
+          </defs>
+          {circles.map((c, i) => (
+            <g key={i}>
+              <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
+              <circle cx={c.x} cy={c.y} r={10} fill={c.color} opacity="0.95"/>
+              <text x={c.x} y={c.y + c.r + 16} textAnchor="middle" fill={c.color} fontSize="13" fontWeight="700">{c.label}</text>
+              <text x={c.x} y={c.y + c.r + 30} textAnchor="middle" fill={c.color} fontSize="11" opacity="0.85">{c.density} pax/km²</text>
+            </g>
+          ))}
+        </svg>
       </div>
     </>
   );
@@ -1136,9 +1265,22 @@ function WeatherRight({
 }
 
 function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+  const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [sel, setSel] = useState<string|null>(null);
   const [verifyRes, setVerifyRes] = useState<{decision:string;simSwapped:boolean}|null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" })
+      .then(r => r.json())
+      .then((d: DensityResponse) => setDensityData(d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? []))
+      .catch(() => {});
+  }, []);
+
+  const securityDensity = densityData[0]?.pplDensity ?? 185;
+  const boardingDensity = densityData[1]?.pplDensity ?? 95;
+  const securityETA = Math.ceil((securityDensity * 45) / (2 * 60));
+  const boardingETA = Math.ceil((boardingDensity * 30) / (3 * 60));
 
   const verify = async (scenario:"legit"|"fraud") => {
     setLoading(true);
@@ -1151,9 +1293,35 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     finally { setLoading(false); }
   };
 
+  const etaColor = (eta: number) => eta > 20 ? "var(--danger)" : eta > 10 ? "var(--warning)" : "var(--success)";
+
   return (
     <>
-      <div className="section-title">Zboruri disponibile</div>
+      <div className="section-title">Timp estimat așteptare</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
+        <div style={{ padding:"12px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
+            <i className="ti ti-shield-check" style={{ color:"var(--brand)" }}/> Security Check (Masa Echipei)
+          </div>
+          <div style={{ fontSize:24, fontWeight:700, color:etaColor(securityETA) }}>{securityETA} min</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>{securityDensity} pax detectați · 2 linii active</div>
+          <div style={{ marginTop:6, height:4, background:"var(--bg-hover)", borderRadius:2 }}>
+            <div style={{ width:`${Math.min(100,(securityDensity/250)*100)}%`, height:"100%", background:etaColor(securityETA), borderRadius:2, transition:"width 0.5s" }}/>
+          </div>
+        </div>
+        <div style={{ padding:"12px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
+            <i className="ti ti-door-enter" style={{ color:"var(--success)" }}/> Boarding Gate (Dozator)
+          </div>
+          <div style={{ fontSize:24, fontWeight:700, color:etaColor(boardingETA) }}>{boardingETA} min</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>{boardingDensity} pax detectați · 3 ghișee active</div>
+          <div style={{ marginTop:6, height:4, background:"var(--bg-hover)", borderRadius:2 }}>
+            <div style={{ width:`${Math.min(100,(boardingDensity/250)*100)}%`, height:"100%", background:etaColor(boardingETA), borderRadius:2, transition:"width 0.5s" }}/>
+          </div>
+        </div>
+      </div>
+
+      <div className="section-title">Zboruri</div>
       <div className="flight-list">
         {FLIGHTS.map(f => (
           <div key={f.id} className={`flight-item${sel===f.id?" active":""}`} onClick={() => setSel(sel===f.id?null:f.id)}>
@@ -1176,7 +1344,6 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           <i className="ti ti-user-x"/> Simulează SIM Swap
         </button>
       </div>
-
       {verifyRes && (
         <div className="fade-in" style={{marginTop:10,padding:10,borderRadius:"var(--radius-md)",border:`1px solid ${verifyRes.decision==="ALLOW"?"var(--success)":"var(--danger)"}`,background:`${verifyRes.decision==="ALLOW"?"var(--success-bg)":"var(--danger-bg)"}`}}>
           <div style={{fontWeight:600,fontSize:13,color:verifyRes.decision==="ALLOW"?"var(--success)":"var(--danger)",display:"flex",alignItems:"center",gap:8}}>
@@ -1281,27 +1448,236 @@ function HeatmapRight() {
 }
 
 /* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
-function BottomBar({ logs }: { logs: { ts: string; msg: string; ok: boolean }[] }) {
+function BottomBar({ logs, activePerson, setActivePerson, feature, setFeature }: {
+  logs:{ts:string;msg:string;ok:boolean}[];
+  activePerson: string; setActivePerson: (id:string)=>void;
+  feature: Feature; setFeature: (f:Feature)=>void;
+}) {
   return (
     <div className="bottom-bar">
-      {USER_NAV.map(n => (
-        <button key={n.label} className="btn-tab">
-          <i className={`ti ${n.icon}`} />
-          <span className="btn-tab-label">{n.label}</span>
+      {PEOPLE.map(p => (
+        <button key={p.id} className={`btn-tab${activePerson===p.id?" active":""}`} onClick={() => setActivePerson(p.id)}
+          style={{ color: activePerson===p.id ? p.color : undefined, borderBottom: activePerson===p.id ? `2px solid ${p.color}` : undefined }}>
+          <i className={`ti ${p.id==="you" ? "ti-user-circle" : "ti-user"}`}/> {p.name}
+          {p.id==="you" && <span style={{ fontSize:10, marginLeft:4, color:"var(--brand)", opacity:0.8 }}>Admin</span>}
         </button>
       ))}
-
-      <div className="activity-log">
-        {logs.slice(0, 2).map((l, i) => (
+      <div style={{ width:1, background:"var(--border-color)", margin:"4px 6px" }}/>
+      <button className={`btn-tab${feature==="account"?" active":""}`} onClick={() => setFeature("account")}>
+        <i className="ti ti-user-circle"/> Contul meu
+      </button>
+      <button className={`btn-tab${feature==="status-api"?" active":""}`} onClick={() => setFeature("status-api")}>
+        <i className="ti ti-server"/> Status API
+      </button>
+      <button className={`btn-tab${feature==="settings"?" active":""}`} onClick={() => setFeature("settings")}>
+        <i className="ti ti-settings"/> Setări
+      </button>
+      <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:16, overflow:"hidden" }}>
+        {logs.slice(0,2).map((l,i) => (
           <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
             <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
             <span>{l.ts}</span>
             <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
           </div>
         ))}
-        {logs.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
+        {logs.length===0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
+      </div>
+      <button className="btn-tab" style={{ flex:"0 0 auto" }}>
+        <i className="ti ti-help-circle"/> Ajutor
+      </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════ NEW FEATURE COMPONENTS ═══════════════════════════ */
+
+function FlowPredictionCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
+  const [securityLanes, setSecurityLanes] = useState(2);
+  const securityETA = Math.ceil((185 * 45) / securityLanes / 60);
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-trending-up"/> Predictor Fluxuri T4</h2>
+      <div style={{ padding:15, background:"rgba(255,255,255,0.03)", borderRadius:8, marginTop:20 }}>
+        <h3>Filtru Securitate (Masa Echipei)</h3>
+        <div style={{ fontSize:28, fontWeight:"bold", margin:"10px 0", color:securityETA>15?"var(--warning)":"var(--success)" }}>
+          {securityETA} min <span style={{ fontSize:14, fontWeight:"normal", color:"var(--text-muted)" }}>așteptare estimată</span>
+        </div>
+        <p>Pasageri detectați de Orange API: <strong>185</strong></p>
+        <label style={{ fontSize:12, color:"var(--text-muted)", display:"block", marginBottom:5 }}>Linii de filtrare deschise:</label>
+        <div style={{ display:"flex", gap:8 }}>
+          {[1,2,3,4].map(n => (
+            <button key={n} onClick={() => { setSecurityLanes(n); onLog(`Filtre securitate: ${n} linii active`); }}
+              style={{ padding:"6px 12px", background:securityLanes===n?"var(--brand)":"rgba(255,255,255,0.1)", border:"none", borderRadius:4, cursor:"pointer", color:"#fff" }}>
+              {n}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
+function BoardingVerifyCenter({ activePerson, onLog }: { activePerson:string; onLog:(m:string,ok?:boolean)=>void }) {
+  const [status, setStatus] = useState<"idle"|"verified"|"flagged">("idle");
+  const run = () => {
+    setStatus("idle");
+    onLog("Inițiere protocol securitate...");
+    setTimeout(() => {
+      if (activePerson === "dorel") { setStatus("flagged"); onLog("ALERTĂ: SIM Swap detectat pentru Dorel!", false); }
+      else { setStatus("verified"); onLog("Identitate validată. Număr confirmat."); }
+    }, 1000);
+  };
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-shield-lock"/> Verificare Boarding</h2>
+      <div style={{ padding:20, background:"rgba(255,255,255,0.02)", borderRadius:8, marginTop:20 }}>
+        <button onClick={run} style={{ padding:"10px 20px", background:"var(--brand)", border:"none", borderRadius:4, fontWeight:"bold", cursor:"pointer", color:"#fff" }}>
+          Verifică Pasagerul Curent ({activePerson})
+        </button>
+        {status==="verified" && (
+          <div style={{ background:"rgba(40,167,69,0.1)", border:"1px solid var(--success)", padding:15, borderRadius:6, marginTop:20 }}>
+            <div style={{ color:"var(--success)", fontWeight:"bold" }}><i className="ti ti-circle-check"/> VALIDAT DIGITAL</div>
+            <p style={{ fontSize:13 }}>Nu s-au detectat modificări recente ale cartelei SIM.</p>
+          </div>
+        )}
+        {status==="flagged" && (
+          <div style={{ background:"rgba(220,53,69,0.1)", border:"1px solid var(--danger)", padding:15, borderRadius:6, marginTop:20 }}>
+            <div style={{ color:"var(--danger)", fontWeight:"bold" }}><i className="ti ti-alert-triangle"/> ACCES BLOCAT</div>
+            <p style={{ fontSize:13 }}>SIM_SWAP suspect detectat. Interdicție îmbarcare.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminCenter({ onLog, setAnnouncements }: { onLog:(m:string,ok?:boolean)=>void; setAnnouncements:React.Dispatch<React.SetStateAction<Announcement[]>> }) {
+  const [inputText, setInputText] = useState("");
+  const handleBroadcast = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+    setAnnouncements(prev => [{ id:Date.now(), type:"warning", text:inputText, time:new Date().toLocaleTimeString() }, ...prev]);
+    onLog(`[ADMIN] Anunț trimis: "${inputText}"`);
+    setInputText("");
+  };
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-settings-automation"/> Control Panel Admin</h2>
+      <div style={{ padding:15, background:"rgba(255,255,255,0.02)", borderRadius:8, marginTop:20 }}>
+        <h3>Emite Anunț Pasageri</h3>
+        <form onSubmit={handleBroadcast} style={{ marginTop:10 }}>
+          <textarea value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Scrie un anunț..."
+            style={{ width:"100%", height:70, background:"#111", border:"1px solid #333", borderRadius:4, color:"#fff", padding:8, boxSizing:"border-box" }}/>
+          <button type="submit" style={{ background:"var(--brand)", color:"#fff", border:"none", padding:"6px 14px", borderRadius:4, marginTop:10, cursor:"pointer" }}>
+            Trimite pe Monitor
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AnnouncementsCenter({ announcements }: { announcements:Announcement[] }) {
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-presentation"/> Anunțuri Aeroport</h2>
+      {announcements.length === 0 && <p style={{ color:"var(--text-muted)", marginTop:20 }}>Niciun anunț activ.</p>}
+      <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:20 }}>
+        {announcements.map(a => (
+          <div key={a.id} style={{ padding:15, background:"rgba(255,255,255,0.02)", borderLeft:`5px solid var(--${a.type})`, borderRadius:"0 6px 6px 0" }}>
+            <p style={{ margin:0, fontSize:14, fontWeight:500 }}>{a.text}</p>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:5 }}>{a.time}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatusApiCenter() {
+  const apis = [
+    { name:"Device Location",      endpoint:"camara/location-retrieval/v0.3",       status:"UP", latency:"142ms", calls:1240 },
+    { name:"Population Density",   endpoint:"camara/population-density-data/v0.2",  status:"UP", latency:"89ms",  calls:432  },
+    { name:"Number Verification",  endpoint:"camara/number-verification/v1",         status:"UP", latency:"201ms", calls:87   },
+    { name:"SIM Swap",             endpoint:"camara/sim-swap/v1",                    status:"UP", latency:"178ms", calls:23   },
+  ];
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-server"/> Status API Orange</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:20 }}>
+        {apis.map(a => (
+          <div key={a.name} style={{ padding:"12px 16px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:12 }}>
+            <span style={{ width:8, height:8, borderRadius:"50%", background:"var(--success)", flexShrink:0 }}/>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:600, fontSize:13 }}>{a.name}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>{a.endpoint}</div>
+            </div>
+            <div style={{ textAlign:"right", fontSize:12 }}>
+              <div style={{ color:"var(--success)", fontWeight:600 }}>{a.status}</div>
+              <div style={{ color:"var(--text-muted)" }}>{a.latency} · {a.calls.toLocaleString()} req</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const PERSON_PROFILES: Record<string, { role:string; flight:string; gate:string; boarding:string }> = {
+  you:    { role:"Admin Aeroport", flight:"—",       gate:"—",  boarding:"—"     },
+  misu:   { role:"Pasager",        flight:"W6 4102", gate:"G2", boarding:"23:45" },
+  ionica: { role:"Pasager",        flight:"LH 1407", gate:"T3", boarding:"00:10" },
+  dorel:  { role:"Pasager",        flight:"FR 8821", gate:"G5", boarding:"00:30" },
+};
+
+function AccountCenter({ activePerson }: { activePerson:string }) {
+  const person = PEOPLE.find(p => p.id === activePerson)!;
+  const profile = PERSON_PROFILES[activePerson];
+  return (
+    <div style={{ padding:20 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:24 }}>
+        <div style={{ width:56, height:56, borderRadius:"50%", background:`${person.color}22`, border:`2px solid ${person.color}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:person.color }}>
+          <i className="ti ti-user"/>
+        </div>
+        <div>
+          <div style={{ fontSize:20, fontWeight:700 }}>{person.name}</div>
+          <div style={{ fontSize:13, color:"var(--text-muted)" }}>{profile.role}</div>
+        </div>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {([
+          ["Zbor", profile.flight],
+          ["Poartă", profile.gate],
+          ["Îmbarcare", profile.boarding],
+          ["Status", activePerson==="you" ? "🟢 Admin activ" : "🟢 Check-in finalizat"],
+        ] as [string,string][]).map(([l,v]) => (
+          <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+            <span style={{ color:"var(--text-muted)", fontSize:13 }}>{l}</span>
+            <span style={{ fontWeight:600, fontSize:13 }}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsCenter() {
+  return (
+    <div style={{ padding:20 }}>
+      <h2><i className="ti ti-settings"/> Setări</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:20 }}>
+        {([
+          ["Interval refresh date", "30 secunde"],
+          ["Mod fixture (mock data)", "Activ"],
+          ["Limbă interfață", "Română"],
+          ["Versiune aplicație", "1.0.0 · AirHack 2026"],
+        ] as [string,string][]).map(([l,v]) => (
+          <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)" }}>
+            <span style={{ color:"var(--text-muted)", fontSize:13 }}>{l}</span>
+            <span style={{ fontWeight:600, fontSize:13 }}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
