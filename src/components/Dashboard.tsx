@@ -1871,29 +1871,18 @@ function FlightRouteMap({ dep, arr, progress }: {
   const to   = AIRPORT_COORDS[arr];
 
   if (isMobile && from && to) {
-    const key = (window as { __GOOGLE_MAPS_KEY__?: string }).__GOOGLE_MAPS_KEY__;
-    if (key) {
-      const mapUrl = [
-        "https://maps.googleapis.com/maps/api/staticmap",
-        "?size=640x300&scale=2&maptype=terrain",
-        `&markers=color:0x10B981ff|size:mid|label:${dep}|${from.lat},${from.lon}`,
-        `&markers=color:0x3B82F6ff|size:mid|label:${arr}|${to.lat},${to.lon}`,
-        `&path=geodesic:true|color:0xFF6600CC|weight:4|${from.lat},${from.lon}|${to.lat},${to.lon}`,
-        `&key=${key}`,
-      ].join("");
-
-      return (
-        <img
-          src={mapUrl}
-          alt={`Rută ${dep} → ${arr}`}
-          style={{
-            width: "100%", display: "block",
-            borderRadius: "var(--radius-md)",
-            border: "1px solid var(--border-color)",
-          }}
-        />
-      );
-    }
+    const mapUrl = `/api/flight-map?dep=${dep}&arr=${arr}&depLat=${from.lat}&depLon=${from.lon}&arrLat=${to.lat}&arrLon=${to.lon}`;
+    return (
+      <img
+        src={mapUrl}
+        alt={`Rută ${dep} → ${arr}`}
+        style={{
+          width: "100%", display: "block",
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--border-color)",
+        }}
+      />
+    );
   }
 
   return <RouteMapSVG dep={dep} arr={arr} progress={progress} />;
