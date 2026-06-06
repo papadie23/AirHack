@@ -83,6 +83,9 @@ export default function Dashboard() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Shared flight state — o singură instanță, partajată între Center și Right
+  const myFlight = useMyFlightState();
+
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
   const addLog = (msg: string, ok = true) =>
@@ -120,8 +123,8 @@ export default function Dashboard() {
           hasTopBar={!!auth}
           role={auth?.role ?? null}
         />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} />
-        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} myFlight={myFlight} />
+        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} myFlight={myFlight} />
       </div>
       {!auth && <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />}
     </div>
@@ -318,11 +321,12 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role,
+  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role, myFlight,
 }: {
   feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
   activePerson: string; announcements: Announcement[]; setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
   role: "admin" | "passenger" | null;
+  myFlight: MyFlightState;
 }) {
   const isPassenger = role === "passenger";
   return (
@@ -338,7 +342,7 @@ function CenterPanel({
       {feature === "status-api"       && <StatusApiCenter />}
       {feature === "account"          && <AccountCenter activePerson={activePerson} />}
       {feature === "settings"         && <SettingsCenter />}
-      {feature === "my-flight"        && <MyFlightCenter onLog={onLog} />}
+      {feature === "my-flight"        && <MyFlightCenter onLog={onLog} myFlight={myFlight} />}
     </div>
   );
 }
@@ -1251,17 +1255,18 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 
 /* ═══════════════════════════ RIGHT PANEL ═══════════════════════════ */
 function RightPanel({
-  feature, onLog, weatherProvider, setWeatherProvider,
+  feature, onLog, weatherProvider, setWeatherProvider, myFlight,
 }: {
   feature: Feature; onLog:(m:string,ok?:boolean)=>void;
   weatherProvider: WeatherProvider; setWeatherProvider: (p: WeatherProvider) => void;
+  myFlight: MyFlightState;
 }) {
   return (
     <div className="card sidebar-right">
       {feature === "weather" && <WeatherRight weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />}
       {feature === "route"   && <RouteRight onLog={onLog} />}
       {feature === "heatmap" && <HeatmapRight />}
-      {feature === "my-flight" && <MyFlightRight onLog={onLog} />}
+      {feature === "my-flight" && <MyFlightRight onLog={onLog} myFlight={myFlight} />}
     </div>
   );
 }
@@ -1650,10 +1655,18 @@ function HeatmapRight() {
 }
 
 /* ═══════════════════════════ MY FLIGHT — shared state hook ═══════════════════════════ */
-// Shared state între MyFlightCenter și MyFlightRight prin localStorage
 const MF_KEY = "airhack_my_flight";
 
-function useMyFlightState() {
+export interface MyFlightState {
+  input: string;
+  setInput: (v: string) => void;
+  loading: boolean;
+  detail: FlightDetail | null;
+  error: string;
+  search: (code: string) => Promise<void>;
+}
+
+function useMyFlightState(): MyFlightState {
   const [input, setInput]     = useState(() => {
     try { return localStorage.getItem(MF_KEY) ?? ""; } catch { return ""; }
   });
@@ -1818,8 +1831,8 @@ function RouteMapSVG({ dep, arr, progress }: {
 }
 
 /* ─── MyFlightCenter ─── */
-function MyFlightCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const { input, setInput, loading, detail, error, search } = useMyFlightState();
+function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void; myFlight: MyFlightState }) {
+  const { input, setInput, loading, detail, error, search } = myFlight;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1964,8 +1977,8 @@ function MyFlightCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 }
 
 /* ─── MyFlightRight ─── */
-function MyFlightRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const { input, setInput, loading, detail, error, search } = useMyFlightState();
+function MyFlightRight({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void; myFlight: MyFlightState }) {
+  const { input, setInput, loading, detail, error, search } = myFlight;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
