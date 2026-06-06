@@ -71,7 +71,7 @@ export default function Dashboard() {
         <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
-      <BottomBar logs={logs} activePerson={activePerson} setActivePerson={setActivePerson} feature={feature} setFeature={setFeature} />
+      <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />
     </div>
   );
 }
@@ -661,6 +661,18 @@ const PEOPLE: Person[] = [
   { id: "dorel",  name: "Dorel",  flightId: "4", color: "#34D399" },
 ];
 
+/* 3 mock phone numbers → passenger mock data */
+const PHONE_PERSONS: Record<string, string> = {
+  "+40721000001": "misu",
+  "+40721000002": "ionica",
+  "+40721000003": "dorel",
+};
+
+/* Estimated walking time (min) to each gate from check-in */
+const GATE_ETA_MIN: Record<string, number> = {
+  "1":5, "2":6, "3":7, "4":8, "5":10, "6":12, "T3":15,
+};
+
 function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>void; activePerson: string }) {
   const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({
     you:    SVG_STARTS.you,
@@ -987,12 +999,33 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
       )}
 
+      {/* ETA card — shown on all screens, prominent on mobile */}
+      {flight && (
+        <div className="route-eta-card fade-in">
+          <div style={{ display:"flex", alignItems:"center", gap:10, flex:1 }}>
+            <i className="ti ti-walk" style={{ fontSize:22, color:"var(--brand)", flexShrink:0 }}/>
+            <div>
+              <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:2 }}>Timp estimat până la poartă</div>
+              <div style={{ fontSize:22, fontWeight:700, color:"var(--text-main)", lineHeight:1 }}>
+                {GATE_ETA_MIN[flight.gate] ?? 8}
+                <span style={{ fontSize:13, fontWeight:400, color:"var(--text-muted)", marginLeft:4 }}>min mers</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0 }}>
+            <div style={{ fontSize:11, color:"var(--text-muted)" }}>Decolare</div>
+            <div style={{ fontSize:15, fontWeight:600, color:person.color }}>{flight.departs}</div>
+            <div style={{ fontSize:11, color:"var(--text-muted)" }}>{GATE_LABELS[flight.gate]}</div>
+          </div>
+        </div>
+      )}
+
       {/* Flight info strip */}
       {flight && (
         <div style={{ marginTop:8, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid ${person.color}44`, background:`${person.color}11`, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
           <i className="ti ti-plane" style={{color:person.color,fontSize:20}}/>
           <div style={{flex:1}}>
-            <div style={{fontWeight:600,fontSize:14,color:person.color}}>{person.name} · {flight.flight} → {flight.dest}</div>
+            <div style={{fontWeight:600,fontSize:14,color:person.color}}>{flight.flight} → {flight.dest}</div>
             <div style={{fontSize:12,color:"var(--text-muted)"}}>{GATE_LABELS[flight.gate]} · Decolare {flight.departs}</div>
           </div>
         </div>
@@ -1448,43 +1481,61 @@ function HeatmapRight() {
 }
 
 /* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
-function BottomBar({ logs, activePerson, setActivePerson, feature, setFeature }: {
-  logs:{ts:string;msg:string;ok:boolean}[];
+function BottomBar({ activePerson, setActivePerson }: {
   activePerson: string; setActivePerson: (id:string)=>void;
-  feature: Feature; setFeature: (f:Feature)=>void;
 }) {
+  const [phone, setPhone] = useState("");
+
+  const handlePhone = (val: string) => {
+    setPhone(val);
+    const match = PHONE_PERSONS[val.trim()];
+    if (match) setActivePerson(match);
+  };
+
+  const person = PEOPLE.find(p => p.id === activePerson && p.id !== "you");
+  const flight = person ? FLIGHTS.find(f => f.id === person.flightId) : null;
+  const isAdmin = activePerson === "you";
+
   return (
     <div className="bottom-bar">
-      {PEOPLE.map(p => (
-        <button key={p.id} className={`btn-tab${activePerson===p.id?" active":""}`} onClick={() => setActivePerson(p.id)}
-          style={{ color: activePerson===p.id ? p.color : undefined, borderBottom: activePerson===p.id ? `2px solid ${p.color}` : undefined }}>
-          <i className={`ti ${p.id==="you" ? "ti-user-circle" : "ti-user"}`}/> {p.name}
-          {p.id==="you" && <span style={{ fontSize:10, marginLeft:4, color:"var(--brand)", opacity:0.8 }}>Admin</span>}
-        </button>
-      ))}
-      <div style={{ width:1, background:"var(--border-color)", margin:"4px 6px" }}/>
-      <button className={`btn-tab${feature==="account"?" active":""}`} onClick={() => setFeature("account")}>
-        <i className="ti ti-user-circle"/> Contul meu
+      {/* Admin button */}
+      <button
+        className={`btn-tab${isAdmin ? " active" : ""}`}
+        onClick={() => { setActivePerson("you"); setPhone(""); }}
+        style={{ flex:"0 0 auto", gap:6, color: isAdmin ? "var(--brand)" : undefined, borderColor: isAdmin ? "var(--brand)" : undefined }}
+      >
+        <i className="ti ti-shield-half" style={{ fontSize:17 }}/>
+        <span>Admin</span>
       </button>
-      <button className={`btn-tab${feature==="status-api"?" active":""}`} onClick={() => setFeature("status-api")}>
-        <i className="ti ti-server"/> Status API
-      </button>
-      <button className={`btn-tab${feature==="settings"?" active":""}`} onClick={() => setFeature("settings")}>
-        <i className="ti ti-settings"/> Setări
-      </button>
-      <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:16, overflow:"hidden" }}>
-        {logs.slice(0,2).map((l,i) => (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
-            <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
-            <span>{l.ts}</span>
-            <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
+
+      {/* Phone input + matched passenger info */}
+      <div style={{ flex:1, display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+        <div style={{ flex:1, position:"relative", minWidth:0 }}>
+          <input
+            type="tel"
+            className="phone-input"
+            placeholder="Introdu numărul de telefon"
+            value={phone}
+            onChange={e => handlePhone(e.target.value)}
+          />
+        </div>
+        {person && flight && (
+          <div className="fade-in" style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+            <span style={{ width:8, height:8, borderRadius:"50%", background:person.color, flexShrink:0 }}/>
+            <span style={{ fontSize:12, fontWeight:600, color:person.color, whiteSpace:"nowrap" }}>
+              {flight.flight} · {GATE_LABELS[flight.gate]}
+            </span>
+            <span style={{ fontSize:11, color:"var(--text-muted)", whiteSpace:"nowrap" }}>
+              {flight.departs}
+            </span>
           </div>
-        ))}
-        {logs.length===0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
+        )}
+        {!person && !isAdmin && (
+          <span style={{ fontSize:12, color:"var(--text-muted)", whiteSpace:"nowrap" }}>
+            Număr nerecunoscut
+          </span>
+        )}
       </div>
-      <button className="btn-tab" style={{ flex:"0 0 auto" }}>
-        <i className="ti ti-help-circle"/> Ajutor
-      </button>
     </div>
   );
 }
