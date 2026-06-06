@@ -696,12 +696,12 @@ const GATE_SVG: Record<string, { x: number; y: number }> = {
 // Zone etape pasager — ordonate pe traseul din terminal
 interface Zone { id: string; label: string; x: number; y: number; color: string; w: number; h: number }
 const ZONES: Zone[] = [
-  { id: "checkin",              label: "Check-in",              x: 108,  y: 407, color: "#38BDF8", w: 120, h: 70  },
-  { id: "control-securitate",   label: "Control Securitate",    x: 89,   y: 302, color: "#F97316", w: 140, h: 70  },
-  { id: "verificare-documente", label: "Verificare Documente",  x: 417,  y: 252, color: "#A78BFA", w: 150, h: 70  },
-  { id: "sosire-poarta",        label: "Sosire la Poartă",      x: 1435, y: 265, color: "#34D399", w: 140, h: 70  },
-  { id: "imbarcare",            label: "Îmbarcare",             x: 1800, y: 265, color: "#FBBF24", w: 120, h: 70  },
-  { id: "in-avion",             label: "La bord",               x: 2150, y: 265, color: "#F472B6", w: 110, h: 70  },
+  { id: "checkin",              label: "Check-in",              x: 108,  y: 407, color: "#38BDF8", w: 160, h: 90 },
+  { id: "control-securitate",   label: "Control Securitate",    x: 417,  y: 252, color: "#F97316", w: 180, h: 90 },
+  { id: "verificare-documente", label: "Verificare Documente",  x: 793,  y: 323, color: "#A78BFA", w: 180, h: 90 },
+  { id: "sosire-poarta",        label: "Sosire la Poartă",      x: 1435, y: 265, color: "#34D399", w: 170, h: 90 },
+  { id: "imbarcare",            label: "Îmbarcare",             x: 1800, y: 265, color: "#FBBF24", w: 150, h: 90 },
+  { id: "in-avion",             label: "La bord",               x: 2150, y: 265, color: "#F472B6", w: 140, h: 90 },
 ];
 
 // Waypoints traseu = centrele zonelor calibrate + gate final
@@ -758,6 +758,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     dorel:  SVG_STARTS.dorel,
   });
   const [locLoading, setLocLoading] = useState(false);
+  const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
   const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
   const [pixelEntries, setPixelEntries] = useState<{x:number;y:number;label:string}[]>([]);
@@ -871,24 +872,20 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   }, []);
 
   const getLocation = () => {
-    if (!navigator.geolocation) {
-      onLog("Geolocația nu e suportată de acest browser", false);
-      return;
-    }
+    if (!navigator.geolocation) { onLog("Geolocation indisponibil", false); return; }
+    // Stop any existing watch
+    if (watchIdRef.current !== null) { navigator.geolocation.clearWatch(watchIdRef.current); }
     setLocLoading(true);
-    navigator.geolocation.getCurrentPosition(
+    watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         placeOnMap(lat, lng, activePerson);
-        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} (acuratețe ${pos.coords.accuracy.toFixed(0)}m)`);
+        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${pos.coords.accuracy.toFixed(0)}m`);
         setLocLoading(false);
       },
-      (err) => {
-        onLog(`Eroare locație: ${err.message}`, false);
-        setLocLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
     );
   };
 
@@ -1065,7 +1062,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               <g key={z.id}>
                 <rect x={z.x - z.w/2} y={z.y - z.h/2} width={z.w} height={z.h} rx="10"
                   fill={`${z.color}22`} stroke={z.color} strokeWidth="1.5"/>
-                <text x={z.x} y={z.y + 5} textAnchor="middle" fill={z.color} fontSize="11" fontWeight="700">{z.label}</text>
+                <text x={z.x} y={z.y + 5} textAnchor="middle" fill={z.color} fontSize="14" fontWeight="800" letterSpacing="0.3">{z.label}</text>
               </g>
             ))}
 
