@@ -1448,14 +1448,12 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
-  // Tick la fiecare 2s pentru animație sintetică
   useEffect(() => {
     if (paused) return;
     const id = setInterval(() => setTick(t => t + 1), 2000);
     return () => clearInterval(id);
   }, [paused]);
 
-  // Log la fiecare 10 tick-uri
   useEffect(() => {
     if (tick % 10 === 0 && tick > 0) {
       const hot = data.filter(d => d.density > 0.7).map(d => AIRPORT_ZONES.find(z => z.id === d.id)?.label).join(", ");
@@ -1465,15 +1463,50 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   }, [tick]);
 
   const data = generateSyntheticDensity(tick);
-  const maxDensity = Math.max(...data.map(d => d.density), 0.01);
   const totalPax = data.reduce((s, d) => s + d.pax, 0);
   const alertZones = data.filter(d => d.density > 0.7);
-
   const selectedData = selected ? data.find(d => d.id === selected) : null;
   const selectedZone = selected ? AIRPORT_ZONES.find(z => z.id === selected) : null;
 
-  // ViewBox al harta_completa.svg
-  const VB_W = 1920, VB_H = 587;
+  // ── Heatmap grid computation ──────────────────────────────────────
+  // Terminal T4 reprezentat ca dreptunghi 1920×400 (proportional cu harta)
+  // Coordonatele zonelor sunt în spațiul 1920×587 → scalăm Y la 400
+  const HM_W = 1920, HM_H = 400;
+  const Y_SCALE = HM_H / 587;
+
+  // Rezoluție grid: 96 coloane × 40 rânduri
+  const COLS = 96, ROWS = 40;
+  const CW = HM_W / COLS, CH = HM_H / ROWS;
+
+  // Funcție gaussiană 2D pentru influența fiecărei zone
+  const gaussian = (dx: number, dy: number, sigma: number) =>
+    Math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
+
+  // Calculează intensitatea fiecărei celule ca sumă ponderată a zonelor
+  const grid: number[][] = Array.from({ length: ROWS }, (_, row) =>
+    Array.from({ length: COLS }, (_, col) => {
+      const cx = (col + 0.5) * CW;
+      const cy = (row + 0.5) * CH;
+      let val = 0;
+      AIRPORT_ZONES.forEach(z => {
+        const d = data.find(x => x.id === z.id)!;
+        const dx = cx - z.svgX;
+        const dy = cy - (z.svgY * Y_SCALE);
+        const sigma = z.radius * 1.2; // influență mai mare
+        val += d.density * gaussian(dx, dy, sigma);
+      });
+      return Math.min(1, val);
+    })
+  );
+
+  // Culoare heatmap: albastru/verde (rece) → galben → roșu (fierbinte)
+  function cellColor(v: number): string {
+    if (v < 0.15) return `rgba(30,120,60,${0.15 + v * 2})`;      // verde închis — zone libere
+    if (v < 0.30) return `rgba(80,200,80,${0.3 + v})`;            // verde deschis
+    if (v < 0.50) return `rgba(255,230,50,${0.5 + v * 0.5})`;    // galben
+    if (v < 0.70) return `rgba(255,140,20,${0.65 + v * 0.3})`;   // portocaliu
+    return `rgba(230,30,30,${0.75 + v * 0.25})`;                  // roșu — aglomerat
+  }
 
   return (
     <>
@@ -1509,109 +1542,93 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           {alertZones.map(az => {
             const z = AIRPORT_ZONES.find(z => z.id === az.id)!;
             return (
-              <div key={az.id} style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 10px", borderRadius:6, background:"rgba(239,83,80,0.12)", border:"1px solid #EF535044", fontSize:11, color:"#EF5350" }}>
-                <i className={`ti ${z.icon}`} />
-                {z.label} · {az.pax} pax
+              <div key={az.id} style={{ display:"flex", alignItems:"center", gap:5, padding:"3px 9px", borderRadius:5, background:"rgba(239,83,80,0.12)", border:"1px solid #EF535044", fontSize:11, color:"#EF5350" }}>
+                <i className={`ti ${z.icon}`} /> {z.label} · {az.pax} pax
               </div>
             );
           })}
         </div>
       )}
 
-      {/* ── Hartă cu heatmap ── */}
+      {/* ── Heatmap rect ── */}
       <div
-        className="map-container"
-        style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", cursor:"pointer" }}
+        style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", background:"#0d1a0d", cursor:"pointer" }}
         onClick={() => setSelected(null)}
       >
-        <img
-          src="/harta_completa.svg"
-          alt="Hartă T4"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}
-        />
-
         <svg
-          viewBox={`0 0 ${VB_W} ${VB_H}`}
+          viewBox={`0 0 ${HM_W} ${HM_H}`}
           preserveAspectRatio="xMidYMid meet"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}
+          style={{ width:"100%", height:"100%", display:"block" }}
         >
-          <defs>
-            {AIRPORT_ZONES.map((z, i) => {
-              const d = data.find(x => x.id === z.id)!;
-              const color = zoneColor(d.density);
-              return (
-                <radialGradient key={z.id} id={`hg_${z.id}`} cx="50%" cy="50%" r="50%">
-                  <stop offset="0%"   stopColor={color} stopOpacity={0.55 + d.density * 0.35} />
-                  <stop offset="40%"  stopColor={color} stopOpacity={0.20 + d.density * 0.20} />
-                  <stop offset="100%" stopColor={color} stopOpacity="0" />
-                </radialGradient>
-              );
-            })}
-          </defs>
+          {/* ── Grid cells ── */}
+          {grid.map((row, ri) =>
+            row.map((val, ci) => (
+              <rect
+                key={`${ri}-${ci}`}
+                x={ci * CW} y={ri * CH}
+                width={CW + 0.5} height={CH + 0.5}
+                fill={cellColor(val)}
+              />
+            ))
+          )}
 
-          {/* Heat blobs */}
+          {/* ── Zone markers ── */}
           {AIRPORT_ZONES.map(z => {
             const d = data.find(x => x.id === z.id)!;
             const color = zoneColor(d.density);
-            const r = z.radius * (0.7 + d.density * 0.5);
+            const cy = z.svgY * Y_SCALE;
             const isSelected = selected === z.id;
+            const pulseR = 14 + d.density * 10;
             return (
               <g
                 key={z.id}
                 onClick={(e) => { e.stopPropagation(); setSelected(selected === z.id ? null : z.id); }}
                 style={{ cursor:"pointer" }}
               >
-                {/* Outer glow blob */}
-                <circle
-                  cx={z.svgX} cy={z.svgY} r={r}
-                  fill={`url(#hg_${z.id})`}
-                  style={{ transition:"r 0.8s ease, opacity 0.5s" }}
-                />
-                {/* Inner pulsing core */}
-                <circle
-                  cx={z.svgX} cy={z.svgY}
-                  r={d.density > 0.5 ? 10 + d.density * 8 : 6}
-                  fill={color}
-                  opacity={0.9}
-                  style={{ transition:"r 0.8s ease" }}
-                />
-                {/* Selection ring */}
+                {/* Pulse ring */}
+                <circle cx={z.svgX} cy={cy} r={pulseR + 8} fill="none" stroke={color} strokeWidth="1.5" opacity="0.3" strokeDasharray="4,3" />
+                {/* Core dot */}
+                <circle cx={z.svgX} cy={cy} r={pulseR} fill={color} opacity={0.85} />
+                <circle cx={z.svgX} cy={cy} r={pulseR * 0.5} fill="white" opacity={0.6} />
+                {/* Selection highlight */}
                 {isSelected && (
-                  <circle cx={z.svgX} cy={z.svgY} r={r + 6} fill="none" stroke={color} strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
+                  <circle cx={z.svgX} cy={cy} r={pulseR + 18} fill="none" stroke={color} strokeWidth="2.5" opacity="0.7" />
                 )}
-                {/* Label */}
-                <rect
-                  x={z.svgX - 52} y={z.svgY - r - 28}
-                  width="104" height="20" rx="4"
-                  fill="#0d1117cc" stroke={color} strokeWidth="0.8"
-                />
-                <text
-                  x={z.svgX} y={z.svgY - r - 14}
-                  textAnchor="middle" fontSize="10" fill={color} fontWeight="700"
-                >
-                  {z.label}
-                </text>
-                {/* Pax count */}
-                <text
-                  x={z.svgX} y={z.svgY - r - 4}
-                  textAnchor="middle" fontSize="9" fill={color} opacity="0.85"
-                >
-                  {d.pax} pax
-                </text>
+                {/* Label pill */}
+                <rect x={z.svgX - 58} y={cy - pulseR - 34} width="116" height="22" rx="5" fill="#000000bb" stroke={color} strokeWidth="0.8" />
+                <text x={z.svgX} y={cy - pulseR - 19} textAnchor="middle" fontSize="10" fill={color} fontWeight="700">{z.label}</text>
+                <text x={z.svgX} y={cy - pulseR - 8} textAnchor="middle" fontSize="8.5" fill={color} opacity="0.8">{d.pax} pax · {Math.round(d.density * 100)}%</text>
               </g>
             );
           })}
 
-          {/* Orange API watermark */}
-          <rect x="4" y="4" width="148" height="18" rx="3" fill="#0d1117bb" />
-          <text x="10" y="16" fontSize="9" fill="#ff6600" fontWeight="700">Orange Population Density API</text>
-          <text x="152" y="16" fontSize="8" fill="#aaaaaa"> · synthetic</text>
+          {/* ── Legendă scală culori ── */}
+          <defs>
+            <linearGradient id="legendGrad" x1="0%" x2="100%" y1="0%" y2="0%">
+              <stop offset="0%"   stopColor="#1e783c" />
+              <stop offset="33%"  stopColor="#50c850" />
+              <stop offset="55%"  stopColor="#ffe632" />
+              <stop offset="75%"  stopColor="#ff8c14" />
+              <stop offset="100%" stopColor="#e61e1e" />
+            </linearGradient>
+          </defs>
+          <rect x={HM_W - 180} y={HM_H - 26} width="160" height="10" rx="4" fill="url(#legendGrad)" opacity="0.85" />
+          <text x={HM_W - 180} y={HM_H - 30} fontSize="8" fill="#aaa">Liber</text>
+          <text x={HM_W - 24}  y={HM_H - 30} fontSize="8" fill="#aaa" textAnchor="end">Aglomerat</text>
+
+          {/* ── Orange API badge ── */}
+          <rect x="6" y="6" width="160" height="18" rx="3" fill="#000000bb" />
+          <text x="12" y="18" fontSize="9" fill="#ff6600" fontWeight="700">Orange Population Density API</text>
+          <text x="175" y="18" fontSize="8" fill="#aaaaaa">· synthetic</text>
+
+          {/* ── Axă zone (linie orizontală de referință) ── */}
+          <line x1="0" y1={HM_H - 1} x2={HM_W} y2={HM_H - 1} stroke="#ffffff11" strokeWidth="1" />
         </svg>
       </div>
 
-      {/* ── Detail card la click pe zonă ── */}
+      {/* ── Detail card ── */}
       {selectedZone && selectedData && (
-        <div className="fade-in" style={{ marginTop:10, padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}44`, flexShrink:0 }}>
+        <div className="fade-in" style={{ marginTop:10, padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}55`, flexShrink:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <i className={`ti ${selectedZone.icon}`} style={{ fontSize:20, color:zoneColor(selectedData.density) }} />
             <div style={{ flex:1 }}>
@@ -1623,8 +1640,6 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
               <div style={{ fontSize:10, color:"var(--text-muted)" }}>persoane detectate</div>
             </div>
           </div>
-
-          {/* Progress bar intensitate */}
           <div style={{ marginTop:10 }}>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"var(--text-muted)", marginBottom:3 }}>
               <span>Densitate</span>
@@ -1634,13 +1649,12 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
               <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), borderRadius:3, transition:"width 0.8s", boxShadow:`0 0 8px ${zoneColor(selectedData.density)}` }} />
             </div>
           </div>
-
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginTop:10 }}>
-            {[
+            {([
               ["Status", selectedData.density > 0.7 ? "⚠ Aglomerat" : selectedData.density > 0.4 ? "⚡ Moderat" : "✓ Liber"],
               ["ETA așteptare", selectedData.density > 0.7 ? `~${Math.round(selectedData.density * 25)} min` : "< 5 min"],
               ["Trend", tick % 3 === 0 ? "↗ Crește" : tick % 3 === 1 ? "→ Stabil" : "↘ Scade"],
-            ].map(([l, v]) => (
+            ] as [string,string][]).map(([l, v]) => (
               <div key={l} style={{ textAlign:"center", padding:"6px 8px", background:"var(--bg-hover)", borderRadius:6 }}>
                 <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>{l}</div>
                 <div style={{ fontSize:12, fontWeight:600 }}>{v}</div>
