@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { announcements, subscribers } from "../../lib/announce-store";
+import type { StoredAnnouncement } from "../../lib/announce-store";
 
 const encoder = new TextEncoder();
 
@@ -60,15 +61,36 @@ export const POST: APIRoute = async ({ request }) => {
     ? (body.type as typeof validTypes[number])
     : "warning";
 
-  const announcement = {
+  const announcement: StoredAnnouncement = {
     id: Date.now(),
     type,
     text,
-    time: new Date().toLocaleTimeString("ro", { hour: "2-digit", minute: "2-digit" }),
+    time: new Date().toISOString(),
+    sender: "Personal Aeroport",
   };
 
   announcements.push(announcement);
   broadcast(announcement);
+
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: { "Content-Type": "application/json" },
+  });
+};
+
+// DELETE — admin removes an announcement by id; broadcast the deletion to all clients.
+export const DELETE: APIRoute = async ({ request }) => {
+  let body: { id?: number };
+  try { body = await request.json(); }
+  catch { return new Response(JSON.stringify({ error: "invalid json" }), { status: 400, headers: { "Content-Type": "application/json" } }); }
+
+  const id = body.id;
+  if (!id) return new Response(JSON.stringify({ error: "missing id" }), { status: 400, headers: { "Content-Type": "application/json" } });
+
+  const idx = announcements.findIndex(a => a.id === id);
+  if (idx === -1) return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+
+  announcements.splice(idx, 1);
+  broadcast({ __deleted: id });
 
   return new Response(JSON.stringify({ ok: true }), {
     headers: { "Content-Type": "application/json" },

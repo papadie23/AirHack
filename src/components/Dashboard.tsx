@@ -7,7 +7,7 @@ import TrafficFlowCenter from "./TrafficFlowCenter";
 type Feature = "weather" | "route" | "heatmap" | "admin" | "announcements" | "account" | "settings" | "my-flight" | "video-flow" | "weather-pass";
 
 export interface Announcement {
-  id: number; type: "info" | "warning" | "danger"; text: string; time: string;
+  id: number; type: "info" | "warning" | "danger"; text: string; time: string; sender?: string;
 }
 
 interface AuthState {
@@ -96,8 +96,13 @@ export default function Dashboard() {
     const es = new EventSource("/api/notifications");
     es.onmessage = (e) => {
       try {
-        const a = JSON.parse(e.data) as Announcement;
-        setAnnouncements(prev => prev.some(p => p.id === a.id) ? prev : [a, ...prev]);
+        const data = JSON.parse(e.data);
+        if (data.__deleted) {
+          setAnnouncements(prev => prev.filter(a => a.id !== data.__deleted));
+        } else {
+          const a = data as Announcement;
+          setAnnouncements(prev => prev.some(p => p.id === a.id) ? prev : [a, ...prev]);
+        }
       } catch { /* ignore malformed frames */ }
     };
     return () => es.close();
@@ -770,6 +775,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   positionsRef.current = positions;
 
   const [locLoading, setLocLoading] = useState(false);
+  const [locationLoaded, setLocationLoaded] = useState(false);
   const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
   const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
@@ -1156,16 +1162,23 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       if (!zone) return idx;
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
-        // entered zone — clear route, auto-show next step popup after short delay
+        // entered zone — advance task, recalculate route to next zone from current position
         setTimeout(() => {
-          setDynamicRoute(null);
           setTaskIdx(i => {
             const next = i + 1;
             // Return `next` even when >= ZONES.length so subsequent GPS updates see
             // ZONES[idx] === undefined and exit early — prevents the arrival firing repeatedly.
-            if (next >= ZONES.length) { setBoardingPhase("done"); setShowTaskPopup(true); return next; }
+            if (next >= ZONES.length) { setDynamicRoute(null); setBoardingPhase("done"); setShowTaskPopup(true); return next; }
             setBoardingPhase("task");
             setShowTaskPopup(true);
+            // Auto-draw route from current position to next zone
+            const nextZone = ZONES[next];
+            const currentPos = positionsRef.current[activePersonRef.current];
+            if (nextZone && currentPos) {
+              setDynamicRoute(makeOrthoRoute(currentPos, { x: nextZone.x, y: nextZone.y }));
+            } else {
+              setDynamicRoute(null);
+            }
             return next;
           });
         }, 800);
@@ -1174,17 +1187,14 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     });
   };
 
-  // Auto-trigger permission prompt on mount for any logged-in user
+  // Auto-start location watching on mount — no hardcoded pin until real GPS arrives
   const locationAsked = useRef(false);
   useEffect(() => {
     if (navigator.geolocation && !locationAsked.current) {
       locationAsked.current = true;
-      navigator.geolocation.getCurrentPosition(
-        () => {}, // just request permission, do nothing yet
-        () => {}, // ignore refusal — user can still click Localizează
-        { timeout: 5000 }
-      );
+      getLocation();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getLocation = () => {
@@ -1200,8 +1210,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${pos.coords.accuracy.toFixed(0)}m`);
         setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
         setLocLoading(false);
+        setLocationLoaded(true);
       },
-      (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); },
+      (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); setLocationLoaded(true); },
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
     );
   };
@@ -1304,6 +1315,23 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         onMouseUp={endDrag}
         onMouseLeave={endDrag}
       >
+        {/* GPS loading overlay — shown until first real location fix */}
+        {!locationLoaded && (
+          <div style={{
+            position:"absolute", inset:0, zIndex:20,
+            background:"rgba(0,0,0,0.55)", backdropFilter:"blur(4px)",
+            display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14,
+          }}>
+            <div style={{
+              width:44, height:44, borderRadius:"50%",
+              border:"3px solid var(--brand)", borderTopColor:"transparent",
+              animation:"spin 0.8s linear infinite",
+            }} />
+            <div style={{ fontSize:13, color:"var(--text-main)", fontWeight:600 }}>Se obține locația GPS...</div>
+            <div style={{ fontSize:11, color:"var(--text-muted)" }}>Permite accesul la locație când ți se cere</div>
+          </div>
+        )}
+
         {/* Zoom controls — hidden in calMode/pixelLog */}
         {!calMode && !pixelLog && (
           <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
@@ -1456,8 +1484,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               </g>
             )}
 
-            {/* All person dots — use smoothPositions for fluid movement */}
-            {!calMode && (() => {
+            {/* Active person dot — only shown after real GPS fix, never hardcoded */}
+            {!calMode && locationLoaded && (() => {
               const p = PEOPLE.find(p => p.id === activePerson);
               if (!p) return null;
               const pos = positions[p.id];
@@ -1489,6 +1517,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
           @keyframes pulse { 0%,100%{opacity:0.2} 50%{opacity:0.8} }
+          @keyframes spin { to { transform: rotate(360deg); } }
         `}</style>
 
         {/* ── Boarding task popup — lives inside mapWrapRef so it is visible in
@@ -3610,6 +3639,14 @@ function MyFlightModal({ onClose }: { onClose: () => void }) {
 
 /* ═══════════════════════════ TOP BAR ═══════════════════════════ */
 /* ═══════════════════════════ NOTIF PANEL ═══════════════════════════ */
+function formatAnnouncementTime(time: string): string {
+  try {
+    const d = new Date(time);
+    if (isNaN(d.getTime())) return time; // fallback for old HH:MM format
+    return d.toLocaleString("ro", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  } catch { return time; }
+}
+
 function NotifPanel({
   open, onClose, role, announcements,
 }: {
@@ -3620,6 +3657,7 @@ function NotifPanel({
 }) {
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3634,6 +3672,19 @@ function NotifPanel({
       setInputText("");
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    setDeletingId(id);
+    try {
+      await fetch("/api/notifications", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -3721,9 +3772,36 @@ function NotifPanel({
                 borderRadius:"var(--radius-md)",
                 border:"1px solid var(--border-color)",
                 borderLeft:`4px solid var(--${a.type})`,
+                display:"flex", alignItems:"flex-start", gap:10,
               }}>
-                <div style={{ fontSize:13, fontWeight:500 }}>{a.text}</div>
-                <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:5 }}>{a.time}</div>
+                <div style={{ flex:1 }}>
+                  {a.sender && (
+                    <div style={{ fontSize:10, color:"var(--brand)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:4 }}>
+                      <i className="ti ti-user-shield" style={{ marginRight:4 }} />{a.sender}
+                    </div>
+                  )}
+                  <div style={{ fontSize:13, fontWeight:500 }}>{a.text}</div>
+                  <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:5 }}>{formatAnnouncementTime(a.time)}</div>
+                </div>
+                {role === "admin" && (
+                  <button
+                    onClick={() => handleDelete(a.id)}
+                    disabled={deletingId === a.id}
+                    title="Șterge anunț"
+                    style={{
+                      flexShrink:0, width:26, height:26,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      background:"transparent",
+                      border:"1px solid var(--border-color)",
+                      borderRadius:6, cursor:"pointer",
+                      color:"var(--text-muted)",
+                      fontSize:12,
+                      opacity: deletingId === a.id ? 0.4 : 1,
+                    }}
+                  >
+                    <i className={`ti ti-${deletingId === a.id ? "loader-2 spin" : "trash"}`} />
+                  </button>
+                )}
               </div>
             ))
           )}
@@ -3777,7 +3855,7 @@ function TopBar({
         style={{ position:"relative" }}
       >
         <i className="ti ti-bell" />
-        {unreadCount > 0 && (
+        {unreadCount > 0 && auth.role !== "admin" && (
           <span style={{
             position:"absolute", top:2, right:2,
             width:16, height:16, borderRadius:"50%",
@@ -3925,8 +4003,13 @@ function AnnouncementsCenter({ announcements }: { announcements:Announcement[] }
       <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:20 }}>
         {announcements.map(a => (
           <div key={a.id} style={{ padding:15, background:"rgba(255,255,255,0.02)", borderLeft:`5px solid var(--${a.type})`, borderRadius:"0 6px 6px 0" }}>
+            {a.sender && (
+              <div style={{ fontSize:10, color:"var(--brand)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:6 }}>
+                <i className="ti ti-user-shield" style={{ marginRight:4 }} />{a.sender}
+              </div>
+            )}
             <p style={{ margin:0, fontSize:14, fontWeight:500 }}>{a.text}</p>
-            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:5 }}>{a.time}</div>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:5 }}>{formatAnnouncementTime(a.time)}</div>
           </div>
         ))}
       </div>

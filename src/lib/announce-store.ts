@@ -8,7 +8,8 @@ export interface StoredAnnouncement {
   id: number;
   type: "info" | "warning" | "danger";
   text: string;
-  time: string;
+  time: string;   // ISO datetime string
+  sender: string; // e.g. "Personal Aeroport"
 }
 
 export const announcements: StoredAnnouncement[] = [];
