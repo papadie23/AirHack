@@ -2533,7 +2533,7 @@ export interface MyFlightState {
 
 function useMyFlightState(): MyFlightState {
   const [input, setInput]     = useState(() => {
-    try { return localStorage.getItem(MF_KEY) ?? "W64102"; } catch { return "W64102"; }
+    try { return localStorage.getItem(MF_KEY) ?? "LH6381"; } catch { return "LH6381"; }
   });
   const [loading, setLoading] = useState(false);
   const [detail, setDetail]   = useState<FlightDetail | null>(null);
@@ -2558,7 +2558,7 @@ function useMyFlightState(): MyFlightState {
   // Auto-load din localStorage la mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(MF_KEY) ?? "W64102";
+      const saved = localStorage.getItem(MF_KEY) ?? "LH6381";
       if (saved) search(saved);
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3083,7 +3083,7 @@ function LoginModal({ onLogin }: { onLogin: (a: AuthState) => void }) {
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
   const [phone, setPhone] = useState("+40721000001");
-  const [iata, setIata] = useState("W6 4102");
+  const [iata, setIata] = useState("LH6381");
   const [error, setError] = useState("");
 
   const submitAdmin = (e: React.FormEvent) => {
