@@ -1704,9 +1704,17 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     };
   }
 
-  const maxDensity = Math.max(...densityData.map(c => c.pplDensity ?? 0), 1);
+  // Deduplicate by geohash before building circles
+  const dedupedDensity = Array.from(
+    densityData.reduce((map, c) => {
+      const existing = map.get(c.geohash);
+      if (!existing || (c.pplDensity ?? 0) > (existing.pplDensity ?? 0)) map.set(c.geohash, c);
+      return map;
+    }, new Map<string, DensityCell>()).values()
+  );
+  const maxDensity = Math.max(...dedupedDensity.map(c => c.pplDensity ?? 0), 1);
 
-  const circles = densityData
+  const circles = dedupedDensity
     .filter(c => c.pplDensity)
     .map(c => {
       const { lat, lng } = decodeGeohash(c.geohash);
@@ -2088,7 +2096,17 @@ function HeatmapRight() {
     return () => clearInterval(t);
   }, []);
 
-  const estimation = cells.filter(c => c.dataType === "DENSITY_ESTIMATION");
+  // Deduplicate by geohash — API can return the same geohash multiple times; keep highest density
+  const dedup = <T extends DensityCell>(arr: T[]) => {
+    const map = new Map<string, T>();
+    for (const c of arr) {
+      const existing = map.get(c.geohash);
+      if (!existing || (c.pplDensity ?? 0) > (existing.pplDensity ?? 0)) map.set(c.geohash, c);
+    }
+    return Array.from(map.values());
+  };
+  const estimation = dedup(cells.filter(c => c.dataType === "DENSITY_ESTIMATION"));
+  const nonEstimation = dedup(cells.filter(c => c.dataType !== "DENSITY_ESTIMATION").filter(c => !estimation.find(e => e.geohash === c.geohash)));
   const maxDensity = Math.max(...estimation.map(c => c.pplDensity ?? 0), 1);
   const totalDensity = Math.round(estimation.reduce((s,c) => s+(c.pplDensity??0),0));
   const alertCells = estimation.filter(c => (c.pplDensity??0) > 150);
@@ -2142,7 +2160,7 @@ function HeatmapRight() {
             </div>
           );
         })}
-        {cells.filter(c => c.dataType !== "DENSITY_ESTIMATION").map(c => (
+        {nonEstimation.map(c => (
           <div key={`low-${c.geohash}`} className="zone-row">
             <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
             <span style={{ fontSize:11, color:"var(--text-muted)" }}>LOW_DENSITY</span>
