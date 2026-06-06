@@ -840,12 +840,17 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const update = () => {
       const r = el.getBoundingClientRect();
       containerSizeRef.current = { W: r.width, H: r.height };
+      // Re-clamp pan whenever the container resizes (e.g. ETA card appears/disappears)
+      // so the map always fills the container — prevents the black-bar-at-bottom bug on mobile.
+      if (isPortraitRef.current) {
+        setMapPan(p => clampPan(p.x, p.y, mapZoomRef.current));
+      }
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clamp pan so the map image never shows empty/black areas (portrait only)
   // After rotate(-90deg)+scale(Z): image visual = (W/MAP_ASPECT)*Z wide × W*Z tall
