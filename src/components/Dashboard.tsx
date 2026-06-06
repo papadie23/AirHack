@@ -1853,6 +1853,52 @@ const AIRPORT_COORDS: Record<string, { lat: number; lon: number; label: string }
   TSR: { lat: 45.809, lon: 21.338, label: "Timișoara" },
 };
 
+/* ─── Flight Route Map — Google Maps on mobile, SVG on desktop ─── */
+function FlightRouteMap({ dep, arr, progress }: {
+  dep: string; arr: string; progress: number | null;
+}) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  const from = AIRPORT_COORDS[dep];
+  const to   = AIRPORT_COORDS[arr];
+
+  if (isMobile && from && to) {
+    const key = (window as { __GOOGLE_MAPS_KEY__?: string }).__GOOGLE_MAPS_KEY__;
+    if (key) {
+      const mapUrl = [
+        "https://maps.googleapis.com/maps/api/staticmap",
+        "?size=640x300&scale=2&maptype=terrain",
+        `&markers=color:0x10B981ff|size:mid|label:${dep}|${from.lat},${from.lon}`,
+        `&markers=color:0x3B82F6ff|size:mid|label:${arr}|${to.lat},${to.lon}`,
+        `&path=geodesic:true|color:0xFF6600CC|weight:4|${from.lat},${from.lon}|${to.lat},${to.lon}`,
+        `&key=${key}`,
+      ].join("");
+
+      return (
+        <img
+          src={mapUrl}
+          alt={`Rută ${dep} → ${arr}`}
+          style={{
+            width: "100%", display: "block",
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--border-color)",
+          }}
+        />
+      );
+    }
+  }
+
+  return <RouteMapSVG dep={dep} arr={arr} progress={progress} />;
+}
+
 /* ─── SVG Route Map ─── */
 function RouteMapSVG({ dep, arr, progress }: {
   dep: string; arr: string; progress: number | null;
@@ -2040,7 +2086,7 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
           {/* SVG route map */}
           <div style={{ marginBottom:16 }}>
             <div className="section-title" style={{ marginBottom:8 }}>Traseul zborului</div>
-            <RouteMapSVG
+            <FlightRouteMap
               dep={detail.departure.iata}
               arr={detail.arrival.iata}
               progress={detail.progressPct}
@@ -2048,8 +2094,8 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
           </div>
 
           {/* Info cards row */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:14 }}>
-            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
+          <div className="flight-info-grid" style={{ marginBottom:14 }}>
+            <div className="fig-dep" style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
               <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Plecare</div>
               <div style={{ fontSize:18, fontWeight:800 }}>{detail.departure.iata}</div>
               <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.departure.airport}</div>
@@ -2058,7 +2104,7 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
                 <div style={{ fontSize:11, color:"var(--brand)", marginTop:2 }}>Poartă {detail.departure.gate}</div>
               )}
             </div>
-            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}>
+            <div className="fig-middle" style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}>
               <i className="ti ti-plane" style={{ fontSize:22, color:"var(--brand)" }} />
               {detail.duration ? (
                 <div style={{ fontSize:12, fontWeight:600 }}>{Math.floor(detail.duration/60)}h {detail.duration%60}min</div>
@@ -2068,7 +2114,7 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
                 <div style={{ fontSize:11, color:"var(--warning)", fontWeight:600 }}>+{detail.departure.delayed}min întârziere</div>
               ) : null}
             </div>
-            <div style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
+            <div className="fig-arr" style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", padding:"12px", textAlign:"center" }}>
               <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Sosire</div>
               <div style={{ fontSize:18, fontWeight:800 }}>{detail.arrival.iata}</div>
               <div style={{ fontSize:11, color:"var(--text-muted)" }}>{detail.arrival.airport}</div>
