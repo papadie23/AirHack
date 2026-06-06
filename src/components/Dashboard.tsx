@@ -2780,18 +2780,18 @@ const WMO_EMOJI: Record<number, string> = {
   71:"🌨️", 73:"🌨️", 75:"❄️", 80:"🌦️", 81:"🌧️", 82:"⛈️",
   95:"⛈️", 96:"⛈️", 99:"⛈️",
 };
-interface AirportWx { tempC: number; windKt: number; desc: string; emoji: string }
+interface AirportWx { tempC: number; apparentC: number; windKt: number; humidity: number; precip: number; code: number; emoji: string }
 function useAirportWeather(iata: string): AirportWx | null {
   const [wx, setWx] = useState<AirportWx | null>(null);
   useEffect(() => {
     const c = AIRPORT_COORDS[iata];
     if (!c) return;
-    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,wind_speed_10m,weather_code&wind_speed_unit=kn&timezone=auto`)
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,apparent_temperature,wind_speed_10m,weather_code,relative_humidity_2m,precipitation&wind_speed_unit=kn&timezone=auto`)
       .then(r => r.json())
       .then(d => {
         const cur = d.current;
         const code = cur.weather_code as number;
-        setWx({ tempC: Math.round(cur.temperature_2m), windKt: Math.round(cur.wind_speed_10m), desc: cur.weather_code, emoji: WMO_EMOJI[code] ?? "🌡️" });
+        setWx({ tempC: Math.round(cur.temperature_2m), apparentC: Math.round(cur.apparent_temperature), windKt: Math.round(cur.wind_speed_10m), humidity: cur.relative_humidity_2m, precip: cur.precipitation, code, emoji: WMO_EMOJI[code] ?? "🌡️" });
       })
       .catch(() => {});
   }, [iata]);
@@ -2941,8 +2941,10 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
                     <>
                       <div style={{ fontSize:28, marginBottom:2 }}>{wx.emoji}</div>
                       <div style={{ fontSize:22, fontWeight:800 }}>{wx.tempC}°C</div>
+                      <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>Simte {wx.apparentC}°C</div>
                       <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:4 }}>
                         <i className="ti ti-wind" style={{ marginRight:4 }} />{wx.windKt} kt
+                        <span style={{ marginLeft:8 }}>💧{wx.humidity}%</span>
                       </div>
                     </>
                   ) : (
@@ -2971,6 +2973,8 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
 /* ─── MyFlightRight ─── */
 function MyFlightRight({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void; myFlight: MyFlightState }) {
   const { input, setInput, loading, detail, error, search } = myFlight;
+  const depWx = useAirportWeather(detail?.departure.iata ?? "");
+  const arrWx = useAirportWeather(detail?.arrival.iata ?? "");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3124,6 +3128,50 @@ function MyFlightRight({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void
           <i className="ti ti-ticket" style={{ fontSize:28, display:"block", marginBottom:8, opacity:0.25 }} />
           <div style={{ fontSize:12 }}>Introdu codul de pe bilet</div>
         </div>
+      )}
+
+      {/* ── Weather section ── */}
+      {detail && (depWx || arrWx) && (
+        <>
+          <div className="section-title" style={{ marginTop:4, marginBottom:8 }}>Condiții meteo</div>
+          {([{ iata: detail.departure.iata, wx: depWx, label: "La plecare" },
+             { iata: detail.arrival.iata,   wx: arrWx, label: "La sosire"  }] as const).map(({ iata, wx, label }) => (
+            <div key={iata} style={{ background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:10, padding:"10px 12px", marginBottom:8 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+                <span style={{ fontSize:11, color:"var(--text-muted)", fontWeight:600 }}>{label} · {iata}</span>
+                <span style={{ fontSize:20 }}>{wx?.emoji ?? "…"}</span>
+              </div>
+              {wx ? (
+                <div className="stats-list">
+                  <div className="stat-item">
+                    <span className="stat-label"><i className="ti ti-temperature" style={{ marginRight:3 }} />Temperatură</span>
+                    <span className="stat-value" style={{ fontWeight:700 }}>{wx.tempC}°C</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Simte ca</span>
+                    <span className="stat-value">{wx.apparentC}°C</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label"><i className="ti ti-wind" style={{ marginRight:3 }} />Vânt</span>
+                    <span className="stat-value">{wx.windKt} kt</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">💧 Umiditate</span>
+                    <span className="stat-value">{wx.humidity}%</span>
+                  </div>
+                  {wx.precip > 0 && (
+                    <div className="stat-item">
+                      <span className="stat-label">🌧️ Precipitații</span>
+                      <span className="stat-value" style={{ color:"var(--info)" }}>{wx.precip} mm</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize:11, color:"var(--text-muted)" }}>Se încarcă…</div>
+              )}
+            </div>
+          ))}
+        </>
       )}
 
       <div style={{ borderTop:"1px solid var(--border-color)", margin:"16px 0" }} />
