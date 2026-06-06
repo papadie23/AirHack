@@ -26,11 +26,19 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, 
 const POLL_INTERVAL = 4000; // ms between data fetches
 const ANALYSIS_INTERVAL = 20000; // ms between full AI analysis runs
 
-// ── Colour palette ────────────────────────────────────────────────────────────
+// Python MJPEG stream server base URL (run video_analytics/stream_server.py)
+const STREAM_BASE = "http://localhost:5001";
+const STREAM_ZONE: Record<string, string> = {
+  gate1:     `${STREAM_BASE}/stream/gate`,
+  gate2:     `${STREAM_BASE}/stream/checkin`,
+  disembark: `${STREAM_BASE}/stream/disembark`,
+};
+
+// ── Colour palette — explicit bright values so Chart.js resolves them correctly ─
 const ZONE_COLORS: Record<string, string> = {
-  gate1:     "var(--info)",
-  gate2:     "var(--brand)",
-  disembark: "var(--warning)",
+  gate1:     "#4FC3F7",   // bright sky blue
+  gate2:     "#FF8A50",   // bright orange
+  disembark: "#FFD54F",   // bright amber
 };
 
 const ALERT_COLORS: Record<string, string> = {
@@ -53,22 +61,41 @@ const SEVERITY_COLOR: Record<string, string> = {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function OccupancyBar({ reading }: { reading: ZoneReading }) {
+function OccupancyBar({ reading, onClick }: { reading: ZoneReading; onClick: () => void }) {
   const pct = Math.min(100, Math.round((reading.count / reading.capacity) * 100));
   const color = ALERT_COLORS[reading.alertLevel];
-  const zoneColor = ZONE_COLORS[reading.zoneId] ?? "var(--brand)";
+  const zoneColor = ZONE_COLORS[reading.zoneId] ?? "#4FC3F7";
 
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div
+      onClick={onClick}
+      style={{
+        marginBottom: 14,
+        cursor: "pointer",
+        padding: "8px 10px",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid transparent",
+        transition: "border-color 0.2s, background 0.2s",
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = zoneColor + "66";
+        (e.currentTarget as HTMLDivElement).style.background = zoneColor + "11";
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = "transparent";
+        (e.currentTarget as HTMLDivElement).style.background = "transparent";
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 10, height: 10, borderRadius: "50%", background: zoneColor, display: "inline-block", flexShrink: 0 }} />
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-main)" }}>{reading.label}</span>
+          <i className="ti ti-camera" style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 2 }} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {reading.trend === "up"   && <i className="ti ti-trending-up"   style={{ fontSize: 13, color: "var(--danger)" }} />}
-          {reading.trend === "down" && <i className="ti ti-trending-down" style={{ fontSize: 13, color: "var(--success)" }} />}
-          {reading.trend === "stable" && <i className="ti ti-minus"       style={{ fontSize: 13, color: "var(--text-muted)" }} />}
+          {reading.trend === "up"     && <i className="ti ti-trending-up"   style={{ fontSize: 13, color: "var(--danger)" }} />}
+          {reading.trend === "down"   && <i className="ti ti-trending-down" style={{ fontSize: 13, color: "var(--success)" }} />}
+          {reading.trend === "stable" && <i className="ti ti-minus"         style={{ fontSize: 13, color: "var(--text-muted)" }} />}
           <span style={{ fontSize: 13, fontWeight: 700, color }}>{reading.count}<span style={{ color: "var(--text-muted)", fontWeight: 400 }}>/{reading.capacity}</span></span>
           <span style={{ fontSize: 11, background: color + "22", color, borderRadius: 6, padding: "2px 7px", fontWeight: 600 }}>
             {pct}%
@@ -76,15 +103,111 @@ function OccupancyBar({ reading }: { reading: ZoneReading }) {
         </div>
       </div>
       <div style={{ height: 8, background: "var(--bg-body)", borderRadius: 4, overflow: "hidden" }}>
-        <div
-          style={{
-            height: "100%",
-            width: `${pct}%`,
-            background: color,
-            borderRadius: 4,
-            transition: "width 0.6s ease",
-          }}
-        />
+        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.6s ease" }} />
+      </div>
+    </div>
+  );
+}
+
+function ZoneModal({ reading, onClose }: { reading: ZoneReading; onClose: () => void }) {
+  const [streamOk, setStreamOk] = useState(true);
+  const streamUrl = STREAM_ZONE[reading.zoneId];
+  const zoneColor = ZONE_COLORS[reading.zoneId] ?? "#4FC3F7";
+  const pct = Math.min(100, Math.round((reading.count / reading.capacity) * 100));
+  const alertColor = ALERT_COLORS[reading.alertLevel];
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.75)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div style={{
+        background: "var(--bg-card)",
+        borderRadius: 14,
+        border: `1px solid ${zoneColor}44`,
+        width: "100%",
+        maxWidth: 700,
+        boxShadow: `0 0 40px ${zoneColor}22`,
+        overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 18px",
+          borderBottom: "1px solid var(--border-color)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: zoneColor, display: "inline-block" }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-main)" }}>{reading.label}</span>
+            <span style={{
+              fontSize: 11, padding: "2px 8px", borderRadius: 20, fontWeight: 600,
+              background: alertColor + "22", color: alertColor,
+            }}>
+              {reading.count}/{reading.capacity} · {pct}%
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "var(--bg-body)", border: "1px solid var(--border-color)",
+              borderRadius: 8, color: "var(--text-muted)", cursor: "pointer",
+              width: 30, height: 30, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <i className="ti ti-x" />
+          </button>
+        </div>
+
+        {/* Video stream */}
+        <div style={{ position: "relative", background: "#000", lineHeight: 0 }}>
+          {streamOk ? (
+            <img
+              src={streamUrl}
+              alt={`Live feed — ${reading.label}`}
+              onError={() => setStreamOk(false)}
+              style={{ width: "100%", maxHeight: 420, objectFit: "contain", display: "block" }}
+            />
+          ) : (
+            <div style={{
+              height: 280, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 10,
+              color: "var(--text-muted)", fontSize: 13,
+            }}>
+              <i className="ti ti-video-off" style={{ fontSize: 36, color: "#555" }} />
+              <div>Stream server offline</div>
+              <div style={{ fontSize: 11, opacity: 0.6 }}>
+                Run: <code style={{ background: "#1a1a1a", padding: "2px 6px", borderRadius: 4 }}>python video_analytics/stream_server.py</code>
+              </div>
+            </div>
+          )}
+
+          {/* Live badge */}
+          {streamOk && (
+            <div style={{
+              position: "absolute", top: 10, left: 10,
+              background: "rgba(0,0,0,0.65)", borderRadius: 20,
+              padding: "3px 10px", fontSize: 11, fontWeight: 600,
+              color: "#4ade80", display: "flex", alignItems: "center", gap: 5,
+            }}>
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%", background: "#4ade80",
+                display: "inline-block", animation: "pulse-green 2s infinite",
+              }} />
+              LIVE · CV Detection
+            </div>
+          )}
+        </div>
+
+        {/* Footer hint */}
+        <div style={{ padding: "10px 18px", fontSize: 11, color: "var(--text-muted)" }}>
+          <i className="ti ti-box" style={{ marginRight: 5, color: "#4ade80" }} />
+          Cutii verzi = persoane detectate de YOLO · Apasă în afara ferestrei pentru a închide
+        </div>
       </div>
     </div>
   );
@@ -304,6 +427,7 @@ export default function TrafficFlowCenter({ onLog }: { onLog: (m: string, ok?: b
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [activeTab, setActiveTab] = useState<"charts" | "chat">("charts");
   const [source, setSource] = useState<"mock" | "cv-live">("mock");
+  const [activeZone, setActiveZone] = useState<ZoneReading | null>(null);
 
   // Poll traffic data
   useEffect(() => {
@@ -349,19 +473,21 @@ export default function TrafficFlowCenter({ onLog }: { onLog: (m: string, ok?: b
     labels: history.timestamps,
     datasets: [
       {
-        label: "Poarta 1",
+        label: "Poarta",
         data: history.gate1,
-        borderColor: "var(--info)",
-        backgroundColor: "rgba(66,165,245,0.08)",
+        borderColor: "#4FC3F7",
+        backgroundColor: "rgba(79,195,247,0.12)",
+        borderWidth: 2,
         fill: true,
         tension: 0.4,
         pointRadius: 2,
       },
       {
-        label: "Poarta 2",
+        label: "Check In",
         data: history.gate2,
-        borderColor: "var(--brand)",
-        backgroundColor: "rgba(255,102,0,0.08)",
+        borderColor: "#FF8A50",
+        backgroundColor: "rgba(255,138,80,0.12)",
+        borderWidth: 2,
         fill: true,
         tension: 0.4,
         pointRadius: 2,
@@ -369,8 +495,9 @@ export default function TrafficFlowCenter({ onLog }: { onLog: (m: string, ok?: b
       {
         label: "Sosiri",
         data: history.disembark,
-        borderColor: "var(--warning)",
-        backgroundColor: "rgba(255,167,38,0.08)",
+        borderColor: "#FFD54F",
+        backgroundColor: "rgba(255,213,79,0.12)",
+        borderWidth: 2,
         fill: true,
         tension: 0.4,
         pointRadius: 2,
@@ -384,24 +511,29 @@ export default function TrafficFlowCenter({ onLog }: { onLog: (m: string, ok?: b
     animation: { duration: 300 },
     plugins: {
       legend: {
-        labels: { color: "var(--text-muted)", font: { size: 11 }, boxWidth: 12 },
+        labels: { color: "#ccc", font: { size: 11 }, boxWidth: 12 },
       },
     },
     scales: {
       x: {
-        ticks: { color: "var(--text-muted)", font: { size: 10 }, maxTicksLimit: 6 },
-        grid: { color: "rgba(255,255,255,0.04)" },
+        ticks: { color: "#aaa", font: { size: 10 }, maxTicksLimit: 6 },
+        grid: { color: "rgba(255,255,255,0.08)" },
       },
       y: {
         min: 0,
-        ticks: { color: "var(--text-muted)", font: { size: 10 } },
-        grid: { color: "rgba(255,255,255,0.04)" },
+        ticks: { color: "#aaa", font: { size: 10 } },
+        grid: { color: "rgba(255,255,255,0.08)" },
       },
     },
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0, minHeight: 0 }}>
+      {/* ── Zone video modal ── */}
+      {activeZone && (
+        <ZoneModal reading={activeZone} onClose={() => setActiveZone(null)} />
+      )}
+
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <div>
@@ -441,7 +573,9 @@ export default function TrafficFlowCenter({ onLog }: { onLog: (m: string, ok?: b
           Ocupanță zone — timp real
         </div>
         {snapshot
-          ? snapshot.readings.map(r => <OccupancyBar key={r.zoneId} reading={r} />)
+          ? snapshot.readings.map(r => (
+              <OccupancyBar key={r.zoneId} reading={r} onClick={() => setActiveZone(r)} />
+            ))
           : [1, 2, 3].map(i => (
               <div key={i} style={{ height: 36, background: "var(--bg-hover)", borderRadius: 6, marginBottom: 14, opacity: 0.5 }} />
             ))

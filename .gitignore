@@ -20,3 +20,6 @@ video_analytics/*.avi
 video_analytics/*.mov
 video_analytics/videos/
 public/cv-output.json
+
+# YOLO model weights — downloaded automatically at runtime
+*.pt

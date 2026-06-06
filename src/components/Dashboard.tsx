@@ -1742,7 +1742,7 @@ function HeatmapRight() {
           const color = heatColor(c.pplDensity ?? 0);
           const pct = Math.min(Math.round((c.pplDensity ?? 0) / maxDensity * 100), 100);
           return (
-            <div key={c.geohash} className="zone-row">
+            <div key={`est-${c.geohash}`} className="zone-row">
               <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <div className="zone-bar-wrap">
@@ -1756,7 +1756,7 @@ function HeatmapRight() {
           );
         })}
         {cells.filter(c => c.dataType !== "DENSITY_ESTIMATION").map(c => (
-          <div key={c.geohash} className="zone-row">
+          <div key={`low-${c.geohash}`} className="zone-row">
             <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
             <span style={{ fontSize:11, color:"var(--text-muted)" }}>LOW_DENSITY</span>
           </div>
