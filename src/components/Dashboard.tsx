@@ -481,12 +481,20 @@ function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:numb
   };
 }
 
+const defaultPoints: CalPoint[] = [
+  // hardcoded by /api/save-calibration
+];
+
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
   try {
     const raw = localStorage.getItem(CAL_KEY);
-    if (!raw) return { points: [], transform: null };
-    return JSON.parse(raw);
-  } catch { return { points: [], transform: null }; }
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (saved.points?.length >= 3) return saved;
+    }
+  } catch { /* ignore */ }
+  if (defaultPoints.length >= 3) return { points: defaultPoints, transform: solveAffine(defaultPoints) };
+  return { points: [], transform: null };
 }
 
 function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
@@ -677,7 +685,16 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         <div style={{ margin:"6px 0", padding:"8px 12px", background:"rgba(255,102,0,0.1)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", fontSize:12, color:"var(--brand)", display:"flex", alignItems:"center", gap:10 }}>
           <i className="ti ti-info-circle" style={{ fontSize:16 }}/>
           <span>Dă click pe hartă unde știi că ești → introdu coordonatele GPS. Minim 3 puncte pentru calibrare.</span>
-          <button onClick={clearCalibration} style={{ marginLeft:"auto", background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"2px 8px", cursor:"pointer", fontSize:11 }}>Resetează</button>
+          {calPoints.length >= 3 && (
+            <button onClick={async () => {
+              const r = await fetch("/api/save-calibration", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ points: calPoints }) });
+              const d = await r.json();
+              onLog(d.ok ? `✓ ${calPoints.length} puncte hardcodate în cod` : `Eroare: ${d.error}`, d.ok);
+            }} style={{ background:"var(--brand)", border:"none", borderRadius:4, color:"#fff", padding:"2px 10px", cursor:"pointer", fontSize:11 }}>
+              Salvează în cod
+            </button>
+          )}
+          <button onClick={clearCalibration} style={{ marginLeft: calPoints.length >= 3 ? 0 : "auto", background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"2px 8px", cursor:"pointer", fontSize:11 }}>Resetează</button>
         </div>
       )}
 
