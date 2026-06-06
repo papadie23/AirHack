@@ -1936,7 +1936,7 @@ function RouteMapSVG({ dep, arr, progress }: {
   const planeSize = portrait ? 11 : 8;
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:"1px solid var(--border-color)" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:"auto", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:"1px solid var(--border-color)" }}>
       {gridLines}
 
       {/* Dashed background path */}
