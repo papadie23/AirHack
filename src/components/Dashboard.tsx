@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
+import { Loader } from "@googlemaps/js-api-loader";
 
 type Feature = "weather" | "route" | "heatmap";
 
@@ -490,7 +491,7 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     if (!key || !gmapRef.current) return;
     if (gmapInstance.current) return;
 
-    const loader = new (require("@googlemaps/js-api-loader").Loader)({ apiKey: key, version: "weekly" });
+    const loader = new Loader({ apiKey: key, version: "weekly" });
     loader.load().then(() => {
       if (!gmapRef.current) return;
       const map = new google.maps.Map(gmapRef.current, {
@@ -712,7 +713,7 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     const apiKey = (window as any).__GOOGLE_MAPS_KEY__ as string | undefined;
     if (!apiKey) { setHasGoogleKey(false); return; }
 
-    const loader = new (require("@googlemaps/js-api-loader").Loader)({
+    const loader = new Loader({
       apiKey,
       version: "weekly",
       libraries: ["visualization"],
