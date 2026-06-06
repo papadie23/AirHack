@@ -84,6 +84,7 @@ export default function Dashboard() {
   ]);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [heatmapSelected, setHeatmapSelected] = useState<string | null>(null);
 
   // Shared flight state — o singură instanță, partajată între Center și Right
   const myFlight = useMyFlightState();
@@ -131,8 +132,8 @@ export default function Dashboard() {
           hasTopBar={!!auth}
           role={auth?.role ?? null}
         />
-        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} myFlight={myFlight} />
-        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} myFlight={myFlight} />
+        <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} role={auth?.role ?? null} myFlight={myFlight} heatmapSelected={heatmapSelected} setHeatmapSelected={setHeatmapSelected} />
+        <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} myFlight={myFlight} heatmapSelected={heatmapSelected} />
       </div>
       {!auth && <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />}
     </div>
@@ -330,19 +331,20 @@ function LeftPanel({
 
 /* ═══════════════════════════ CENTER PANEL ═══════════════════════════ */
 function CenterPanel({
-  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role, myFlight,
+  feature, onLog, weatherProvider, activePerson, announcements, setAnnouncements, role, myFlight, heatmapSelected, setHeatmapSelected,
 }: {
   feature: Feature; onLog: (m: string, ok?: boolean) => void; weatherProvider: WeatherProvider;
   activePerson: string; announcements: Announcement[]; setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
   role: "admin" | "passenger" | null;
   myFlight: MyFlightState;
+  heatmapSelected: string | null; setHeatmapSelected: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
   const isPassenger = role === "passenger";
   return (
     <div className="card main-center">
       {feature === "weather"          && !isPassenger && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
       {feature === "route"            && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
-      {feature === "heatmap"          && !isPassenger && <HeatmapCenter onLog={onLog} />}
+      {feature === "heatmap"          && !isPassenger && <HeatmapCenter onLog={onLog} selected={heatmapSelected} setSelected={setHeatmapSelected} />}
       {feature === "flow-prediction"  && <FlowPredictionCenter onLog={onLog} />}
       {feature === "boarding-verify"  && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
       {feature === "admin"            && activePerson === "you" && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
@@ -1660,255 +1662,280 @@ function heatColor(density: number): string {
   return "var(--success)";
 }
 
-function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const [densityData, setDensityData] = useState<DensityCell[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [fromFixture, setFromFixture] = useState(false);
+/* ═══════════════════════════ HEATMAP ═══════════════════════════ */
 
-  const fetchDensity = async () => {
-    setLoading(true);
-    try {
-      const r = await fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
-      const d: DensityResponse = await r.json();
-      const cells = d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? [];
-      setDensityData(cells);
-      setFromFixture(!!d.fromFixture);
-      onLog(`Population Density · ${cells.length} celule${d.fromFixture?" (fixture)":""}`);
-    } catch { onLog("Eroare Population Density API", false); }
-    finally { setLoading(false); }
-  };
+// Zonele aeroportului cu coordonatele SVG exacte
+const AIRPORT_ZONES: {
+  id: string; label: string; svgX: number; svgY: number;
+  baseLoad: number;
+  radius: number;
+  icon: string;
+}[] = [
+  { id: "checkin",   label: "Check-in",          svgX:  87, svgY: 391, baseLoad: 0.6, radius: 90,  icon: "ti-luggage" },
+  { id: "security",  label: "Control Securitate", svgX: 454, svgY: 261, baseLoad: 0.8, radius: 100, icon: "ti-shield-check" },
+  { id: "documente", label: "Verificare Documente",svgX: 837, svgY: 324, baseLoad: 0.5, radius: 85,  icon: "ti-id-badge" },
+  { id: "gate",      label: "Sosire la Poartă",   svgX:1371, svgY: 274, baseLoad: 0.7, radius: 95,  icon: "ti-door-enter" },
+  { id: "imbarcare", label: "Îmbarcare",           svgX:1607, svgY: 241, baseLoad: 0.75,radius: 90,  icon: "ti-plane-departure" },
+  { id: "bord",      label: "La bord",             svgX:1777, svgY: 271, baseLoad: 0.4, radius: 75,  icon: "ti-armchair" },
+];
 
-  useEffect(() => {
-    fetchDensity();
-    const t = setInterval(fetchDensity, 30000);
-    return () => clearInterval(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Map interaction (mirrors RouteCenter) ──────────────────────────
-  const MAP_ASPECT = 2262 / 587;
-  const [mapZoom, setMapZoom] = useState(1);
-  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef<{ startX:number; startY:number; panX:number; panY:number }|null>(null);
-  const mapWrapRef = useRef<HTMLDivElement>(null);
-  const mapZoomRef = useRef(mapZoom); mapZoomRef.current = mapZoom;
-  const mapPanRef  = useRef(mapPan);  mapPanRef.current  = mapPan;
-
-  const [isPortrait, setIsPortrait] = useState(false);
-  const isPortraitRef = useRef(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
-    const h = (e: MediaQueryListEvent) => { setIsPortrait(e.matches); isPortraitRef.current = e.matches; };
-    mq.addEventListener("change", h);
-    setIsPortrait(mq.matches); isPortraitRef.current = mq.matches;
-    return () => mq.removeEventListener("change", h);
-  }, []);
-
-  const containerSizeRef = useRef({ W: 0, H: 0 });
-  useEffect(() => {
-    const el = mapWrapRef.current; if (!el) return;
-    const update = () => { const r = el.getBoundingClientRect(); containerSizeRef.current = { W: r.width, H: r.height }; };
-    update();
-    const ro = new ResizeObserver(update); ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const clampPan = (panX: number, panY: number, zoom: number) => {
-    if (!isPortraitRef.current) return { x: panX, y: panY };
-    const { W, H } = containerSizeRef.current; if (W === 0) return { x: panX, y: panY };
-    const maxX = Math.max(0, ((W / MAP_ASPECT) * zoom - W) / 2);
-    const maxY = Math.max(0, (W * zoom - H) / 2);
-    return { x: Math.max(-maxX, Math.min(maxX, panX)), y: Math.max(-maxY, Math.min(maxY, panY)) };
-  };
-
-  // On portrait: zoom to fill + anchor bottom-right corner
-  useEffect(() => {
-    if (isPortrait) {
-      requestAnimationFrame(() => {
-        const { W, H } = containerSizeRef.current; if (W === 0) return;
-        const Z = MAP_ASPECT;
-        setMapZoom(Z);
-        setMapPan(clampPan(0, (H - W * Z) / 2, Z));
-      });
-    } else {
-      setMapZoom(1); setMapPan({ x: 0, y: 0 });
-    }
-  }, [isPortrait]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Wheel zoom
-  useEffect(() => {
-    const el = mapWrapRef.current; if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const minZ = isPortraitRef.current ? MAP_ASPECT : 0.5;
-      const factor = e.deltaY < 0 ? 1.15 : 0.87;
-      setMapZoom(z => { const nz = Math.min(Math.max(z * factor, minZ), 10); setMapPan(p => clampPan(p.x, p.y, nz)); return nz; });
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Touch: drag + pinch-to-zoom (passive:false)
-  useEffect(() => {
-    const el = mapWrapRef.current; if (!el) return;
-    type PS = { dist:number; midX:number; midY:number; zoom:number; panX:number; panY:number };
-    let pinch: PS | null = null;
-    const dist = (t: TouchList) => Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY);
-
-    const onStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        const r = el.getBoundingClientRect();
-        dragRef.current = { startX: e.touches[0].clientX-r.left, startY: e.touches[0].clientY-r.top, panX: mapPanRef.current.x, panY: mapPanRef.current.y };
-        setIsDragging(true); pinch = null;
-      } else if (e.touches.length === 2) {
-        dragRef.current = null; setIsDragging(false);
-        const r = el.getBoundingClientRect();
-        pinch = { dist: dist(e.touches), midX: (e.touches[0].clientX+e.touches[1].clientX)/2-r.left, midY: (e.touches[0].clientY+e.touches[1].clientY)/2-r.top, zoom: mapZoomRef.current, panX: mapPanRef.current.x, panY: mapPanRef.current.y };
-      }
-    };
-    const onMove = (e: TouchEvent) => {
-      e.preventDefault();
-      if (e.touches.length === 1 && dragRef.current) {
-        const r = el.getBoundingClientRect();
-        const { startX, startY, panX, panY } = dragRef.current;
-        setMapPan(clampPan(panX + e.touches[0].clientX-r.left-startX, panY + e.touches[0].clientY-r.top-startY, mapZoomRef.current));
-      } else if (e.touches.length === 2 && pinch) {
-        const r = el.getBoundingClientRect(); const W = r.width, H = r.height;
-        const newDist = dist(e.touches);
-        const nmx = (e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
-        const nmy = (e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
-        const minZ = isPortraitRef.current ? MAP_ASPECT : 0.3;
-        const nz = Math.min(Math.max(pinch.zoom*(newDist/pinch.dist), minZ), 10);
-        const ratio = nz / pinch.zoom;
-        const cmx = pinch.midX - W/2, cmy = pinch.midY - H/2;
-        setMapZoom(nz);
-        setMapPan(clampPan(cmx-(cmx-pinch.panX)*ratio+(nmx-pinch.midX), cmy-(cmy-pinch.panY)*ratio+(nmy-pinch.midY), nz));
-      }
-    };
-    const onEnd = (e: TouchEvent) => {
-      if (e.touches.length === 0) { dragRef.current = null; setIsDragging(false); pinch = null; }
-      else if (e.touches.length === 1) {
-        pinch = null;
-        const r = el.getBoundingClientRect();
-        dragRef.current = { startX: e.touches[0].clientX-r.left, startY: e.touches[0].clientY-r.top, panX: mapPanRef.current.x, panY: mapPanRef.current.y };
-      }
-    };
-    el.addEventListener("touchstart", onStart, { passive: false });
-    el.addEventListener("touchmove",  onMove,  { passive: false });
-    el.addEventListener("touchend",   onEnd,   { passive: false });
-    return () => { el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove); el.removeEventListener("touchend", onEnd); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const zoomBtnStyle: React.CSSProperties = { width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-main)", cursor:"pointer", fontSize:16, fontWeight:700, lineHeight:1, boxShadow:"0 1px 4px rgba(0,0,0,0.3)" };
-
-  // GPS → SVG
-  const GPS_ANCHOR = [
-    { lat: 47.17439, lng: 27.61903, svgX: 852,  svgY: 349 },
-    { lat: 47.17406, lng: 27.61970, svgX: 2244, svgY: 256 },
-  ];
-  const dLng = GPS_ANCHOR[1].lng - GPS_ANCHOR[0].lng, dLat = GPS_ANCHOR[1].lat - GPS_ANCHOR[0].lat;
-  const dX = GPS_ANCHOR[1].svgX - GPS_ANCHOR[0].svgX, dY = GPS_ANCHOR[1].svgY - GPS_ANCHOR[0].svgY;
-  const gpsToSvg = (lat: number, lng: number) => {
-    const tLng = (lng-GPS_ANCHOR[0].lng)/dLng, tLat = (lat-GPS_ANCHOR[0].lat)/dLat;
-    return { x: GPS_ANCHOR[0].svgX+tLng*dX+(tLat-tLng)*200, y: GPS_ANCHOR[0].svgY+tLng*dY+(tLat-tLng)*(-120) };
-  };
-
-  const dedupedDensity = Array.from(densityData.reduce((map, c) => {
-    const ex = map.get(c.geohash);
-    if (!ex || (c.pplDensity??0) > (ex.pplDensity??0)) map.set(c.geohash, c);
-    return map;
-  }, new Map<string, DensityCell>()).values());
-  const maxDensity = Math.max(...dedupedDensity.map(c => c.pplDensity ?? 0), 1);
-  const circles = dedupedDensity.filter(c => c.pplDensity).map(c => {
-    const { lat, lng } = decodeGeohash(c.geohash);
-    const pos = gpsToSvg(lat, lng);
-    const intensity = (c.pplDensity ?? 0) / maxDensity;
-    return { ...pos, r: 20+intensity*65, color: intensity>0.7?"#EF5350":intensity>0.35?"#FFA726":"#66BB6A", intensity, density: c.pplDensity??0 };
+function generateSyntheticDensity(tick: number): { id: string; density: number; pax: number }[] {
+  return AIRPORT_ZONES.map(z => {
+    const wave = Math.sin(tick * 0.08 + AIRPORT_ZONES.indexOf(z) * 1.3) * 0.15;
+    const noise = (Math.sin(tick * 0.31 + AIRPORT_ZONES.indexOf(z) * 2.7) * 0.05);
+    const raw = Math.max(0.05, Math.min(1, z.baseLoad + wave + noise));
+    const pax = Math.round(raw * 250);
+    return { id: z.id, density: raw, pax };
   });
+}
 
-  // Labels counter-rotate in portrait so they stay readable
-  const labelRot = isPortrait ? 90 : 0;
+function zoneColor(intensity: number): string {
+  if (intensity > 0.75) return "#EF5350";
+  if (intensity > 0.50) return "#FFA726";
+  if (intensity > 0.25) return "#FFEE58";
+  return "#66BB6A";
+}
+
+function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:boolean)=>void; selected: string | null; setSelected: React.Dispatch<React.SetStateAction<string | null>> }) {
+  const [tick, setTick] = useState(0);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (paused) return;
+    const id = setInterval(() => setTick(t => t + 1), 2000);
+    return () => clearInterval(id);
+  }, [paused]);
+
+  useEffect(() => {
+    if (tick % 10 === 0 && tick > 0) {
+      const hot = data.filter(d => d.density > 0.7).map(d => AIRPORT_ZONES.find(z => z.id === d.id)?.label).join(", ");
+      onLog(`Heatmap T4 · ${hot ? "Aglomerare: " + hot : "Flux normal"}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
+
+  const data = generateSyntheticDensity(tick);
+  const maxDensity = Math.max(...data.map(d => d.density), 0.01);
+  const totalPax = data.reduce((s, d) => s + d.pax, 0);
+  const avgDensity = data.reduce((s, d) => s + d.density, 0) / data.length;
+  const alertZones = data.filter(d => d.density > 0.7);
+
+  const selectedData = selected ? data.find(d => d.id === selected) : null;
+  const selectedZone = selected ? AIRPORT_ZONES.find(z => z.id === selected) : null;
+
+  const VB_W = 1920, VB_H = 587;
 
   return (
     <>
+      {/* ── Header ── */}
       <div className="map-header">
         <div>
-          <div className="map-title">Heatmap Terminal T4 — LRIA</div>
+          <div className="map-title">
+            <i className="ti ti-map-2" style={{ marginRight:6, color:"var(--brand)" }} />
+            Heatmap Terminal T4 — LRIA
+          </div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
-            Orange Population Density API{fromFixture && <span style={{ color:"var(--warning)", marginLeft:6 }}>· fixture</span>}
+            Orange Population Density (date sintetice) · {totalPax} pax detectați · Aglomerare medie: {Math.round(avgDensity * 100)}%
           </div>
         </div>
         <div className="badges">
-          <div className="badge badge-live"><span className="dot red pulse-red"/>Live</div>
-          <button onClick={fetchDensity} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>
-            <i className={`ti ti-refresh${loading?" spin":""}`}/>
+          <div className="badge badge-live">
+            <span className={`dot ${paused ? "orange" : "red pulse-red"}`}/>
+            {paused ? "Pauzat" : "Live"}
+          </div>
+          <button
+            onClick={() => setPaused(p => !p)}
+            title={paused ? "Reia simularea" : "Pauză"}
+            style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12 }}
+          >
+            <i className={`ti ti-${paused ? "player-play" : "player-pause"}`}/>
           </button>
         </div>
       </div>
 
+      {/* ── Alert strip ── */}
+      {alertZones.length > 0 && (
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:8, flexShrink:0 }}>
+          {alertZones.map(az => {
+            const z = AIRPORT_ZONES.find(z => z.id === az.id)!;
+            return (
+              <div key={az.id} style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 10px", borderRadius:6, background:"rgba(239,83,80,0.12)", border:"1px solid #EF535044", fontSize:11, color:"#EF5350" }}>
+                <i className={`ti ${z.icon}`} />
+                {z.label} · {az.pax} pax
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Hartă cu heatmap overlay ── */}
       <div
-        ref={mapWrapRef}
         className="map-container"
-        style={{ position:"relative", flex:1, ...(isPortrait ? { height:"calc(100svh - 195px)", minHeight:300 } : {}), borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", cursor: isDragging?"grabbing":"grab", userSelect:"none" }}
-        onMouseDown={e => { dragRef.current = { startX:e.clientX, startY:e.clientY, panX:mapPan.x, panY:mapPan.y }; setIsDragging(true); }}
-        onMouseMove={e => { if (!dragRef.current) return; const { startX,startY,panX,panY } = dragRef.current; setMapPan(clampPan(panX+e.clientX-startX, panY+e.clientY-startY, mapZoom)); }}
-        onMouseUp={() => { dragRef.current = null; setIsDragging(false); }}
-        onMouseLeave={() => { dragRef.current = null; setIsDragging(false); }}
+        style={{
+          position:"relative",
+          flex:1,
+          borderRadius:"var(--radius-md)",
+          overflow:"hidden",
+          border:"1px solid var(--border-color)",
+          cursor:"pointer",
+          background:"#1a1a1a",
+        }}
+        onClick={() => setSelected(null)}
       >
-        {/* Zoom controls */}
-        <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
-          <button style={zoomBtnStyle} onClick={() => setMapZoom(z => { const nz=Math.min(z*1.25,10); setMapPan(p=>clampPan(p.x,p.y,nz)); return nz; })}>+</button>
-          <button style={zoomBtnStyle} onClick={() => { const minZ=isPortrait?MAP_ASPECT:0.5; setMapZoom(z => { const nz=Math.max(z*0.8,minZ); setMapPan(p=>clampPan(p.x,p.y,nz)); return nz; }); }}>−</button>
-          <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { const Z=isPortrait?MAP_ASPECT:1; const {W,H}=containerSizeRef.current; setMapZoom(Z); setMapPan(isPortrait&&W>0 ? clampPan(0,(H-W*Z)/2,Z) : {x:0,y:0}); }} title="Reset">
-            <i className="ti ti-home-2"/>
-          </button>
-        </div>
+        {/* Harta SVG completă pe fundal — luminoasă, cu box-urile zones */}
+        <img
+          src="/harta_completa.svg"
+          alt="Hartă T4"
+          style={{
+            position:"absolute",
+            inset:0,
+            width:"100%",
+            height:"100%",
+            objectFit:"contain",
+            display:"block",
+            zIndex:1,
+            opacity:1,
+          }}
+        />
 
-        {/* Transformable layer */}
-        <div style={{ position:"absolute", inset:0, transform:`translate(${mapPan.x}px,${mapPan.y}px) scale(${mapZoom})${isPortrait?" rotate(-90deg)":""}`, transformOrigin:"center center", willChange:"transform" }}>
-          <img src="/harta_completa.svg" alt="Hartă T4" draggable={false} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}/>
-          <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet" style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2, pointerEvents:"none" }}>
-            <defs>
-              {circles.map((c, i) => (
-                <radialGradient key={i} id={`hg${i}`} cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor={c.color} stopOpacity={0.6+c.intensity*0.3}/>
-                  <stop offset="100%" stopColor={c.color} stopOpacity="0"/>
+        {/* Heatmap overlay SVG — DOAR blob-urile, transparent background */}
+        <svg
+          viewBox={`0 0 ${VB_W} ${VB_H}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:3 }}
+        >
+          <defs>
+            {/* Gradiente radiale pentru fiecare zonă */}
+            {AIRPORT_ZONES.map(z => {
+              const d = data.find(x => x.id === z.id)!;
+              const color = zoneColor(d.density);
+              return (
+                <radialGradient key={z.id} id={`hg_${z.id}`} cx="50%" cy="50%" r="50%">
+                  <stop offset="0%"   stopColor={color} stopOpacity={0.7 + d.density * 0.25} />
+                  <stop offset="50%"  stopColor={color} stopOpacity={0.35 + d.density * 0.15} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0.05} />
                 </radialGradient>
-              ))}
-            </defs>
-            {circles.map((c, i) => (
-              <g key={i}>
-                <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
-                {c.intensity > 0.85 && <circle cx={c.x} cy={c.y} r={8} fill={c.color} opacity="0.95"/>}
+              );
+            })}
+          </defs>
+
+          {/* Heat blobs — blob-uri mari cu gradient */}
+          {AIRPORT_ZONES.map(z => {
+            const d = data.find(x => x.id === z.id)!;
+            const color = zoneColor(d.density);
+            // Raza adaptiveă — mai mare cât mai aglomerat
+            const r = z.radius * (0.6 + d.density * 0.6);
+            const isSelected = selected === z.id;
+            // Pentru "gate" (Sosire la Poartă), pune eticheta deasupra
+            const labelY = z.id === "gate" ? z.svgY - r - 10 : z.svgY + r + 20;
+            
+            return (
+              <g key={z.id} style={{ cursor:"pointer" }} onClick={(e) => { e.stopPropagation(); setSelected(selected === z.id ? null : z.id); }}>
+                {/* Outer glow blob — mare, transparent, gradient */}
+                <circle
+                  cx={z.svgX}
+                  cy={z.svgY}
+                  r={r}
+                  fill={`url(#hg_${z.id})`}
+                  style={{ transition:"r 0.8s ease" }}
+                />
+
+                {/* Inner pulsing core — mic, solid, intens */}
+                <circle
+                  cx={z.svgX}
+                  cy={z.svgY}
+                  r={6 + d.density * 6}
+                  fill={color}
+                  opacity={0.85 + d.density * 0.15}
+                  style={{ transition:"r 0.8s ease" }}
+                />
+
+                {/* Eticheta permanentă — deasupra pentru gate, sub pentru altele */}
+                <text
+                  x={z.svgX}
+                  y={labelY}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fill={color}
+                  fontWeight="600"
+                  style={{ pointerEvents:"none" }}
+                >
+                  {z.label}
+                </text>
+
+                {/* Selection ring */}
+                {isSelected && (
+                  <circle cx={z.svgX} cy={z.svgY} r={r + 8} fill="none" stroke={color} strokeWidth="2.5" strokeDasharray="6,4" opacity="0.9" />
+                )}
               </g>
-            ))}
-            {/* Labels counter-rotate so they stay upright in portrait */}
-            <g transform={`rotate(${labelRot}, 852, 320)`}>
-              <text x={852} y={320} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Security</text>
-            </g>
-            <g transform={`rotate(${labelRot}, 2244, 228)`}>
-              <text x={2244} y={228} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Boarding</text>
-            </g>
-          </svg>
-        </div>
+            );
+          })}
+
+          {/* Orange API watermark */}
+          <rect x="4" y="4" width="148" height="18" rx="3" fill="#0d1117bb" />
+          <text x="10" y="16" fontSize="9" fill="#ff6600" fontWeight="700">Orange Population Density API</text>
+          <text x="152" y="16" fontSize="8" fill="#aaaaaa"> · synthetic</text>
+        </svg>
       </div>
+
+      {/* ── Detail card la click pe zonă ── */}
+      {selectedZone && selectedData && (
+        <div className="fade-in" style={{ marginTop:10, padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}44`, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <i className={`ti ${selectedZone.icon}`} style={{ fontSize:20, color:zoneColor(selectedData.density) }} />
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:700, fontSize:14, color:zoneColor(selectedData.density) }}>{selectedZone.label}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>Orange Population Density · celulă geohash simulată</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:22, fontWeight:800, color:zoneColor(selectedData.density) }}>{selectedData.pax}</div>
+              <div style={{ fontSize:10, color:"var(--text-muted)" }}>persoane detectate</div>
+            </div>
+          </div>
+
+          {/* Progress bar intensitate */}
+          <div style={{ marginTop:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"var(--text-muted)", marginBottom:3 }}>
+              <span>Densitate</span>
+              <span style={{ fontWeight:600, color:zoneColor(selectedData.density) }}>{Math.round(selectedData.density * 100)}%</span>
+            </div>
+            <div style={{ height:6, background:"var(--bg-hover)", borderRadius:3, overflow:"hidden" }}>
+              <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), borderRadius:3, transition:"width 0.8s", boxShadow:`0 0 8px ${zoneColor(selectedData.density)}` }} />
+            </div>
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginTop:10 }}>
+            {[
+              ["Status", selectedData.density > 0.7 ? "⚠ Aglomerat" : selectedData.density > 0.4 ? "⚡ Moderat" : "✓ Liber"],
+              ["ETA așteptare", selectedData.density > 0.7 ? `~${Math.round(selectedData.density * 25)} min` : "< 5 min"],
+              ["Trend", tick % 3 === 0 ? "↗ Crește" : tick % 3 === 1 ? "→ Stabil" : "↘ Scade"],
+            ].map(([l, v]) => (
+              <div key={l} style={{ textAlign:"center", padding:"6px 8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>{l}</div>
+                <div style={{ fontSize:12, fontWeight:600 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
 /* ═══════════════════════════ RIGHT PANEL ═══════════════════════════ */
 function RightPanel({
-  feature, onLog, weatherProvider, setWeatherProvider, myFlight,
+  feature, onLog, weatherProvider, setWeatherProvider, myFlight, heatmapSelected,
 }: {
   feature: Feature; onLog:(m:string,ok?:boolean)=>void;
   weatherProvider: WeatherProvider; setWeatherProvider: (p: WeatherProvider) => void;
   myFlight: MyFlightState;
+  heatmapSelected: string | null;
 }) {
   return (
     <div className="card sidebar-right">
       {feature === "weather" && <WeatherRight weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />}
       {feature === "route"   && <RouteRight onLog={onLog} />}
-      {feature === "heatmap" && <HeatmapRight />}
+      {feature === "heatmap" && <HeatmapRight selected={heatmapSelected} />}
       {feature === "my-flight" && <MyFlightRight onLog={onLog} myFlight={myFlight} />}
     </div>
   );
@@ -2206,102 +2233,242 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   );
 }
 
-function HeatmapRight() {
-  const [cells, setCells] = useState<DensityCell[]>([]);
-  const [updatedAt, setUpdatedAt] = useState<string>("");
+function HeatmapRight({ selected }: { selected: string | null }) {
+  const [tick, setTick] = useState(0);
+  const [trendingHistory, setTrendingHistory] = useState<{ [key: string]: number[] }>({});
 
   useEffect(() => {
-    const load = () =>
-      fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" })
-        .then(r => r.json())
-        .then((d: DensityResponse) => {
-          setCells(d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? []);
-          setUpdatedAt(new Date().toLocaleTimeString("ro"));
-        }).catch(() => {});
-    load();
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
+    const id = setInterval(() => setTick(t => t + 1), 2000);
+    return () => clearInterval(id);
   }, []);
 
-  // Deduplicate by geohash — API can return the same geohash multiple times; keep highest density
-  const dedup = <T extends DensityCell>(arr: T[]) => {
-    const map = new Map<string, T>();
-    for (const c of arr) {
-      const existing = map.get(c.geohash);
-      if (!existing || (c.pplDensity ?? 0) > (existing.pplDensity ?? 0)) map.set(c.geohash, c);
-    }
-    return Array.from(map.values());
-  };
-  const estimation = dedup(cells.filter(c => c.dataType === "DENSITY_ESTIMATION"));
-  const nonEstimation = dedup(cells.filter(c => c.dataType !== "DENSITY_ESTIMATION").filter(c => !estimation.find(e => e.geohash === c.geohash)));
-  const maxDensity = Math.max(...estimation.map(c => c.pplDensity ?? 0), 1);
-  const totalDensity = Math.round(estimation.reduce((s,c) => s+(c.pplDensity??0),0));
-  const alertCells = estimation.filter(c => (c.pplDensity??0) > 150);
+  // Track trending history pentru fiecare zonă
+  useEffect(() => {
+    const data = generateSyntheticDensity(tick);
+    setTrendingHistory(prev => {
+      const updated = { ...prev };
+      data.forEach(d => {
+        if (!updated[d.id]) updated[d.id] = [];
+        updated[d.id] = [...updated[d.id].slice(-9), d.density * 100]; // Keep last 10 values
+      });
+      return updated;
+    });
+  }, [tick]);
+
+  // Generează date sintetice pentru zonele din centru
+  const data = generateSyntheticDensity(tick);
+  const maxDensity = Math.max(...data.map(d => d.density * 250), 1); // convertează la "pax echivalent"
+  const totalPax = data.reduce((s, d) => s + d.pax, 0);
+  const avgDensity = data.reduce((s, d) => s + d.density, 0) / data.length;
+  const alertZones = data.filter(d => d.density > 0.7);
+  
+  const selectedData = selected ? data.find(d => d.id === selected) : null;
+  const selectedZone = selected ? AIRPORT_ZONES.find(z => z.id === selected) : null;
+  const selectedHistory = selected ? (trendingHistory[selected] || []) : [];
 
   return (
     <>
-      <div className="section-title">Densitate Populație</div>
-      <div className="stats-list" style={{ marginBottom:12 }}>
-        <div className="stat-item">
-          <span className="stat-label">Total celule</span>
-          <span className="stat-value">{cells.length}</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Cu estimare</span>
-          <span className="stat-value">{estimation.length}</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Densitate max</span>
-          <span className="stat-value" style={{ color: maxDensity > 150 ? "var(--danger)" : "var(--text-main)" }}>
-            {maxDensity > 1 ? `${Math.round(maxDensity)} /km²` : "—"}
-          </span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Zone alertă</span>
-          <span className="stat-value" style={{ color: alertCells.length > 0 ? "var(--danger)" : "var(--success)" }}>
-            {alertCells.length}
-          </span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Actualizat</span>
-          <span className="stat-value" style={{ fontSize:12, color:"var(--text-muted)" }}>{updatedAt || "—"}</span>
-        </div>
-      </div>
+      {/* Dacă este o zonă selectată, arată detalii expanded */}
+      {selectedZone && selectedData ? (
+        <>
+          <div className="section-title" style={{ marginBottom:16 }}>
+            <i className={`ti ${selectedZone.icon}`} style={{ marginRight:6, fontSize:16, color:zoneColor(selectedData.density) }} />
+            {selectedZone.label}
+          </div>
 
-      <div className="section-title">Celule Geohash</div>
-      <div style={{ flex:1, overflowY:"auto" }}>
-        {estimation.map(c => {
-          const color = heatColor(c.pplDensity ?? 0);
-          const pct = Math.min(Math.round((c.pplDensity ?? 0) / maxDensity * 100), 100);
-          return (
-            <div key={`est-${c.geohash}`} className="zone-row">
-              <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div className="zone-bar-wrap">
-                  <div className="zone-bar" style={{ width:`${pct}%`, background:color }}/>
-                </div>
-                <span style={{ fontSize:12, fontWeight:600, color, width:50, textAlign:"right" }}>
-                  {Math.round(c.pplDensity ?? 0)}/km²
-                </span>
+          {/* Info card expandat */}
+          <div style={{ padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}44`, marginBottom:16 }}>
+            {/* Ocupare */}
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, marginBottom:4, color:"var(--text-muted)" }}>
+                <span>Ocupare</span>
+                <span style={{ fontWeight:600, color:zoneColor(selectedData.density) }}>{Math.round(selectedData.density * 100)}%</span>
+              </div>
+              <div style={{ height:8, background:"var(--bg-hover)", borderRadius:4, overflow:"hidden" }}>
+                <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), transition:"width 0.8s", boxShadow:`0 0 8px ${zoneColor(selectedData.density)}` }} />
               </div>
             </div>
-          );
-        })}
-        {nonEstimation.map(c => (
-          <div key={`low-${c.geohash}`} className="zone-row">
-            <span style={{ fontFamily:"monospace", fontSize:12, color:"var(--text-muted)" }}>{c.geohash}</span>
-            <span style={{ fontSize:11, color:"var(--text-muted)" }}>LOW_DENSITY</span>
-          </div>
-        ))}
-      </div>
 
-      {alertCells.length > 0 && (
-        <div className="alert-box" style={{ marginTop:12 }}>
-          <div className="alert-title"><i className="ti ti-alert-triangle"/> {alertCells.length} zone aglomerate</div>
-          <div className="alert-desc">
-            {alertCells.map(c => `${c.geohash}: ${Math.round(c.pplDensity??0)}/km²`).join(" · ")}
+            {/* Persoane */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Persoane</div>
+                <div style={{ fontSize:16, fontWeight:800, color:zoneColor(selectedData.density) }}>{selectedData.pax}</div>
+              </div>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Status</div>
+                <div style={{ fontSize:12, fontWeight:600, color:selectedData.density > 0.7 ? "var(--danger)" : selectedData.density > 0.4 ? "var(--warning)" : "var(--success)" }}>
+                  {selectedData.density > 0.7 ? "⚠ Aglomerat" : selectedData.density > 0.4 ? "⚡ Moderat" : "✓ Liber"}
+                </div>
+              </div>
+            </div>
+
+            {/* ETA și Trend */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Aşteptare ETA</div>
+                <div style={{ fontSize:12, fontWeight:600 }}>
+                  {selectedData.density > 0.7 ? `~${Math.round(selectedData.density * 25)} min` : "< 5 min"}
+                </div>
+              </div>
+              <div style={{ textAlign:"center", padding:"8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>Trend</div>
+                <div style={{ fontSize:12, fontWeight:600 }}>
+                  {tick % 3 === 0 ? "↗ Crește" : tick % 3 === 1 ? "→ Stabil" : "↘ Scade"}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+
+          <div className="section-title">Informații Suplimentare</div>
+          <div style={{ fontSize:12, color:"var(--text-muted)", lineHeight:1.6 }}>
+            <p>Zona <strong>{selectedZone.label}</strong> este curativ la <strong>{Math.round(selectedData.density * 100)}%</strong> din capacitate cu <strong>{selectedData.pax}</strong> persoane detectate.</p>
+            {selectedData.density > 0.7 && (
+              <p style={{ color:"var(--danger)", marginTop:8 }}>⚠ <strong>Alertă:</strong> Aglomerare ridicată. Se recomandă evitarea zonei sau planificarea unei alte rute.</p>
+            )}
+          </div>
+
+          <div className="section-title" style={{ marginTop:16 }}>Trending</div>
+          {/* Grafic trending — mini chart cu linie */}
+          <div style={{ position:"relative", height:60, background:"var(--bg-hover)", borderRadius:6, padding:8, marginBottom:12 }}>
+            <svg viewBox="0 0 200 50" style={{ width:"100%", height:"100%" }} preserveAspectRatio="none">
+              {selectedHistory.length > 1 && (
+                <>
+                  {/* Grilă background */}
+                  <line x1="0" y1="25" x2="200" y2="25" stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,2" opacity="0.5" />
+                  
+                  {/* Linie trending */}
+                  <polyline
+                    points={selectedHistory.map((val, i) => `${(i / (selectedHistory.length - 1)) * 200},${50 - (val / 100) * 50}`).join(" ")}
+                    fill="none"
+                    stroke={zoneColor(selectedData.density)}
+                    strokeWidth="2"
+                  />
+                  
+                  {/* Punct curent */}
+                  <circle
+                    cx={200}
+                    cy={50 - (selectedHistory[selectedHistory.length - 1] / 100) * 50}
+                    r="2.5"
+                    fill={zoneColor(selectedData.density)}
+                  />
+                </>
+              )}
+              <text x="2" y="12" fontSize="9" fill="var(--text-muted)">100%</text>
+              <text x="2" y="48" fontSize="9" fill="var(--text-muted)">0%</text>
+            </svg>
+          </div>
+          <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center" }}>Evoluția ultimelor 10 perioade</div>
+
+          {/* Capacitate vs Ocupare */}
+          <div className="section-title" style={{ marginTop:16 }}>Capacitate vs Ocupare</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+            {/* Capacitate */}
+            <div style={{ padding:10, background:"var(--bg-hover)", borderRadius:6 }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Capacitate Maximă</div>
+              <div style={{ fontSize:16, fontWeight:800, color:"var(--text-main)", marginBottom:6 }}>250</div>
+              <div style={{ height:6, background:"rgba(255,255,255,0.1)", borderRadius:3, overflow:"hidden" }}>
+                <div style={{ width:"100%", height:"100%", background:"var(--success)" }} />
+              </div>
+              <div style={{ fontSize:9, color:"var(--text-muted)", marginTop:4 }}>persoane</div>
+            </div>
+
+            {/* Ocupare Curentă */}
+            <div style={{ padding:10, background:"var(--bg-hover)", borderRadius:6 }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Ocupare Curentă</div>
+              <div style={{ fontSize:16, fontWeight:800, color:zoneColor(selectedData.density), marginBottom:6 }}>{selectedData.pax}</div>
+              <div style={{ height:6, background:"rgba(255,255,255,0.1)", borderRadius:3, overflow:"hidden" }}>
+                <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), transition:"width 0.8s" }} />
+              </div>
+              <div style={{ fontSize:9, color:"var(--text-muted)", marginTop:4 }}>{Math.round(selectedData.density * 100)}% ocupat</div>
+            </div>
+          </div>
+
+          {/* Peak Hours Analysis */}
+          <div className="section-title">Peak Hours & Statistici</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            {[
+              { label: "Pic de ocupare", value: `${Math.max(...selectedHistory.map(h => Math.round(h)))}%`, icon: "ti-arrow-up" },
+              { label: "Min de ocupare", value: `${Math.min(...selectedHistory.map(h => Math.round(h)))}%`, icon: "ti-arrow-down" },
+              { label: "Medie istoric", value: `${Math.round(selectedHistory.reduce((a, b) => a + b, 0) / selectedHistory.length)}%`, icon: "ti-chart-bar" },
+              { label: "Variabilitate", value: selectedHistory.length > 1 ? `${Math.round(Math.max(...selectedHistory) - Math.min(...selectedHistory))}%` : "—", icon: "ti-wave" },
+            ].map(stat => (
+              <div key={stat.label} style={{ padding:8, background:"var(--bg-hover)", borderRadius:6, textAlign:"center" }}>
+                <div style={{ fontSize:14, color:zoneColor(selectedData.density), marginBottom:2 }}>
+                  <i className={`ti ${stat.icon}`} style={{ marginRight:4 }} />
+                </div>
+                <div style={{ fontSize:11, fontWeight:600, marginBottom:2 }}>{stat.value}</div>
+                <div style={{ fontSize:9, color:"var(--text-muted)" }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Afişare generală dacă nu este selectată o zonă */}
+          <div className="section-title">Densitate Populație</div>
+          <div className="stats-list" style={{ marginBottom:12 }}>
+            <div className="stat-item">
+              <span className="stat-label">Total zone</span>
+              <span className="stat-value">{AIRPORT_ZONES.length}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Total pax</span>
+              <span className="stat-value">{totalPax}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Densitate medie</span>
+              <span className="stat-value" style={{ color: avgDensity > 0.7 ? "var(--danger)" : avgDensity > 0.4 ? "var(--warning)" : "var(--text-main)" }}>
+                {Math.round(avgDensity * 100)}%
+              </span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Zone alertă</span>
+              <span className="stat-value" style={{ color: alertZones.length > 0 ? "var(--danger)" : "var(--success)" }}>
+                {alertZones.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="section-title">Zone Terminal T4</div>
+          <div style={{ flex:1, overflowY:"auto" }}>
+            {data.map(d => {
+              const zone = AIRPORT_ZONES.find(z => z.id === d.id)!;
+              const color = zoneColor(d.density);
+              const pct = Math.min(Math.round(d.density * 100), 100);
+              return (
+                <div key={d.id} className="zone-row">
+                  <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0 }}>
+                    <i className={`ti ${zone.icon}`} style={{ fontSize:14, color, flexShrink:0 }} />
+                    <span style={{ fontSize:12, fontWeight:600, color, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {zone.label}
+                    </span>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                    <div className="zone-bar-wrap">
+                      <div className="zone-bar" style={{ width:`${pct}%`, background:color }}/>
+                    </div>
+                    <span style={{ fontSize:12, fontWeight:600, color, width:40, textAlign:"right" }}>
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {alertZones.length > 0 && (
+            <div className="alert-box" style={{ marginTop:12 }}>
+              <div className="alert-title"><i className="ti ti-alert-triangle"/> {alertZones.length} zone aglomerate</div>
+              <div className="alert-desc">
+                {alertZones.map(z => {
+                  const zone = AIRPORT_ZONES.find(z2 => z2.id === z.id)!;
+                  return `${zone.label}: ${Math.round(z.density * 100)}%`;
+                }).join(" · ")}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </>
   );
@@ -3607,3 +3774,4 @@ function SettingsCenter() {
     </div>
   );
 }
+
