@@ -1987,11 +1987,25 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
 
 function HeatmapRight({ selected }: { selected: string | null }) {
   const [tick, setTick] = useState(0);
+  const [trendingHistory, setTrendingHistory] = useState<{ [key: string]: number[] }>({});
 
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 2000);
     return () => clearInterval(id);
   }, []);
+
+  // Track trending history pentru fiecare zonă
+  useEffect(() => {
+    const data = generateSyntheticDensity(tick);
+    setTrendingHistory(prev => {
+      const updated = { ...prev };
+      data.forEach(d => {
+        if (!updated[d.id]) updated[d.id] = [];
+        updated[d.id] = [...updated[d.id].slice(-9), d.density * 100]; // Keep last 10 values
+      });
+      return updated;
+    });
+  }, [tick]);
 
   // Generează date sintetice pentru zonele din centru
   const data = generateSyntheticDensity(tick);
@@ -2002,6 +2016,7 @@ function HeatmapRight({ selected }: { selected: string | null }) {
   
   const selectedData = selected ? data.find(d => d.id === selected) : null;
   const selectedZone = selected ? AIRPORT_ZONES.find(z => z.id === selected) : null;
+  const selectedHistory = selected ? (trendingHistory[selected] || []) : [];
 
   return (
     <>
@@ -2063,6 +2078,81 @@ function HeatmapRight({ selected }: { selected: string | null }) {
             {selectedData.density > 0.7 && (
               <p style={{ color:"var(--danger)", marginTop:8 }}>⚠ <strong>Alertă:</strong> Aglomerare ridicată. Se recomandă evitarea zonei sau planificarea unei alte rute.</p>
             )}
+          </div>
+
+          <div className="section-title" style={{ marginTop:16 }}>Trending</div>
+          {/* Grafic trending — mini chart cu linie */}
+          <div style={{ position:"relative", height:60, background:"var(--bg-hover)", borderRadius:6, padding:8, marginBottom:12 }}>
+            <svg viewBox="0 0 200 50" style={{ width:"100%", height:"100%" }} preserveAspectRatio="none">
+              {selectedHistory.length > 1 && (
+                <>
+                  {/* Grilă background */}
+                  <line x1="0" y1="25" x2="200" y2="25" stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,2" opacity="0.5" />
+                  
+                  {/* Linie trending */}
+                  <polyline
+                    points={selectedHistory.map((val, i) => `${(i / (selectedHistory.length - 1)) * 200},${50 - (val / 100) * 50}`).join(" ")}
+                    fill="none"
+                    stroke={zoneColor(selectedData.density)}
+                    strokeWidth="2"
+                  />
+                  
+                  {/* Punct curent */}
+                  <circle
+                    cx={200}
+                    cy={50 - (selectedHistory[selectedHistory.length - 1] / 100) * 50}
+                    r="2.5"
+                    fill={zoneColor(selectedData.density)}
+                  />
+                </>
+              )}
+              <text x="2" y="12" fontSize="9" fill="var(--text-muted)">100%</text>
+              <text x="2" y="48" fontSize="9" fill="var(--text-muted)">0%</text>
+            </svg>
+          </div>
+          <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"center" }}>Evoluția ultimelor 10 perioade</div>
+
+          {/* Capacitate vs Ocupare */}
+          <div className="section-title" style={{ marginTop:16 }}>Capacitate vs Ocupare</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+            {/* Capacitate */}
+            <div style={{ padding:10, background:"var(--bg-hover)", borderRadius:6 }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Capacitate Maximă</div>
+              <div style={{ fontSize:16, fontWeight:800, color:"var(--text-main)", marginBottom:6 }}>250</div>
+              <div style={{ height:6, background:"rgba(255,255,255,0.1)", borderRadius:3, overflow:"hidden" }}>
+                <div style={{ width:"100%", height:"100%", background:"var(--success)" }} />
+              </div>
+              <div style={{ fontSize:9, color:"var(--text-muted)", marginTop:4 }}>persoane</div>
+            </div>
+
+            {/* Ocupare Curentă */}
+            <div style={{ padding:10, background:"var(--bg-hover)", borderRadius:6 }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Ocupare Curentă</div>
+              <div style={{ fontSize:16, fontWeight:800, color:zoneColor(selectedData.density), marginBottom:6 }}>{selectedData.pax}</div>
+              <div style={{ height:6, background:"rgba(255,255,255,0.1)", borderRadius:3, overflow:"hidden" }}>
+                <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), transition:"width 0.8s" }} />
+              </div>
+              <div style={{ fontSize:9, color:"var(--text-muted)", marginTop:4 }}>{Math.round(selectedData.density * 100)}% ocupat</div>
+            </div>
+          </div>
+
+          {/* Peak Hours Analysis */}
+          <div className="section-title">Peak Hours & Statistici</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            {[
+              { label: "Pic de ocupare", value: `${Math.max(...selectedHistory.map(h => Math.round(h)))}%`, icon: "ti-arrow-up" },
+              { label: "Min de ocupare", value: `${Math.min(...selectedHistory.map(h => Math.round(h)))}%`, icon: "ti-arrow-down" },
+              { label: "Medie istoric", value: `${Math.round(selectedHistory.reduce((a, b) => a + b, 0) / selectedHistory.length)}%`, icon: "ti-chart-bar" },
+              { label: "Variabilitate", value: selectedHistory.length > 1 ? `${Math.round(Math.max(...selectedHistory) - Math.min(...selectedHistory))}%` : "—", icon: "ti-wave" },
+            ].map(stat => (
+              <div key={stat.label} style={{ padding:8, background:"var(--bg-hover)", borderRadius:6, textAlign:"center" }}>
+                <div style={{ fontSize:14, color:zoneColor(selectedData.density), marginBottom:2 }}>
+                  <i className={`ti ${stat.icon}`} style={{ marginRight:4 }} />
+                </div>
+                <div style={{ fontSize:11, fontWeight:600, marginBottom:2 }}>{stat.value}</div>
+                <div style={{ fontSize:9, color:"var(--text-muted)" }}>{stat.label}</div>
+              </div>
+            ))}
           </div>
         </>
       ) : (
