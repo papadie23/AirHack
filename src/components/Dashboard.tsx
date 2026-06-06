@@ -96,6 +96,7 @@ export default function Dashboard() {
 
   const handleLogin = (a: AuthState) => {
     setAuth(a);
+    if (a.role === "admin") { setFeature("weather"); }
     if (a.role === "passenger") {
       setActivePerson(a.personId);
       if (a.flightIata) {
@@ -141,13 +142,18 @@ export default function Dashboard() {
 }
 
 /* ═══════════════════════════ LEFT PANEL ═══════════════════════════ */
-const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
-  { id: "weather",    icon: "ti-cloud-storm",    label: "Vreme / METAR",    sub: "LRIA · Open-Meteo · NOAA"  },
-  { id: "route",      icon: "ti-route",           label: "My Route",         sub: "Device Location · Orange"  },
-  { id: "heatmap",    icon: "ti-map-2",           label: "Heatmap Terminal", sub: "Aglomerație zone"          },
-  { id: "video-flow", icon: "ti-video",           label: "Flow Optimization",sub: "CV + AI Dispatcher · IAS"  },
-  { id: "my-flight",  icon: "ti-plane-departure", label: "My Flight",         sub: "Live · AirLabs"            },
+const PASSENGER_NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
+  { id: "route",         icon: "ti-route",           label: "My Route",       sub: "Device Location · Orange"   },
+  { id: "my-flight",     icon: "ti-plane-departure", label: "My Flight",      sub: "Live · AirLabs"             },
+  { id: "announcements", icon: "ti-bell",            label: "Anunțuri",       sub: "De la personalul aeroportului" },
 ];
+const ADMIN_NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
+  { id: "weather",       icon: "ti-cloud-storm",    label: "Vreme LRIA",     sub: "METAR · Open-Meteo · NOAA"  },
+  { id: "heatmap",       icon: "ti-map-2",          label: "Heatmap",        sub: "Aglomerație zone terminal"   },
+  { id: "video-flow",    icon: "ti-video",          label: "Flow Optimization", sub: "CV + AI Dispatcher · IAS" },
+  { id: "admin",         icon: "ti-megaphone",      label: "Anunțuri Pasageri", sub: "Trimite notificări"       },
+];
+const NAV = PASSENGER_NAV; // fallback
 
 const USER_NAV = [
   { icon: "ti-user-circle",    label: "Contul meu"  },
@@ -169,7 +175,7 @@ function LeftPanel({
   role: "admin" | "passenger" | null;
 }) {
   const isPassenger = role === "passenger";
-  const visibleNav = isPassenger ? NAV.filter(n => n.id === "route" || n.id === "my-flight") : NAV;
+  const visibleNav = isPassenger ? PASSENGER_NAV : ADMIN_NAV;
 
   return (
     <>
@@ -342,19 +348,18 @@ function CenterPanel({
   const isPassenger = role === "passenger";
   return (
     <div className="card main-center">
-      {feature === "weather"          && !isPassenger && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
-      {feature === "route"            && <RouteCenter   onLog={onLog} activePerson={activePerson} />}
-      {feature === "heatmap"          && !isPassenger && <HeatmapCenter onLog={onLog} selected={heatmapSelected} setSelected={setHeatmapSelected} />}
-      {feature === "flow-prediction"  && <FlowPredictionCenter onLog={onLog} />}
-      {feature === "boarding-verify"  && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
-      {feature === "admin"            && activePerson === "you" && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
-      {feature === "admin"            && activePerson !== "you" && <AnnouncementsCenter announcements={announcements} />}
-      {feature === "announcements"    && <AnnouncementsCenter announcements={announcements} />}
-      {feature === "status-api"       && <StatusApiCenter />}
-      {feature === "account"          && <AccountCenter activePerson={activePerson} />}
-      {feature === "settings"         && <SettingsCenter />}
-      {feature === "my-flight"        && <MyFlightCenter onLog={onLog} myFlight={myFlight} />}
-      {feature === "video-flow"       && <TrafficFlowCenter onLog={onLog} />}
+      {feature === "weather"       && !isPassenger && <WeatherCenter onLog={onLog} provider={weatherProvider} />}
+      {feature === "route"          && <RouteCenter onLog={onLog} activePerson={activePerson} />}
+      {feature === "heatmap"        && !isPassenger && <HeatmapCenter onLog={onLog} selected={heatmapSelected} setSelected={setHeatmapSelected} />}
+      {feature === "flow-prediction" && !isPassenger && <FlowPredictionCenter onLog={onLog} />}
+      {feature === "video-flow"     && !isPassenger && <TrafficFlowCenter onLog={onLog} />}
+      {feature === "admin"          && !isPassenger && <AdminCenter onLog={onLog} setAnnouncements={setAnnouncements} />}
+      {feature === "announcements"  && <AnnouncementsCenter announcements={announcements} />}
+      {feature === "my-flight"      && <MyFlightCenter onLog={onLog} myFlight={myFlight} />}
+      {feature === "boarding-verify" && <BoardingVerifyCenter activePerson={activePerson} onLog={onLog} />}
+      {feature === "status-api"     && <StatusApiCenter />}
+      {feature === "account"        && <AccountCenter activePerson={activePerson} />}
+      {feature === "settings"       && <SettingsCenter />}
     </div>
   );
 }
