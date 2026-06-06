@@ -90,89 +90,123 @@ function LeftPanel({
   theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
   logs: { ts: string; msg: string; ok: boolean }[];
 }) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
-    <div className="card sidebar-left">
-      <div className="brand-header">
-        <div className="brand-icon"><i className="ti ti-wifi" /></div>
-        <div style={{ flex: 1 }}>
-          <div className="brand-title">AirFlow Nexus</div>
-          <div className="brand-sub">powered by Orange APIs</div>
+    <>
+      {/* ── Slide-in drawer backdrop ── */}
+      {drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          style={{
+            position:"fixed", inset:0, zIndex:200,
+            background:"rgba(0,0,0,0.5)", backdropFilter:"blur(2px)",
+          }}
+        />
+      )}
+
+      {/* ── Slide-in drawer panel ── */}
+      <div className={`side-drawer${drawerOpen ? " open" : ""}`}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+          <span style={{ fontSize:14, fontWeight:600 }}>Meniu</span>
+          <button className="btn-theme-toggle" onClick={() => setDrawerOpen(false)} title="Închide">
+            <i className="ti ti-x" />
+          </button>
         </div>
-        <button
-          className="btn-theme-toggle"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-        >
-          <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
-        </button>
-      </div>
 
-      <div className="section-title">Funcționalități</div>
-      <div className="api-list">
-        {NAV.map(n => (
-          <div key={n.id} className={`api-card${feature === n.id ? " active" : ""}`} onClick={() => setFeature(n.id)}>
-            <div className="api-card-header"><i className={`ti ${n.icon}`} /> {n.label}</div>
-            <div className="api-val">{n.sub}</div>
-            <div className="api-status">
-              <span className="dot green pulse-green" />
-              {feature === n.id ? "Activ acum" : "Disponibil"}
-            </div>
-          </div>
-        ))}
-
-        <div style={{ marginTop: 12 }}>
-          <div className="section-title">Status API Orange</div>
-        </div>
-        {[
-          { icon:"ti-map-pin", label:"Device Location", val:"342 dispozitive", dot:"green", pulse:true },
-          { icon:"ti-id-badge",label:"Number Verification", val:"12 verificări/oră", dot:"orange", pulse:false },
-          { icon:"ti-bolt",    label:"Quality on Demand", val:"2 sesiuni active", dot:"blue", pulse:false },
-        ].map(a => (
-          <div key={a.label} className="api-card">
-            <div className="api-card-header"><i className={`ti ${a.icon}`} /> {a.label}</div>
-            <div className="api-val">{a.val}</div>
-            <div className="api-status">
-              <span className={`dot ${a.dot}${a.pulse ? " pulse-green" : ""}`} />
-              Activ
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="alert-box" style={{ marginTop: 12 }}>
-        <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
-        <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
-      </div>
-
-      {/* ── User section ── */}
-      <div style={{ marginTop: 12 }}>
         <div className="section-title">Pasager</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:20 }}>
           {USER_NAV.map(n => (
-            <button key={n.label} className="btn-tab" style={{ justifyContent:"flex-start", flex:"unset", padding:"8px 10px" }}>
-              <i className={`ti ${n.icon}`} style={{ fontSize:16 }} />
+            <button
+              key={n.label}
+              className="btn-tab"
+              style={{ justifyContent:"flex-start", flex:"unset", padding:"10px 12px" }}
+              onClick={() => setDrawerOpen(false)}
+            >
+              <i className={`ti ${n.icon}`} style={{ fontSize:17 }} />
               {n.label}
             </button>
           ))}
         </div>
+
+        {logs.length > 0 && (
+          <>
+            <div className="section-title">Activitate recentă</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+              {logs.slice(0,8).map((l,i) => (
+                <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:7, fontSize:11, color:"var(--text-muted)" }}>
+                  <span style={{ width:6, height:6, borderRadius:"50%", marginTop:3, background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
+                  <span style={{ flexShrink:0 }}>{l.ts}</span>
+                  <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* ── Activity log ── */}
-      {logs.length > 0 && (
-        <div style={{ marginTop:12, borderTop:"1px solid var(--border-color)", paddingTop:10 }}>
-          <div className="section-title">Activitate</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {logs.slice(0,4).map((l,i) => (
-              <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, color:"var(--text-muted)" }}>
-                <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
-                <span style={{ flexShrink:0 }}>{l.ts}</span>
-                <span style={{ color:l.ok?"var(--text-main)":"var(--danger)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{l.msg}</span>
-              </div>
-            ))}
+      {/* ── Main left panel ── */}
+      <div className="card sidebar-left">
+        <div className="brand-header">
+          <button
+            className="btn-theme-toggle"
+            onClick={() => setDrawerOpen(true)}
+            title="Meniu"
+          >
+            <i className="ti ti-menu-2" />
+          </button>
+          <div className="brand-icon"><i className="ti ti-wifi" /></div>
+          <div style={{ flex: 1 }}>
+            <div className="brand-title">AirFlow Nexus</div>
+            <div className="brand-sub">powered by Orange APIs</div>
           </div>
+          <button
+            className="btn-theme-toggle"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
+          </button>
         </div>
-      )}
-    </div>
+
+        <div className="section-title">Funcționalități</div>
+        <div className="api-list">
+          {NAV.map(n => (
+            <div key={n.id} className={`api-card${feature === n.id ? " active" : ""}`} onClick={() => setFeature(n.id)}>
+              <div className="api-card-header"><i className={`ti ${n.icon}`} /> {n.label}</div>
+              <div className="api-val">{n.sub}</div>
+              <div className="api-status">
+                <span className="dot green pulse-green" />
+                {feature === n.id ? "Activ acum" : "Disponibil"}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: 12 }}>
+            <div className="section-title">Status API Orange</div>
+          </div>
+          {[
+            { icon:"ti-map-pin", label:"Device Location", val:"342 dispozitive", dot:"green", pulse:true },
+            { icon:"ti-id-badge",label:"Number Verification", val:"12 verificări/oră", dot:"orange", pulse:false },
+            { icon:"ti-bolt",    label:"Quality on Demand", val:"2 sesiuni active", dot:"blue", pulse:false },
+          ].map(a => (
+            <div key={a.label} className="api-card">
+              <div className="api-card-header"><i className={`ti ${a.icon}`} /> {a.label}</div>
+              <div className="api-val">{a.val}</div>
+              <div className="api-status">
+                <span className={`dot ${a.dot}${a.pulse ? " pulse-green" : ""}`} />
+                Activ
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="alert-box" style={{ marginTop: 12 }}>
+          <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
+          <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
+        </div>
+      </div>
+    </>
   );
 }
 
