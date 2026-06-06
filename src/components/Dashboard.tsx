@@ -1853,55 +1853,6 @@ const AIRPORT_COORDS: Record<string, { lat: number; lon: number; label: string }
   TSR: { lat: 45.809, lon: 21.338, label: "Timișoara" },
 };
 
-/* ─── Flight Route Map — Google Maps Static on mobile, SVG on desktop ─── */
-function FlightRouteMap({ dep, arr, progress }: {
-  dep: string; arr: string; progress: number | null;
-}) {
-  const [mapSrc, setMapSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    const from = AIRPORT_COORDS[dep];
-    const to   = AIRPORT_COORDS[arr];
-
-    const build = (mobile: boolean) => {
-      if (!mobile || !from || !to) { setMapSrc(null); return; }
-      // Key is injected server-side into window.__GOOGLE_MAPS_KEY__ by index.astro
-      const key = (window as unknown as Record<string, string>).__GOOGLE_MAPS_KEY__;
-      if (!key) { setMapSrc(null); return; }
-      // Static Maps API: no multi-char labels, plain named colors for markers
-      setMapSrc([
-        "https://maps.googleapis.com/maps/api/staticmap",
-        "?size=640x300&scale=2&maptype=terrain",
-        `&markers=color:green|size:mid|${from.lat},${from.lon}`,
-        `&markers=color:blue|size:mid|${to.lat},${to.lon}`,
-        `&path=geodesic:true|color:0xFF6600CC|weight:4|${from.lat},${from.lon}|${to.lat},${to.lon}`,
-        `&key=${key}`,
-      ].join(""));
-    };
-
-    const mq = window.matchMedia("(max-width: 900px)");
-    build(mq.matches);
-    const handler = (e: MediaQueryListEvent) => build(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [dep, arr]);
-
-  if (mapSrc) {
-    return (
-      <img
-        src={mapSrc}
-        alt={`Rută ${dep} → ${arr}`}
-        style={{
-          width: "100%", display: "block",
-          borderRadius: "var(--radius-md)",
-          border: "1px solid var(--border-color)",
-        }}
-      />
-    );
-  }
-
-  return <RouteMapSVG dep={dep} arr={arr} progress={progress} />;
-}
 
 /* ─── SVG Route Map ─── */
 function RouteMapSVG({ dep, arr, progress }: {
@@ -2090,7 +2041,7 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
           {/* SVG route map */}
           <div style={{ marginBottom:16 }}>
             <div className="section-title" style={{ marginBottom:8 }}>Traseul zborului</div>
-            <FlightRouteMap
+            <RouteMapSVG
               dep={detail.departure.iata}
               arr={detail.arrival.iata}
               progress={detail.progressPct}
