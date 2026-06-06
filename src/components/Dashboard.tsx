@@ -261,9 +261,6 @@ function LeftPanel({
 
       {/* ── Main left panel — desktop only (hidden on mobile via CSS) ── */}
       <div className="card sidebar-left">
-        <div className="brand-header">
-          <div className="brand-icon"><i className="ti ti-wifi" /></div>
-        </div>
 
         <div className="section-title">Funcționalități</div>
         <div className="api-list">
@@ -1097,7 +1094,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const person = PEOPLE.find(p => p.id === activePerson)!;
   const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
-  const pts = activePerson === "you" ? dynamicRoute : null;
+  const pts = dynamicRoute ?? (flight ? ROUTE_PX[flight.gate] ?? null : null);
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 

@@ -676,11 +676,16 @@ html, body {
   box-shadow: 0 2px 12px rgba(0,0,0,0.3);
 }
 
-/* Hamburger inside top bar — always visible */
+/* Hamburger inside top bar — mobile only */
 .top-bar-hamburger {
-  position: static !important;
-  flex-shrink: 0;
-  display: flex !important;
+  display: none;
+}
+@media (max-width: 900px) {
+  .top-bar-hamburger {
+    position: static !important;
+    flex-shrink: 0;
+    display: flex !important;
+  }
 }
 
 .top-bar-brand {
