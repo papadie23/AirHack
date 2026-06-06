@@ -1397,13 +1397,23 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             })}
 
             {/* Zone etape */}
-            {!calMode && ZONES.map(z => (
-              <g key={z.id}>
-                <rect x={z.x - z.w/2} y={z.y - z.h/2} width={z.w} height={z.h} rx="10"
-                  fill={`${z.color}22`} stroke={z.color} strokeWidth="1.5"/>
-                <text x={z.x} y={z.y + 5} textAnchor="middle" fill={z.color} fontSize="14" fontWeight="800" letterSpacing="0.3">{z.label}</text>
-              </g>
-            ))}
+            {!calMode && ZONES.map(z => {
+              const words = z.label.split(" ");
+              const lineH = 16;
+              const totalH = words.length * lineH;
+              const rot = isPortrait ? 90 : 0;
+              return (
+                <g key={z.id} transform={`rotate(${rot}, ${z.x}, ${z.y})`}>
+                  <rect x={z.x - z.w/2} y={z.y - z.h/2} width={z.w} height={z.h} rx="10"
+                    fill={`${z.color}22`} stroke={z.color} strokeWidth="1.5"/>
+                  <text textAnchor="middle" fill={z.color} fontSize="13" fontWeight="800">
+                    {words.map((w, i) => (
+                      <tspan key={i} x={z.x} dy={i === 0 ? z.y - totalH/2 + lineH * 0.8 : lineH}>{w}</tspan>
+                    ))}
+                  </text>
+                </g>
+              );
+            })}
 
             {/* Gate */}
             {!calMode && gatePos && (
