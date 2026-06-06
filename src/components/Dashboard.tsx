@@ -963,8 +963,10 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
-    // Pan map to keep active person centered
-    if (personId === activePerson) {
+    // Pan map to keep active person centered, only if inside SVG bounds
+    const SVG_W = 2262, SVG_H = 587;
+    const inBounds = svgPos.x >= 0 && svgPos.x <= SVG_W && svgPos.y >= 0 && svgPos.y <= SVG_H;
+    if (personId === activePerson && inBounds) {
       setMapPan(pan => {
         const containerEl = mapWrapRef.current;
         if (!containerEl) return pan;
