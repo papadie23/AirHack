@@ -350,8 +350,12 @@ html, body {
   color: var(--brand);
 }
 
-/* ── Side drawer ── */
+/* ── Side drawer + hamburger — mobile only ── */
+.hamburger-float {
+  display: none; /* hidden on desktop */
+}
 .side-drawer {
+  display: none; /* hidden on desktop */
   position: fixed;
   top: 0; left: 0;
   width: 280px;
@@ -381,7 +385,7 @@ html, body {
 ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
 /* ══════════════════════════════════════════════════
-   RESPONSIVE — Tablet ≤ 900px
+   RESPONSIVE — Tablet / Phone ≤ 900px
    ══════════════════════════════════════════════════ */
 @media (max-width: 900px) {
   html, body { overflow: auto; height: auto; }
@@ -390,15 +394,40 @@ html, body {
 
   .dashboard-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
 
-  /* Content-first order: center → right details → left nav last */
+  /* Hide desktop left panel — accessible via drawer instead */
+  .sidebar-left { display: none; }
+
+  /* Content-first order */
   .main-center   { order: 1; }
   .sidebar-right { order: 2; }
-  .sidebar-left  { order: 3; }
 
   .card { min-height: 0; }
 
   .info-grid { grid-template-columns: repeat(2, 1fr); }
   .weather-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Show drawer and floating hamburger on mobile */
+  .side-drawer { display: block; }
+
+  .hamburger-float {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 12px; left: 12px;
+    z-index: 199;
+    width: 40px; height: 40px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  /* Offset content so hamburger doesn't overlap top of cards */
+  #dashboard { padding-top: 60px; }
 }
 
 /* ══════════════════════════════════════════════════

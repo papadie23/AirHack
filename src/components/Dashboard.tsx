@@ -95,7 +95,7 @@ function LeftPanel({
 
   return (
     <>
-      {/* ── Slide-in drawer backdrop ── */}
+      {/* ── Mobile: backdrop + floating hamburger + drawer ── */}
       {drawerOpen && (
         <div
           onClick={() => setDrawerOpen(false)}
@@ -106,13 +106,37 @@ function LeftPanel({
         />
       )}
 
-      {/* ── Slide-in drawer panel ── */}
+      {/* Floating hamburger — mobile only (hidden on desktop via CSS) */}
+      <button
+        className="hamburger-float"
+        onClick={() => setDrawerOpen(true)}
+        title="Meniu"
+      >
+        <i className="ti ti-menu-2" />
+      </button>
+
+      {/* Drawer — mobile only (hidden on desktop via CSS) */}
       <div className={`side-drawer${drawerOpen ? " open" : ""}`}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
           <span style={{ fontSize:14, fontWeight:600 }}>Meniu</span>
           <button className="btn-theme-toggle" onClick={() => setDrawerOpen(false)} title="Închide">
             <i className="ti ti-x" />
           </button>
+        </div>
+
+        <div className="section-title">Navigare</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:20 }}>
+          {NAV.map(n => (
+            <button
+              key={n.id}
+              className={`btn-tab${feature === n.id ? " active" : ""}`}
+              style={{ justifyContent:"flex-start", flex:"unset", padding:"10px 12px" }}
+              onClick={() => { setFeature(n.id); setDrawerOpen(false); }}
+            >
+              <i className={`ti ${n.icon}`} style={{ fontSize:17 }} />
+              {n.label}
+            </button>
+          ))}
         </div>
 
         <div className="section-title">Pasager</div>
@@ -146,16 +170,9 @@ function LeftPanel({
         )}
       </div>
 
-      {/* ── Main left panel ── */}
+      {/* ── Main left panel — desktop only (hidden on mobile via CSS) ── */}
       <div className="card sidebar-left">
         <div className="brand-header">
-          <button
-            className="btn-theme-toggle"
-            onClick={() => setDrawerOpen(true)}
-            title="Meniu"
-          >
-            <i className="ti ti-menu-2" />
-          </button>
           <div className="brand-icon"><i className="ti ti-wifi" /></div>
           <div style={{ flex: 1 }}>
             <div className="brand-title">AirFlow Nexus</div>
