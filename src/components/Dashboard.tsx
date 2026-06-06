@@ -840,7 +840,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const person = PEOPLE.find(p => p.id === activePerson)!;
   const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
-  const pts = dynamicRoute ?? (flight ? ROUTE_SVG[flight.gate] : null);
+  const pts = activePerson === "you" ? dynamicRoute : null;
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
