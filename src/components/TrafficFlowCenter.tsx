@@ -173,34 +173,34 @@ function ZoneModal({ reading, onClose }: { reading: ZoneReading; onClose: () => 
               style={{ width: "100%", maxHeight: 420, objectFit: "contain", display: "block" }}
             />
           ) : (
-            <div style={{
-              height: 280, display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center", gap: 10,
-              color: "var(--text-muted)", fontSize: 13,
-            }}>
-              <i className="ti ti-video-off" style={{ fontSize: 36, color: "#555" }} />
-              <div>Stream server offline</div>
-              <div style={{ fontSize: 11, opacity: 0.6 }}>
-                Run: <code style={{ background: "#1a1a1a", padding: "2px 6px", borderRadius: 4 }}>python video_analytics/stream_server.py</code>
-              </div>
-            </div>
+            /* Fallback: raw MP4 served by Astro — no YOLO boxes but video plays */
+            <video
+              key={reading.zoneId}
+              src={`/api/video/${reading.zoneId}`}
+              autoPlay
+              loop
+              muted
+              playsInline
+              style={{ width: "100%", maxHeight: 420, objectFit: "contain", display: "block" }}
+            />
           )}
 
-          {/* Live badge */}
-          {streamOk && (
-            <div style={{
-              position: "absolute", top: 10, left: 10,
-              background: "rgba(0,0,0,0.65)", borderRadius: 20,
-              padding: "3px 10px", fontSize: 11, fontWeight: 600,
-              color: "#4ade80", display: "flex", alignItems: "center", gap: 5,
-            }}>
-              <span style={{
-                width: 7, height: 7, borderRadius: "50%", background: "#4ade80",
-                display: "inline-block", animation: "pulse-green 2s infinite",
-              }} />
-              LIVE · CV Detection
-            </div>
-          )}
+          {/* Live / Playback badge */}
+          <div style={{
+            position: "absolute", top: 10, left: 10,
+            background: "rgba(0,0,0,0.65)", borderRadius: 20,
+            padding: "3px 10px", fontSize: 11, fontWeight: 600,
+            color: streamOk ? "#4ade80" : "#FBBF24",
+            display: "flex", alignItems: "center", gap: 5,
+          }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: "50%",
+              background: streamOk ? "#4ade80" : "#FBBF24",
+              display: "inline-block",
+              animation: streamOk ? "pulse-green 2s infinite" : "none",
+            }} />
+            {streamOk ? "LIVE · CV Detection" : "Playback · no AI (start stream_server.py)"}
+          </div>
         </div>
 
         {/* Footer hint */}
