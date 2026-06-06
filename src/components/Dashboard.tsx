@@ -519,15 +519,19 @@ const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
   "T3": [{x:396,y:479},{x:396,y:391},{x:961,y:391},{x:1206,y:391},{x:1810,y:391},{x:1979,y:421}],
 };
 
+/* ── People config ── */
+interface Person { id: string; name: string; flightId: string; color: string }
+const PEOPLE: Person[] = [
+  { id: "you",    name: "You",    flightId: "1", color: "#38BDF8" },
+  { id: "misu",   name: "Misu",   flightId: "2", color: "#F97316" },
+  { id: "ionica", name: "Ionica", flightId: "3", color: "#A78BFA" },
+  { id: "dorel",  name: "Dorel",  flightId: "4", color: "#34D399" },
+];
+
 function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const [selFlight, setSelFlight] = useState<string|null>(null);
-  const [userPos, setUserPos] = useState<{x:number;y:number}>({x:396,y:479});
-  const [userGps, setUserGps] = useState<{lat:number;lng:number}|null>(null);
+  const [activePerson, setActivePerson] = useState<string>("you");
+  const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({ you:{x:396,y:479}, misu:{x:396,y:479}, ionica:{x:396,y:479}, dorel:{x:396,y:479} });
   const [locLoading, setLocLoading] = useState(false);
-  const gmapRef = useRef<HTMLDivElement>(null);
-  const gmapInstance = useRef<google.maps.Map|null>(null);
-  const markerRef = useRef<google.maps.Marker|null>(null);
-  const animRef = useRef<ReturnType<typeof setTimeout>|null>(null);
 
   // Calibration state
   const [calMode, setCalMode] = useState(false);
@@ -537,92 +541,54 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [gpsInput, setGpsInput] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Load saved calibration on mount
   useEffect(() => {
     const saved = loadCalibration();
     setCalPoints(saved.points);
     setCalTransform(saved.transform);
   }, []);
 
-  const flight = FLIGHTS.find(f => f.id === selFlight) ?? null;
+  const person = PEOPLE.find(p => p.id === activePerson)!;
+  const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
   const pts = flight ? ROUTE_SVG[flight.gate] : null;
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
-  // Animate user dot along SVG route
-  useEffect(() => {
-    if (animRef.current) clearTimeout(animRef.current);
-    if (!pts) { setUserPos({x:210,y:490}); return; }
-    let i = 0;
-    const step = () => {
-      if (i < pts.length) { setUserPos(pts[i]); i++; animRef.current = setTimeout(step, 500); }
-    };
-    setUserPos(pts[0]);
-    animRef.current = setTimeout(step, 400);
-    return () => { if (animRef.current) clearTimeout(animRef.current); };
-  }, [selFlight]);
-
-  // Init Google Maps hidden underneath — always on mount, for GPS accuracy
-  useEffect(() => {
-    const key = (window as any).__GOOGLE_MAPS_KEY__;
-    if (!key || !gmapRef.current) return;
-    if (gmapInstance.current) return;
-
-    import("@googlemaps/js-api-loader").then(({ Loader }) => {
-      const loader = new Loader({ apiKey: key, version: "weekly" });
-      loader.load().then(() => {
-        if (!gmapRef.current) return;
-        const map = new google.maps.Map(gmapRef.current, {
-          center: { lat: 47.1744, lng: 27.6193 },
-          zoom: 18,
-          mapTypeId: "satellite",
-          disableDefaultUI: true,
-          zoomControl: false,
-          tilt: 0,
-        });
-        gmapInstance.current = map;
-        markerRef.current = new google.maps.Marker({
-          map,
-          position: { lat: 47.1744, lng: 27.6193 },
-          title: "Tu ești aici",
-          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
-        });
-      }).catch(() => {});
-    }).catch(() => {});
-  }, []);
-
-  // Update marker when GPS changes
-  useEffect(() => {
-    if (!userGps || !markerRef.current) return;
-    markerRef.current.setPosition(userGps);
-    gmapInstance.current?.panTo(userGps);
-  }, [userGps]);
+  const placeOnMap = (lat: number, lng: number, personId: string) => {
+    if (calTransform) {
+      setPositions(prev => ({ ...prev, [personId]: svgFromGps(calTransform, lat, lng) }));
+    }
+  };
 
   const getLocation = async () => {
     setLocLoading(true);
     try {
-      const r = await fetch("/api/location", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ phoneNumber: "+99012345678" }),
-      });
-      const d = await r.json();
-      const lat = d.location?.latitude;
-      const lng = d.location?.longitude;
-      if (lat && lng) {
-        setUserGps({ lat, lng });
-        if (calTransform) {
-          const pos = svgFromGps(calTransform, lat, lng);
-          setUserPos(pos);
+      if (activePerson === "you") {
+        await new Promise<void>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            pos => {
+              placeOnMap(pos.coords.latitude, pos.coords.longitude, "you");
+              onLog(`GPS · ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
+              resolve();
+            },
+            err => { onLog(`Geolocation eroare: ${err.message}`, false); reject(); },
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        });
+      } else {
+        const r = await fetch("/api/location", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ person: activePerson }),
+        });
+        const d = await r.json();
+        const lat = d.location?.latitude, lng = d.location?.longitude;
+        if (lat && lng) {
+          placeOnMap(lat, lng, activePerson);
+          onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)}${d.fromFixture ? " (mock)" : ""}`);
         } else {
-          // Fallback: legacy pixel transform
-          const px = gpsToPixel({ lat, lng });
-          const svgX = (px.x / IMG_W) * 2262;
-          const svgY = (px.y / IMG_H) * 587;
-          setUserPos({ x: svgX, y: svgY });
+          onLog(`${person.name}: ${d.error ?? "fără locație"}`, false);
         }
-        onLog(`Orange Location · lat ${lat.toFixed(4)} lng ${lng.toFixed(4)}`);
       }
-    } catch { onLog("Eroare Orange Location API", false); }
+    } catch { onLog("Eroare locație", false); }
     finally { setLocLoading(false); }
   };
 
@@ -630,9 +596,8 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!calMode || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
-    const svgW = 2262, svgH = 587;
-    const svgX = ((e.clientX - rect.left) / rect.width) * svgW;
-    const svgY = ((e.clientY - rect.top) / rect.height) * svgH;
+    const svgX = ((e.clientX - rect.left) / rect.width) * 2262;
+    const svgY = ((e.clientY - rect.top) / rect.height) * 587;
     setPendingPin({ svgX, svgY });
     setGpsInput("");
   };
@@ -644,11 +609,9 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     const [lat, lng] = parts;
     const newPoints = [...calPoints, { svgX: pendingPin.svgX, svgY: pendingPin.svgY, lat, lng }];
     const newTransform = solveAffine(newPoints);
-    setCalPoints(newPoints);
-    setCalTransform(newTransform);
+    setCalPoints(newPoints); setCalTransform(newTransform);
     saveCalibration(newPoints, newTransform);
-    setPendingPin(null);
-    setGpsInput("");
+    setPendingPin(null); setGpsInput("");
     onLog(`Cal point ${newPoints.length}: (${pendingPin.svgX.toFixed(0)}, ${pendingPin.svgY.toFixed(0)}) → ${lat}, ${lng}`);
   };
 
@@ -657,120 +620,119 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     saveCalibration([], null);
   };
 
+  const userPos = positions[activePerson];
+
   return (
     <>
-      <div className="map-header">
-        <div>
-          <div className="map-title">My Route — Terminal T4 LRIA (Hartă Completă)</div>
-          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
-            {userGps ? `GPS: ${userGps.lat.toFixed(5)}, ${userGps.lng.toFixed(5)}` : "Locație neprimită încă"}
-            {calTransform && <span style={{ color:"var(--success)", marginLeft:8 }}>· calibrat ({calPoints.length} pt)</span>}
-          </div>
-        </div>
-        <div className="badges">
-          <button
-            onClick={() => { setCalMode(m => !m); setPendingPin(null); }}
-            style={{ background: calMode ? "rgba(255,102,0,0.2)" : "var(--bg-hover)", border:`1px solid ${calMode?"var(--brand)":"var(--border-color)"}`, borderRadius:"var(--radius-md)", color: calMode ? "var(--brand)" : "var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}
-          >
-            <i className="ti ti-ruler-measure"/> {calMode ? "Ieși calibrare" : "Calibrare"}
-          </button>
-          <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
-            <i className={`ti ti-navigation${locLoading?" spin":""}`}/> Orange Location
-          </button>
-        </div>
+      {/* ── Person selector ── */}
+      <div style={{ display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" }}>
+        {PEOPLE.map(p => {
+          const pFlight = FLIGHTS.find(f => f.id === p.flightId);
+          return (
+            <button key={p.id} onClick={() => setActivePerson(p.id)} style={{
+              padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12, fontWeight:600,
+              border:`1px solid ${activePerson===p.id ? p.color : "var(--border-color)"}`,
+              background: activePerson===p.id ? `${p.color}22` : "var(--bg-hover)",
+              color: activePerson===p.id ? p.color : "var(--text-muted)",
+              display:"flex", alignItems:"center", gap:6,
+            }}>
+              <span style={{ width:8, height:8, borderRadius:"50%", background:p.color, display:"inline-block" }}/>
+              {p.name}
+              {pFlight && <span style={{ fontWeight:400, opacity:0.7 }}>· {pFlight.flight}</span>}
+            </button>
+          );
+        })}
+        <button onClick={getLocation} disabled={locLoading} style={{
+          marginLeft:"auto", padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
+          border:"1px solid var(--border-color)", background:"var(--bg-hover)", color:"var(--text-muted)",
+          display:"flex", alignItems:"center", gap:6,
+        }}>
+          <i className={`ti ti-${activePerson==="you" ? "current-location" : "map-pin"}${locLoading?" spin":""}`}/>
+          {activePerson === "you" ? "Locația mea" : `Locație ${person.name}`}
+        </button>
+        <button onClick={() => { setCalMode(m => !m); setPendingPin(null); }} style={{
+          padding:"6px 10px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
+          border:`1px solid ${calMode?"var(--brand)":"var(--border-color)"}`,
+          background: calMode ? "rgba(255,102,0,0.2)" : "var(--bg-hover)",
+          color: calMode ? "var(--brand)" : "var(--text-muted)",
+        }}>
+          <i className="ti ti-ruler-measure"/>
+        </button>
       </div>
 
-      {/* Calibration instruction banner */}
+      {/* Calibration banner */}
       {calMode && (
-        <div style={{ margin:"6px 0", padding:"8px 12px", background:"rgba(255,102,0,0.1)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", fontSize:12, color:"var(--brand)", display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ margin:"0 0 6px", padding:"8px 12px", background:"rgba(255,102,0,0.1)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", fontSize:12, color:"var(--brand)", display:"flex", alignItems:"center", gap:10 }}>
           <i className="ti ti-info-circle" style={{ fontSize:16 }}/>
-          <span>Dă click pe hartă unde știi că ești → introdu coordonatele GPS. Minim 3 puncte pentru calibrare.</span>
+          <span>Click pe hartă → introdu GPS. Minim 3 puncte.</span>
           {calPoints.length >= 3 && (
             <button onClick={async () => {
               const r = await fetch("/api/save-calibration", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ points: calPoints }) });
               const d = await r.json();
-              onLog(d.ok ? `✓ ${calPoints.length} puncte hardcodate în cod` : `Eroare: ${d.error}`, d.ok);
+              onLog(d.ok ? `✓ ${calPoints.length} puncte salvate în cod` : `Eroare: ${d.error}`, d.ok);
             }} style={{ background:"var(--brand)", border:"none", borderRadius:4, color:"#fff", padding:"2px 10px", cursor:"pointer", fontSize:11 }}>
               Salvează în cod
             </button>
           )}
-          <button onClick={clearCalibration} style={{ marginLeft: calPoints.length >= 3 ? 0 : "auto", background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"2px 8px", cursor:"pointer", fontSize:11 }}>Resetează</button>
+          <button onClick={clearCalibration} style={{ marginLeft:"auto", background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"2px 8px", cursor:"pointer", fontSize:11 }}>Resetează</button>
         </div>
       )}
 
-      {/* GPS input popover when pin is pending */}
       {calMode && pendingPin && (
-        <div style={{ margin:"4px 0", padding:"8px 12px", background:"var(--bg-card)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:8 }}>
-          <i className="ti ti-map-pin" style={{ color:"var(--brand)", fontSize:16 }}/>
+        <div style={{ margin:"0 0 6px", padding:"8px 12px", background:"var(--bg-card)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:12, color:"var(--text-muted)", whiteSpace:"nowrap" }}>SVG ({pendingPin.svgX.toFixed(0)}, {pendingPin.svgY.toFixed(0)})</span>
-          <input
-            autoFocus
-            placeholder="lat, lng  (ex: 47.17440, 27.61933)"
-            value={gpsInput}
-            onChange={e => setGpsInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && confirmCalPoint()}
-            style={{ flex:1, background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-main)", padding:"4px 8px", fontSize:12, outline:"none" }}
-          />
+          <input autoFocus placeholder="lat, lng" value={gpsInput} onChange={e => setGpsInput(e.target.value)} onKeyDown={e => e.key==="Enter" && confirmCalPoint()}
+            style={{ flex:1, background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-main)", padding:"4px 8px", fontSize:12, outline:"none" }} />
           <button onClick={confirmCalPoint} style={{ background:"var(--brand)", border:"none", borderRadius:4, color:"#fff", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>OK</button>
           <button onClick={() => setPendingPin(null)} style={{ background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"4px 8px", cursor:"pointer", fontSize:12 }}>✕</button>
         </div>
       )}
 
-      {/* ── Three-layer map stack ── */}
+      {/* Map */}
       <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:`1px solid ${calMode?"var(--brand)":"var(--border-color)"}`, cursor: calMode ? "crosshair" : "default" }}>
-
-        {/* Layer 0: Google Maps — hidden, GPS tracking only */}
-        <div ref={gmapRef} style={{ position:"absolute", inset:0, opacity:0, pointerEvents:"none", zIndex:0 }} />
-
-        {/* Layer 1: SVG floor plan — only visible map */}
-        <img
-          src="/harta_completa.svg"
-          alt="Hartă completă T4 LRIA"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", objectPosition:"center", display:"block", zIndex:1 }}
-        />
-
-        {/* Layer 2: Interactive overlay */}
-        <svg
-          ref={svgRef}
-          viewBox="0 0 2262 587"
-          preserveAspectRatio="xMidYMid meet"
-          onClick={handleSvgClick}
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode ? "all" : "none", zIndex:2 }}
-        >
+        <img src="/harta_completa.svg" alt="Hartă T4 LRIA" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
+        <svg ref={svgRef} viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet" onClick={handleSvgClick}
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode ? "all" : "none", zIndex:2 }}>
           <defs>
             <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
 
-          {/* Ruta animată */}
+          {/* Route for active person */}
           {!calMode && pts && (
-            <polyline
-              points={polyline}
-              fill="none" stroke="#38BDF8" strokeWidth="4"
+            <polyline points={polyline} fill="none" stroke={person.color} strokeWidth="4"
               strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
-              style={{ animation:"moveDash 1.5s linear infinite", filter:"drop-shadow(0 0 6px rgba(56,189,248,0.8))" }}
-            />
+              style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
           )}
 
-          {/* Gate destination */}
+          {/* Gate */}
           {!calMode && gatePos && (
             <g filter="url(#glow2)">
               <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
               <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
-              <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">
-                {flight ? GATE_LABELS[flight.gate] : ""}
-              </text>
+              <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">{GATE_LABELS[flight?.gate ?? ""]}</text>
             </g>
           )}
 
-          {/* Saved calibration points */}
+          {/* All person dots */}
+          {!calMode && PEOPLE.map(p => {
+            const pos = positions[p.id];
+            return (
+              <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
+                <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
+                <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?7:5} fill={p.color}/>
+                <circle cx={pos.x} cy={pos.y} r="2" fill="#fff"/>
+                <text x={pos.x} y={pos.y+20} textAnchor="middle" fill={p.color} fontSize="10" fontWeight="600">{p.name}</text>
+              </g>
+            );
+          })}
+
+          {/* Calibration points */}
           {calMode && calPoints.map((p, i) => (
             <g key={i}>
               <circle cx={p.svgX} cy={p.svgY} r="7" fill="#ff6600" stroke="#fff" strokeWidth="1.5"/>
               <text x={p.svgX+10} y={p.svgY+4} fill="#ff6600" fontSize="10">{i+1}</text>
             </g>
           ))}
-
-          {/* Pending pin */}
           {calMode && pendingPin && (
             <g>
               <line x1={pendingPin.svgX} y1={pendingPin.svgY-14} x2={pendingPin.svgX} y2={pendingPin.svgY+14} stroke="#ff6600" strokeWidth="2"/>
@@ -778,33 +740,20 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
               <circle cx={pendingPin.svgX} cy={pendingPin.svgY} r="5" fill="none" stroke="#ff6600" strokeWidth="2"/>
             </g>
           )}
-
-          {/* User dot */}
-          {!calMode && (
-            <g filter="url(#glow2)">
-              <circle cx={userPos.x} cy={userPos.y} r="14" fill="none" stroke="#38BDF8" strokeWidth="2" opacity="0.5" style={{animation:"pulse 2s infinite"}}/>
-              <circle cx={userPos.x} cy={userPos.y} r="7" fill="#38BDF8"/>
-              <circle cx={userPos.x} cy={userPos.y} r="3" fill="#fff"/>
-            </g>
-          )}
-          {!calMode && <text x={userPos.x} y={userPos.y+26} fill="#E0F2FE" fontSize="11" textAnchor="middle">Tu ești aici</text>}
         </svg>
-
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
           @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
         `}</style>
       </div>
 
-      {/* Info strip */}
-      {!calMode && flight && (
-        <div className="fade-in" style={{ marginTop:10, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid var(--brand)`, background:"rgba(255,102,0,0.1)", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
-          <i className="ti ti-plane" style={{color:"var(--brand)",fontSize:20}}/>
+      {/* Flight info strip */}
+      {flight && (
+        <div style={{ marginTop:8, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid ${person.color}44`, background:`${person.color}11`, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <i className="ti ti-plane" style={{color:person.color,fontSize:20}}/>
           <div style={{flex:1}}>
-            <div style={{fontWeight:600,fontSize:14}}>{flight.flight} → {flight.dest}</div>
-            <div style={{fontSize:12,color:"var(--text-muted)"}}>
-              {GATE_LABELS[flight.gate]} · Decolare {flight.departs} · Urci la etaj după securitate
-            </div>
+            <div style={{fontWeight:600,fontSize:14,color:person.color}}>{person.name} · {flight.flight} → {flight.dest}</div>
+            <div style={{fontSize:12,color:"var(--text-muted)"}}>{GATE_LABELS[flight.gate]} · Decolare {flight.departs}</div>
           </div>
         </div>
       )}
