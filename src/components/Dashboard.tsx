@@ -907,19 +907,37 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     return () => clearInterval(t);
   }, []);
 
-  // Map celule direct pe pozițiile SVG cunoscute (nu depinde de calibrare)
-  const SVG_ZONE_MAP = [SVG_SECURITY, SVG_GATE];
+  // Map GPS → SVG folosind cele 2 puncte ancorate (Security și Gate)
+  // Interpolare liniară pe axa lng → x, lat → y
+  const GPS_ANCHOR = [
+    { lat: 47.17439, lng: 27.61903, svgX: 852,  svgY: 349 },
+    { lat: 47.17406, lng: 27.61970, svgX: 2244, svgY: 256 },
+  ];
+  const dLng = GPS_ANCHOR[1].lng - GPS_ANCHOR[0].lng;
+  const dLat = GPS_ANCHOR[1].lat - GPS_ANCHOR[0].lat;
+  const dX   = GPS_ANCHOR[1].svgX - GPS_ANCHOR[0].svgX;
+  const dY   = GPS_ANCHOR[1].svgY - GPS_ANCHOR[0].svgY;
+
+  function gpsToSvg(lat: number, lng: number) {
+    const tLng = (lng - GPS_ANCHOR[0].lng) / dLng;
+    const tLat = (lat - GPS_ANCHOR[0].lat) / dLat;
+    return {
+      x: GPS_ANCHOR[0].svgX + tLng * dX + (tLat - tLng) * 200,
+      y: GPS_ANCHOR[0].svgY + tLng * dY + (tLat - tLng) * (-120),
+    };
+  }
+
   const maxDensity = Math.max(...densityData.map(c => c.pplDensity ?? 0), 1);
 
   const circles = densityData
     .filter(c => c.pplDensity)
-    .map((c, i) => {
-      const pos = SVG_ZONE_MAP[i] ?? SVG_ZONE_MAP[0];
+    .map(c => {
+      const { lat, lng } = decodeGeohash(c.geohash);
+      const pos = gpsToSvg(lat, lng);
       const intensity = (c.pplDensity ?? 0) / maxDensity;
-      const r = 40 + intensity * 80;
+      const r = 20 + intensity * 65;
       const color = intensity > 0.7 ? "#EF5350" : intensity > 0.35 ? "#FFA726" : "#66BB6A";
-      const label = i === 0 ? "Security Check" : "Boarding Gate";
-      return { ...pos, r, color, intensity, density: c.pplDensity ?? 0, label };
+      return { ...pos, r, color, intensity, density: c.pplDensity ?? 0 };
     });
 
   return (
@@ -954,9 +972,7 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           {circles.map((c, i) => (
             <g key={i}>
               <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
-              <circle cx={c.x} cy={c.y} r={10} fill={c.color} opacity="0.95"/>
-              <text x={c.x} y={c.y + c.r + 16} textAnchor="middle" fill={c.color} fontSize="13" fontWeight="700">{c.label}</text>
-              <text x={c.x} y={c.y + c.r + 30} textAnchor="middle" fill={c.color} fontSize="11" opacity="0.85">{c.density} pax/km²</text>
+              <circle cx={c.x} cy={c.y} r={6} fill={c.color} opacity="0.9"/>
             </g>
           ))}
         </svg>
