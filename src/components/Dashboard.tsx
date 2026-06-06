@@ -721,59 +721,28 @@ const GATE_SVG: Record<string, { x: number; y: number }> = {
   "4": SVG_GATE, "5": SVG_GATE, "6": SVG_GATE, "T3": SVG_GATE,
 };
 
-// Obstacole din pixel log (SVG coords) — fiecare e un dreptunghi cx±r, cy±r
-const OBSTACLES: { x: number; y: number; r: number }[] = [
-  { x: 306,  y: 365, r: 30 },
-  { x: 397,  y: 373, r: 30 },
-  { x: 468,  y: 373, r: 30 },
-  { x: 566,  y: 374, r: 30 },
-  { x: 1518, y: 300, r: 30 },
-  { x: 1516, y: 321, r: 30 },
-  { x: 1520, y: 344, r: 30 },
+// Zone etape pasager — ordonate pe traseul din terminal
+interface Zone { id: string; label: string; x: number; y: number; color: string; w: number; h: number }
+const ZONES: Zone[] = [
+  { id: "checkin",              label: "Check-in",              x: 108,  y: 407, color: "#38BDF8", w: 160, h: 90 },
+  { id: "control-securitate",   label: "Control Securitate",    x: 417,  y: 252, color: "#F97316", w: 180, h: 90 },
+  { id: "verificare-documente", label: "Verificare Documente",  x: 793,  y: 323, color: "#A78BFA", w: 180, h: 90 },
+  { id: "sosire-poarta",        label: "Sosire la Poartă",      x: 1435, y: 265, color: "#34D399", w: 170, h: 90 },
+  { id: "imbarcare",            label: "Îmbarcare",             x: 1800, y: 265, color: "#FBBF24", w: 150, h: 90 },
+  { id: "in-avion",             label: "La bord",               x: 2150, y: 265, color: "#F472B6", w: 140, h: 90 },
 ];
 
-// Punct de referință traseu (waypoint calibrat manual)
-const SVG_WAYPOINT = { x: 1550, y: 272 };
+// Waypoints traseu = centrele zonelor calibrate + gate final
+const ZONE_WAYPOINTS = ZONES.map(z => ({ x: z.x, y: z.y }));
 
-// Traseu nou — waypoints calibrate care ocolesc obstacolele din dreapta
-const SVG_WAYPOINTS_NEW = [
-  { x: 1454, y: 313 },
-  { x: 1435, y: 265 },
-];
-
-// Generează rută ortogonală (L-shape segmente) între două puncte, ocolind obstacole
-// Strategia: mers pe coridor Y comun (detour_y) ales să evite zona obstacolelor
+// Ortogonal L-shape între două puncte
 function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:number;y:number}[] {
-  // Detectează dacă segmentul orizontal la y=detourY intersectează vreun obstacol
-  const blocked = (y: number, x1: number, x2: number) => {
-    const xMin = Math.min(x1, x2), xMax = Math.max(x1, x2);
-    return OBSTACLES.some(o => Math.abs(o.y - y) < o.r && o.x + o.r > xMin && o.x - o.r < xMax);
-  };
-
-  // Încearcă coridor direct (from.y → to.x)
-  if (!blocked(from.y, from.x, to.x) && !blocked(to.y, from.x, to.x)) {
-    // L-shape simplu: merge orizontal la from.y, apoi vertical
-    return [from, { x: to.x, y: from.y }, to];
-  }
-
-  // Găsește un y de detour deasupra sau dedesubtul obstacolelor
-  const obsTop    = Math.min(...OBSTACLES.map(o => o.y - o.r)) - 20;
-  const obsBottom = Math.max(...OBSTACLES.map(o => o.y + o.r)) + 20;
-
-  // Alege detour-ul mai aproape de from.y
-  const detourY = Math.abs(obsTop - from.y) < Math.abs(obsBottom - from.y) ? obsTop : obsBottom;
-
-  return [
-    from,
-    { x: from.x, y: detourY },   // coboară/urcă vertical
-    { x: to.x,   y: detourY },   // merge orizontal pe culoarul liber
-    to,                           // ajunge la destinație
-  ];
+  return [from, { x: to.x, y: from.y }, to];
 }
 
 function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
-  const waypoints = [s, SVG_SECURITY, SVG_WAYPOINTS_NEW[0], SVG_WAYPOINTS_NEW[1], SVG_GATE];
+  const waypoints = [s, ...ZONE_WAYPOINTS];
   const result: {x:number;y:number}[] = [waypoints[0]];
   for (let i = 1; i < waypoints.length; i++) {
     const segs = makeOrthoRoute(waypoints[i-1], waypoints[i]);
@@ -817,6 +786,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     dorel:  SVG_STARTS.dorel,
   });
   const [locLoading, setLocLoading] = useState(false);
+  const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
   const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
   const [pixelEntries, setPixelEntries] = useState<{x:number;y:number;label:string}[]>([]);
@@ -836,6 +806,18 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
+
+  // Portrait mode detection for map rotation
+  const [isPortrait, setIsPortrait] = useState(
+    typeof window !== "undefined" && window.innerWidth < 900 && window.innerHeight > window.innerWidth
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
+    const handler = (e: MediaQueryListEvent) => setIsPortrait(e.matches);
+    mq.addEventListener("change", handler);
+    setIsPortrait(mq.matches);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   // Dead-zone: only update position if moved > DEAD_ZONE_M metres
   const lastGps = useRef<Record<string, {lat:number;lng:number}>>({});
@@ -890,6 +872,27 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const [dynamicRoute, setDynamicRoute] = useState<{x:number;y:number}[]|null>(null);
 
+  // ── Boarding task state machine ──
+  type BoardingPhase = "idle"|"confirming"|"awaiting-location"|"task"|"done";
+  const [boardingPhase, setBoardingPhase] = useState<BoardingPhase>("confirming");
+  const [taskIdx, setTaskIdx] = useState(0);
+  const TASKS = ZONES.map(z => ({ zone: z, label: z.label }));
+
+  const advanceTask = () => {
+    const next = taskIdx + 1;
+    if (next >= TASKS.length) { setBoardingPhase("done"); }
+    else { setTaskIdx(next); setBoardingPhase("task"); setDynamicRoute(null); }
+  };
+
+  const goToZone = () => {
+    const zone = TASKS[taskIdx]?.zone;
+    if (!zone || !positions[activePerson]) return;
+    const from = positions[activePerson];
+    const to = { x: zone.x, y: zone.y };
+    const segs = makeOrthoRoute(from, to);
+    setDynamicRoute(segs);
+  };
+
   // Reset dynamic route when the active person changes
   const prevActivePerson = useRef(activePerson);
   if (prevActivePerson.current !== activePerson) {
@@ -899,7 +902,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const person = PEOPLE.find(p => p.id === activePerson)!;
   const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
-  const pts = dynamicRoute ?? (flight ? ROUTE_SVG[flight.gate] : null);
+  const pts = activePerson === "you" ? dynamicRoute : null;
   const gatePos = flight ? GATE_SVG[flight.gate] : null;
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
@@ -910,10 +913,32 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
-    // Dynamic route: from current GPS position → existing waypoints → gate
-    const baseRoute = makeRoute(personId);
-    const route = [svgPos, ...baseRoute.slice(1)];
-    setDynamicRoute(route);
+    if (personId !== "you") return;
+    // Zone proximity check — auto-advance task when entering active zone
+    // We compare SVG distance (approx 1 SVG unit ≈ 0.04m at LRIA scale)
+    setBoardingPhase(phase => {
+      if (phase !== "task") return phase;
+      return phase; // handled below via setState callback trick
+    });
+    setTaskIdx(idx => {
+      const zone = ZONES[idx];
+      if (!zone) return idx;
+      const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
+      if (dist < Math.max(zone.w, zone.h) * 0.6) {
+        // entered zone — clear route, advance after short delay
+        setTimeout(() => {
+          setDynamicRoute(null);
+          setBoardingPhase(p => p === "task" ? "task" : p);
+          setTaskIdx(i => {
+            const next = i + 1;
+            if (next >= ZONES.length) { setBoardingPhase("done"); return i; }
+            setBoardingPhase("task");
+            return next;
+          });
+        }, 800);
+      }
+      return idx;
+    });
   };
 
   // Auto-trigger permission prompt on mount for any logged-in user
@@ -930,24 +955,21 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   }, []);
 
   const getLocation = () => {
-    if (!navigator.geolocation) {
-      onLog("Geolocația nu e suportată de acest browser", false);
-      return;
-    }
+    if (!navigator.geolocation) { onLog("Geolocation indisponibil", false); return; }
+    // Stop any existing watch
+    if (watchIdRef.current !== null) { navigator.geolocation.clearWatch(watchIdRef.current); }
     setLocLoading(true);
-    navigator.geolocation.getCurrentPosition(
+    watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         placeOnMap(lat, lng, activePerson);
-        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} (acuratețe ${pos.coords.accuracy.toFixed(0)}m)`);
+        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${pos.coords.accuracy.toFixed(0)}m`);
+        setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
         setLocLoading(false);
       },
-      (err) => {
-        onLog(`Eroare locație: ${err.message}`, false);
-        setLocLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
     );
   };
 
@@ -1083,7 +1105,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
           position: "absolute", inset: 0,
-          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
           transformOrigin: "center center",
         }}>
           <img src="/harta_completa.svg" alt="Hartă T4 LRIA" draggable={false}
@@ -1110,19 +1132,21 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
             </defs>
 
-            {/* Route for active person */}
-            {!calMode && pts && (
-              <polyline points={polyline} fill="none" stroke={person.color} strokeWidth="4"
-                strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
-                style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
-            )}
+            {/* Route segments colored per zone */}
+            {!calMode && pts && pts.slice(1).map((pt, i) => {
+              const color = ZONES[Math.min(i, ZONES.length-1)]?.color ?? person.color;
+              const from = pts[i];
+              return <line key={i} x1={from.x} y1={from.y} x2={pt.x} y2={pt.y}
+                stroke={color} strokeWidth="4" strokeDasharray="12 8" strokeLinecap="round"
+                style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 5px ${color}88)` }}/>;
+            })}
 
-            {/* Obstacole */}
-            {!calMode && OBSTACLES.map((o, i) => (
-              <g key={i}>
-                <rect x={o.x-o.r} y={o.y-o.r} width={o.r*2} height={o.r*2} rx="6"
-                  fill="rgba(239,68,68,0.15)" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4 2"/>
-                <text x={o.x} y={o.y+4} textAnchor="middle" fill="#EF4444" fontSize="10" fontWeight="700">⚠</text>
+            {/* Zone etape */}
+            {!calMode && ZONES.map(z => (
+              <g key={z.id}>
+                <rect x={z.x - z.w/2} y={z.y - z.h/2} width={z.w} height={z.h} rx="10"
+                  fill={`${z.color}22`} stroke={z.color} strokeWidth="1.5"/>
+                <text x={z.x} y={z.y + 5} textAnchor="middle" fill={z.color} fontSize="14" fontWeight="800" letterSpacing="0.3">{z.label}</text>
               </g>
             ))}
 
@@ -1218,6 +1242,61 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             <div style={{fontWeight:600,fontSize:14,color:person.color}}>{flight.flight} → {flight.dest}</div>
             <div style={{fontSize:12,color:"var(--text-muted)"}}>{GATE_LABELS[flight.gate]} · Decolare {flight.departs}</div>
           </div>
+        </div>
+      )}
+
+      {/* ── Boarding task overlay ── */}
+      {boardingPhase === "confirming" && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:16, padding:"28px 32px", maxWidth:340, width:"90%", textAlign:"center" }}>
+            <div style={{ fontSize:28, marginBottom:12 }}>✈️</div>
+            <div style={{ fontSize:18, fontWeight:700, marginBottom:8 }}>Începeți procesul de îmbarcare?</div>
+            <div style={{ fontSize:13, color:"var(--text-muted)", marginBottom:24 }}>Vă vom ghida pas cu pas până la avion.</div>
+            <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
+              <button onClick={() => setBoardingPhase("awaiting-location")}
+                style={{ flex:1, padding:"10px 0", background:"var(--brand)", border:"none", borderRadius:8, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Da</button>
+              <button onClick={() => setBoardingPhase("idle")}
+                style={{ flex:1, padding:"10px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:8, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>Nu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "awaiting-location" && (
+        <div style={{ marginTop:8, padding:"14px 16px", background:"rgba(56,189,248,0.1)", border:"1px solid #38BDF8", borderRadius:12, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <i className="ti ti-map-pin" style={{ color:"#38BDF8", fontSize:22, flexShrink:0 }}/>
+          <div>
+            <div style={{ fontWeight:700, fontSize:14, color:"#38BDF8" }}>Activați localizarea</div>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>Apăsați butonul <b>Localizează</b> pentru a continua ghidarea.</div>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "task" && TASKS[taskIdx] && (
+        <div style={{ marginTop:8, padding:"14px 16px", background:`${TASKS[taskIdx].zone.color}18`, border:`1px solid ${TASKS[taskIdx].zone.color}`, borderRadius:12, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+            <span style={{ background:TASKS[taskIdx].zone.color, color:"#000", fontWeight:800, fontSize:12, borderRadius:20, padding:"2px 10px" }}>
+              {taskIdx + 1} / {TASKS.length}
+            </span>
+            <span style={{ fontWeight:700, fontSize:15, color:TASKS[taskIdx].zone.color }}>{TASKS[taskIdx].label}</span>
+          </div>
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={advanceTask}
+              style={{ flex:1, padding:"9px 0", background:TASKS[taskIdx].zone.color, border:"none", borderRadius:8, color:"#000", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+              ✓ Am făcut
+            </button>
+            <button onClick={goToZone}
+              style={{ flex:1, padding:"9px 0", background:"var(--bg-hover)", border:`1px solid ${TASKS[taskIdx].zone.color}`, borderRadius:8, color:TASKS[taskIdx].zone.color, fontWeight:600, fontSize:13, cursor:"pointer" }}>
+              ➜ Mergi spre {TASKS[taskIdx].label}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {boardingPhase === "done" && (
+        <div style={{ marginTop:8, padding:"14px 16px", background:"rgba(52,211,153,0.15)", border:"1px solid #34D399", borderRadius:12, textAlign:"center", flexShrink:0 }}>
+          <div style={{ fontSize:22 }}>🎉</div>
+          <div style={{ fontWeight:700, fontSize:15, color:"#34D399", marginTop:4 }}>Îmbarcare completă! Zbor plăcut!</div>
         </div>
       )}
     </>
