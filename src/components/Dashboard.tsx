@@ -561,6 +561,10 @@ const PEOPLE: Person[] = [
 function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>void; activePerson: string }) {
   const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({ you:{x:396,y:479}, misu:{x:396,y:479}, ionica:{x:396,y:479}, dorel:{x:396,y:479} });
   const [locLoading, setLocLoading] = useState(false);
+  const [pixelLog, setPixelLog] = useState(false);
+  const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
+  const [pixelEntries, setPixelEntries] = useState<{x:number;y:number;label:string}[]>([]);
+  const [pixelLabel, setPixelLabel] = useState("");
 
   // Calibration state
   const [calMode, setCalMode] = useState(false);
@@ -661,6 +665,14 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         }}>
           <i className="ti ti-ruler-measure"/>
         </button>
+        <button onClick={() => { setPixelLog(m => !m); }} style={{
+          padding:"6px 10px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
+          border:`1px solid ${pixelLog?"#F59E0B":"var(--border-color)"}`,
+          background: pixelLog ? "rgba(245,158,11,0.15)" : "var(--bg-hover)",
+          color: pixelLog ? "#F59E0B" : "var(--text-muted)",
+        }} title="Pixel Logger">
+          <i className="ti ti-crosshair"/>
+        </button>
       </div>
 
       {/* Calibration banner */}
@@ -692,10 +704,33 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       )}
 
       {/* Map */}
-      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:`1px solid ${calMode?"var(--brand)":"var(--border-color)"}`, cursor: calMode ? "crosshair" : "default" }}>
+      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:`1px solid ${calMode?"var(--brand)":pixelLog?"#F59E0B":"var(--border-color)"}`, cursor: calMode||pixelLog ? "crosshair" : "default" }}>
         <img src="/harta_completa.svg" alt="Hartă T4 LRIA" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
-        <svg ref={svgRef} viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet" onClick={handleSvgClick}
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode ? "all" : "none", zIndex:2 }}>
+
+        {/* Pixel logger input popover */}
+        {pixelLog && hoverPos && (
+          <div style={{ position:"absolute", top:8, left:8, zIndex:10, background:"rgba(11,17,32,0.92)", border:"1px solid #F59E0B", borderRadius:6, padding:"6px 10px", fontSize:12, color:"#F59E0B", pointerEvents:"none" }}>
+            x: <b>{hoverPos.x.toFixed(0)}</b> · y: <b>{hoverPos.y.toFixed(0)}</b>
+          </div>
+        )}
+
+        <svg ref={svgRef} viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
+          onClick={e => {
+            if (pixelLog && svgRef.current) {
+              const rect = svgRef.current.getBoundingClientRect();
+              const x = ((e.clientX-rect.left)/rect.width)*2262;
+              const y = ((e.clientY-rect.top)/rect.height)*587;
+              const label = window.prompt(`SVG (${x.toFixed(0)}, ${y.toFixed(0)}) — ce este acest punct?`) ?? "";
+              if (label) setPixelEntries(prev => [...prev, {x, y, label}]);
+            } else { handleSvgClick(e); }
+          }}
+          onMouseMove={e => {
+            if (!pixelLog || !svgRef.current) { setHoverPos(null); return; }
+            const rect = svgRef.current.getBoundingClientRect();
+            setHoverPos({ x:((e.clientX-rect.left)/rect.width)*2262, y:((e.clientY-rect.top)/rect.height)*587 });
+          }}
+          onMouseLeave={() => setHoverPos(null)}
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode||pixelLog ? "all" : "none", zIndex:2 }}>
           <defs>
             <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
@@ -749,6 +784,25 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
         `}</style>
       </div>
+
+      {/* Pixel log panel */}
+      {pixelLog && pixelEntries.length > 0 && (
+        <div style={{ marginTop:8, padding:"8px 12px", background:"rgba(245,158,11,0.08)", border:"1px solid #F59E0B44", borderRadius:"var(--radius-md)", fontSize:11, flexShrink:0 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+            <span style={{ color:"#F59E0B", fontWeight:600 }}>Pixel Log</span>
+            <button onClick={() => { navigator.clipboard.writeText(pixelEntries.map(e=>`{ svgX: ${e.x.toFixed(0)}, svgY: ${e.y.toFixed(0)} } // ${e.label}`).join("\n")); }}
+              style={{ background:"transparent", border:"none", color:"#F59E0B", cursor:"pointer", fontSize:11 }}>
+              📋 Copy
+            </button>
+            <button onClick={() => setPixelEntries([])} style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"pointer", fontSize:11 }}>✕ Clear</button>
+          </div>
+          {pixelEntries.map((e,i) => (
+            <div key={i} style={{ fontFamily:"monospace", color:"var(--text-muted)", lineHeight:1.6 }}>
+              <span style={{ color:"#F59E0B" }}>({e.x.toFixed(0)}, {e.y.toFixed(0)})</span> — {e.label}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Flight info strip */}
       {flight && (
