@@ -1520,11 +1520,11 @@ function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:b
           overflow:"hidden",
           border:"1px solid var(--border-color)",
           cursor:"pointer",
-          background:"#000",
+          background:"#1a1a1a",
         }}
         onClick={() => setSelected(null)}
       >
-        {/* Harta SVG completă pe fundal */}
+        {/* Harta SVG completă pe fundal — luminoasă, cu box-urile zones */}
         <img
           src="/harta_completa.svg"
           alt="Hartă T4"
@@ -1536,15 +1536,15 @@ function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:b
             objectFit:"contain",
             display:"block",
             zIndex:1,
-            opacity:0.3,
+            opacity:1,
           }}
         />
 
-        {/* Heatmap overlay SVG */}
+        {/* Heatmap overlay SVG — DOAR blob-urile, transparent background */}
         <svg
           viewBox={`0 0 ${VB_W} ${VB_H}`}
           preserveAspectRatio="xMidYMid meet"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:3 }}
         >
           <defs>
             {/* Gradiente radiale pentru fiecare zonă */}
@@ -1568,6 +1568,8 @@ function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:b
             // Raza adaptiveă — mai mare cât mai aglomerat
             const r = z.radius * (0.6 + d.density * 0.6);
             const isSelected = selected === z.id;
+            // Pentru "gate" (Sosire la Poartă), pune eticheta deasupra
+            const labelY = z.id === "gate" ? z.svgY - r - 10 : z.svgY + r + 20;
             
             return (
               <g key={z.id} style={{ cursor:"pointer" }} onClick={(e) => { e.stopPropagation(); setSelected(selected === z.id ? null : z.id); }}>
@@ -1590,38 +1592,26 @@ function HeatmapCenter({ onLog, selected, setSelected }: { onLog:(m:string,ok?:b
                   style={{ transition:"r 0.8s ease" }}
                 />
 
+                {/* Eticheta permanentă — deasupra pentru gate, sub pentru altele */}
+                <text
+                  x={z.svgX}
+                  y={labelY}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fill={color}
+                  fontWeight="600"
+                  style={{ pointerEvents:"none" }}
+                >
+                  {z.label}
+                </text>
+
                 {/* Selection ring */}
                 {isSelected && (
                   <circle cx={z.svgX} cy={z.svgY} r={r + 8} fill="none" stroke={color} strokeWidth="2.5" strokeDasharray="6,4" opacity="0.9" />
                 )}
-
-                {/* Label tooltip pe hover/select */}
-                {isSelected && (
-                  <>
-                    <rect
-                      x={z.svgX - 60} y={z.svgY - r - 35}
-                      width="120" height="24" rx="5"
-                      fill="#0d1117dd" stroke={color} strokeWidth="1"
-                    />
-                    <text
-                      x={z.svgX} y={z.svgY - r - 17}
-                      textAnchor="middle" fontSize="11" fill={color} fontWeight="700"
-                    >
-                      {z.label}
-                    </text>
-                  </>
-                )}
               </g>
             );
           })}
-
-          {/* Harta SVG completă pe fundal la z-index mai mic */}
-          <image
-            href="/harta_completa.svg"
-            x="0" y="0" width={VB_W} height={VB_H}
-            opacity="0.2"
-            style={{ pointerEvents:"none" }}
-          />
 
           {/* Orange API watermark */}
           <rect x="4" y="4" width="148" height="18" rx="3" fill="#0d1117bb" />
