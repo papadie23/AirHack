@@ -2,6 +2,50 @@ import type { APIRoute } from "astro";
 
 export const prerender = false;
 
+// ── Fixture data — returned when USE_FIXTURES=true or API key absent ──────────
+const FIXTURES: Record<string, object> = {
+  LH6381: {
+    flight: "LH6381", flightNumber: "6381", airline: "Lufthansa", airlineIata: "LH",
+    status: "scheduled",
+    departure: { iata:"IAS", airport:"Iași International", terminal:"T4", gate:"5",
+                 scheduled:"14:30", estimated:"14:30", actual:null, delayed:null },
+    arrival:   { iata:"OTP", airport:"București Henri Coandă", terminal:"T1", gate:"—",
+                 baggage:"—", scheduled:"15:30", estimated:"15:30", delayed:null },
+    duration:60, elapsedMin:null, remainingMin:null, progressPct:null,
+    fetchedAt: new Date().toISOString(),
+  },
+  W43653: {
+    flight: "W43653", flightNumber: "43653", airline: "Wizz Air", airlineIata: "W4",
+    status: "scheduled",
+    departure: { iata:"IAS", airport:"Iași International", terminal:"T4", gate:"2",
+                 scheduled:"16:45", estimated:"16:45", actual:null, delayed:null },
+    arrival:   { iata:"BCN", airport:"Barcelona El Prat", terminal:"T1", gate:"—",
+                 baggage:"—", scheduled:"19:30", estimated:"19:30", delayed:null },
+    duration:165, elapsedMin:null, remainingMin:null, progressPct:null,
+    fetchedAt: new Date().toISOString(),
+  },
+  RO708: {
+    flight: "RO708", flightNumber: "708", airline: "TAROM", airlineIata: "RO",
+    status: "scheduled",
+    departure: { iata:"IAS", airport:"Iași International", terminal:"T4", gate:"3",
+                 scheduled:"18:20", estimated:"18:20", actual:null, delayed:null },
+    arrival:   { iata:"OTP", airport:"București Henri Coandă", terminal:"T1", gate:"—",
+                 baggage:"—", scheduled:"19:20", estimated:"19:20", delayed:null },
+    duration:60, elapsedMin:null, remainingMin:null, progressPct:null,
+    fetchedAt: new Date().toISOString(),
+  },
+  FR9876: {
+    flight: "FR9876", flightNumber: "9876", airline: "Ryanair", airlineIata: "FR",
+    status: "scheduled",
+    departure: { iata:"IAS", airport:"Iași International", terminal:"T4", gate:"1",
+                 scheduled:"20:10", estimated:"20:10", actual:null, delayed:null },
+    arrival:   { iata:"LTN", airport:"Londra Luton", terminal:"—", gate:"—",
+                 baggage:"—", scheduled:"22:40", estimated:"22:40", delayed:null },
+    duration:150, elapsedMin:null, remainingMin:null, progressPct:null,
+    fetchedAt: new Date().toISOString(),
+  },
+};
+
 // Map IATA airport code → human-readable city + country
 const AIRPORT_NAMES: Record<string, string> = {
   OTP: "București Henri Coandă", BCN: "Barcelona El Prat",
@@ -63,6 +107,20 @@ export const GET: APIRoute = async ({ request }) => {
     });
   }
 
+  // Return fixture immediately when USE_FIXTURES=true
+  const useFixtures = (process.env.USE_FIXTURES ?? import.meta.env.USE_FIXTURES) === "true";
+  if (useFixtures) {
+    const fixture = FIXTURES[flightIata];
+    if (fixture) {
+      return new Response(JSON.stringify({ ...fixture, fetchedAt: new Date().toISOString() }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: `Zborul ${flightIata} nu există în fixture-uri.` }), {
+      status: 404, headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const apiKey = process.env.AIRLABS_API_KEY ?? import.meta.env.AIRLABS_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "AIRLABS_API_KEY not set" }), {
@@ -84,6 +142,13 @@ export const GET: APIRoute = async ({ request }) => {
     const flights = data.response ?? [];
 
     if (flights.length === 0) {
+      // Fall back to fixture if available
+      const fixture = FIXTURES[flightIata];
+      if (fixture) {
+        return new Response(JSON.stringify({ ...fixture, fetchedAt: new Date().toISOString() }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: `Zborul ${flightIata} nu a fost găsit pentru azi.` }), {
         status: 404, headers: { "Content-Type": "application/json" },
       });
