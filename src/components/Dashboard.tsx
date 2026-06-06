@@ -805,19 +805,15 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   // Zoom / pan state (disabled in calMode / pixelLog)
   const MAP_ASPECT = 2262 / 587; // landscape map aspect ratio — used for portrait fill zoom
-  const [mapZoom, setMapZoom] = useState(() => {
-    if (typeof window === "undefined") return 1;
-    return window.innerWidth < 900 && window.innerHeight > window.innerWidth ? 2262 / 587 : 1;
-  });
+  // SSR-safe defaults (must match server render to avoid hydration mismatch)
+  const [mapZoom, setMapZoom] = useState(1);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
 
-  // Portrait mode detection for map rotation
-  const [isPortrait, setIsPortrait] = useState(
-    typeof window !== "undefined" && window.innerWidth < 900 && window.innerHeight > window.innerWidth
-  );
+  // Portrait mode detection — starts false (SSR-safe), set correctly after mount
+  const [isPortrait, setIsPortrait] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
     const handler = (e: MediaQueryListEvent) => setIsPortrait(e.matches);
