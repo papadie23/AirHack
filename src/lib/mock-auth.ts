@@ -8,7 +8,7 @@ export interface ClientCredential {
 }
 
 export const MOCK_CLIENTS: ClientCredential[] = [
-  { phone: "+40721000001", flightIata: "RO321",  personId: "misu",   displayName: "Mihai Popescu"   },
+  { phone: "+40721000001", flightIata: "LH6381",  personId: "misu",   displayName: "Mihai Popescu"   },
   { phone: "+40721000002", flightIata: "LH1407", personId: "ionica", displayName: "Ioana Constantin" },
   { phone: "+40721000003", flightIata: "FR8821", personId: "dorel",  displayName: "Dorel Ionescu"   },
   { phone: "+40721000004", flightIata: "W64102", personId: "misu",   displayName: "Andrei Marin"    },

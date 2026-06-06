@@ -515,6 +515,28 @@ html, body {
 }
 
 /* ══════════════════════════════════════════════════
+   FLIGHT INFO GRID (My Flight tab — dep / middle / arr)
+   ══════════════════════════════════════════════════ */
+.flight-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas: "dep middle arr";
+  gap: 10px;
+}
+.fig-dep    { grid-area: dep;    }
+.fig-middle { grid-area: middle; }
+.fig-arr    { grid-area: arr;    }
+
+@media (max-width: 900px) {
+  .flight-info-grid {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "dep arr"
+      "middle middle";
+  }
+}
+
+/* ══════════════════════════════════════════════════
    LOGIN MODAL
    ══════════════════════════════════════════════════ */
 .login-overlay {
