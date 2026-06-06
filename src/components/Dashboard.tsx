@@ -1149,13 +1149,13 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     // Pan map to keep active person centered, only if inside SVG bounds
     const SVG_W = 2262, SVG_H = 587;
     const inBounds = svgPos.x >= 0 && svgPos.x <= SVG_W && svgPos.y >= 0 && svgPos.y <= SVG_H;
-    if (personId === activePerson && inBounds) {
-      setMapPan(pan => {
-        const containerEl = mapWrapRef.current;
-        if (!containerEl) return pan;
-        const { width, height } = containerEl.getBoundingClientRect();
-        return { x: width / 2 - svgPos.x * mapZoom, y: height / 2 - svgPos.y * mapZoom };
-      });
+    // Portrait auto-follow is handled by the positions-change effect (uses correct rotated formula).
+    // Landscape: center directly with current zoom ref to avoid black-bar from stale closure.
+    if (personId === activePerson && inBounds && isFollowingRef.current && !isPortraitRef.current) {
+      const { W, H } = containerSizeRef.current;
+      if (W > 0) {
+        setMapPan({ x: W / 2 - svgPos.x * mapZoomRef.current, y: H / 2 - svgPos.y * mapZoomRef.current });
+      }
     }
     if (personId !== "you") return;
     // Zone proximity check — auto-advance task when entering active zone
@@ -1184,7 +1184,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           setDynamicRoute(null);
           setTaskIdx(i => {
             const next = i + 1;
-            if (next >= ZONES.length) { setBoardingPhase("done"); setShowTaskPopup(true); return i; }
+            // Return `next` even when >= ZONES.length so subsequent GPS updates see
+            // ZONES[idx] === undefined and exit early — prevents the arrival firing repeatedly.
+            if (next >= ZONES.length) { setBoardingPhase("done"); setShowTaskPopup(true); return next; }
             setBoardingPhase("task");
             setShowTaskPopup(true);
             return next;
@@ -1511,6 +1513,102 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
           @keyframes pulse { 0%,100%{opacity:0.2} 50%{opacity:0.8} }
         `}</style>
+
+        {/* ── Boarding task popup — lives inside mapWrapRef so it is visible in
+            browser fullscreen (position:fixed descendants of the fullscreen element
+            are positioned relative to it, not the hidden page behind it) ── */}
+        {showTaskPopup && boardingPhase !== "idle" && (
+          <div
+            onClick={() => { if (boardingPhase !== "confirming") setShowTaskPopup(false); }}
+            style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,0.55)", backdropFilter:"blur(3px)", display:"flex", alignItems:"flex-end", justifyContent:"center", padding:"0 0 76px" }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:"20px 20px 0 0", padding:"20px 20px 24px", width:"100%", maxWidth:500, boxShadow:"0 -8px 40px rgba(0,0,0,0.45)" }}
+            >
+              {/* Handle bar */}
+              <div style={{ width:36, height:4, background:"var(--border-color)", borderRadius:2, margin:"0 auto 18px" }}/>
+
+              {boardingPhase === "confirming" && (
+                <>
+                  <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
+                    <span style={{ fontSize:36 }}>✈️</span>
+                    <div>
+                      <div style={{ fontWeight:800, fontSize:17, color:"var(--text-main)" }}>Procesul de îmbarcare</div>
+                      <div style={{ fontSize:13, color:"var(--text-muted)", marginTop:4 }}>Doriți ghidare pas cu pas prin terminal?</div>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:10 }}>
+                    <button onClick={() => { setBoardingPhase("task"); setTaskIdx(0); }}
+                      style={{ flex:1, padding:"13px 0", background:"var(--brand)", border:"none", borderRadius:12, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer" }}>
+                      Da, începe
+                    </button>
+                    <button onClick={() => { setBoardingPhase("idle"); setShowTaskPopup(false); }}
+                      style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:12, color:"var(--text-muted)", fontSize:15, cursor:"pointer" }}>
+                      Nu acum
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {boardingPhase === "awaiting-location" && (
+                <>
+                  <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:20 }}>
+                    <i className="ti ti-map-pin" style={{ fontSize:30, color:"#38BDF8", flexShrink:0 }}/>
+                    <div>
+                      <div style={{ fontWeight:700, fontSize:16, color:"#38BDF8" }}>Activați localizarea</div>
+                      <div style={{ fontSize:13, color:"var(--text-muted)", marginTop:4 }}>Apăsați <b>Localizează</b> pe hartă pentru a începe ghidarea.</div>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowTaskPopup(false)}
+                    style={{ width:"100%", padding:"12px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:12, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>
+                    Închide
+                  </button>
+                </>
+              )}
+
+              {boardingPhase === "task" && TASKS[taskIdx] && (() => {
+                const task = TASKS[taskIdx];
+                const c = task.zone.color;
+                return (
+                  <>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                      <span style={{ background:c, color:"#000", fontWeight:800, fontSize:11, borderRadius:20, padding:"3px 12px" }}>
+                        {taskIdx + 1} / {TASKS.length}
+                      </span>
+                      <span style={{ fontSize:12, color:"var(--text-muted)" }}>Următor pas</span>
+                    </div>
+                    <div style={{ fontSize:21, fontWeight:800, color:c, marginBottom:18 }}>{task.label}</div>
+                    <div style={{ display:"flex", gap:10 }}>
+                      <button onClick={goToZone}
+                        style={{ flex:2, padding:"13px 0", background:c, border:"none", borderRadius:12, color:"#000", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                        ➜ Mergi spre {task.label}
+                      </button>
+                      <button onClick={advanceTask}
+                        style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:`1px solid ${c}`, borderRadius:12, color:c, fontWeight:600, fontSize:14, cursor:"pointer" }}>
+                        ✓ Am ajuns
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+
+              {boardingPhase === "done" && (
+                <>
+                  <div style={{ textAlign:"center", marginBottom:20 }}>
+                    <div style={{ fontSize:52, marginBottom:8 }}>🎉</div>
+                    <div style={{ fontWeight:800, fontSize:19, color:"#34D399" }}>Îmbarcare completă!</div>
+                    <div style={{ fontSize:14, color:"var(--text-muted)", marginTop:6 }}>Zbor plăcut!</div>
+                  </div>
+                  <button onClick={() => setShowTaskPopup(false)}
+                    style={{ width:"100%", padding:"13px 0", background:"rgba(52,211,153,0.15)", border:"1px solid #34D399", borderRadius:12, color:"#34D399", fontWeight:700, fontSize:15, cursor:"pointer" }}>
+                    Închide
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pixel log panel */}
@@ -1564,99 +1662,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
       )}
 
-      {/* ── Boarding task popup (fixed overlay — does not shrink the map) ── */}
-      {showTaskPopup && boardingPhase !== "idle" && (
-        <div
-          onClick={() => { if (boardingPhase !== "confirming") setShowTaskPopup(false); }}
-          style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,0.55)", backdropFilter:"blur(3px)", display:"flex", alignItems:"flex-end", justifyContent:"center", padding:"0 0 76px" }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:"20px 20px 0 0", padding:"20px 20px 24px", width:"100%", maxWidth:500, boxShadow:"0 -8px 40px rgba(0,0,0,0.45)" }}
-          >
-            {/* Handle bar */}
-            <div style={{ width:36, height:4, background:"var(--border-color)", borderRadius:2, margin:"0 auto 18px" }}/>
-
-            {boardingPhase === "confirming" && (
-              <>
-                <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
-                  <span style={{ fontSize:36 }}>✈️</span>
-                  <div>
-                    <div style={{ fontWeight:800, fontSize:17, color:"var(--text-main)" }}>Procesul de îmbarcare</div>
-                    <div style={{ fontSize:13, color:"var(--text-muted)", marginTop:4 }}>Doriți ghidare pas cu pas prin terminal?</div>
-                  </div>
-                </div>
-                <div style={{ display:"flex", gap:10 }}>
-                  <button onClick={() => { setBoardingPhase("task"); setTaskIdx(0); }}
-                    style={{ flex:1, padding:"13px 0", background:"var(--brand)", border:"none", borderRadius:12, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer" }}>
-                    Da, începe
-                  </button>
-                  <button onClick={() => { setBoardingPhase("idle"); setShowTaskPopup(false); }}
-                    style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:12, color:"var(--text-muted)", fontSize:15, cursor:"pointer" }}>
-                    Nu acum
-                  </button>
-                </div>
-              </>
-            )}
-
-            {boardingPhase === "awaiting-location" && (
-              <>
-                <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:20 }}>
-                  <i className="ti ti-map-pin" style={{ fontSize:30, color:"#38BDF8", flexShrink:0 }}/>
-                  <div>
-                    <div style={{ fontWeight:700, fontSize:16, color:"#38BDF8" }}>Activați localizarea</div>
-                    <div style={{ fontSize:13, color:"var(--text-muted)", marginTop:4 }}>Apăsați <b>Localizează</b> pe hartă pentru a începe ghidarea.</div>
-                  </div>
-                </div>
-                <button onClick={() => setShowTaskPopup(false)}
-                  style={{ width:"100%", padding:"12px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:12, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>
-                  Închide
-                </button>
-              </>
-            )}
-
-            {boardingPhase === "task" && TASKS[taskIdx] && (() => {
-              const task = TASKS[taskIdx];
-              const c = task.zone.color;
-              return (
-                <>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-                    <span style={{ background:c, color:"#000", fontWeight:800, fontSize:11, borderRadius:20, padding:"3px 12px" }}>
-                      {taskIdx + 1} / {TASKS.length}
-                    </span>
-                    <span style={{ fontSize:12, color:"var(--text-muted)" }}>Următor pas</span>
-                  </div>
-                  <div style={{ fontSize:21, fontWeight:800, color:c, marginBottom:18 }}>{task.label}</div>
-                  <div style={{ display:"flex", gap:10 }}>
-                    <button onClick={goToZone}
-                      style={{ flex:2, padding:"13px 0", background:c, border:"none", borderRadius:12, color:"#000", fontWeight:700, fontSize:14, cursor:"pointer" }}>
-                      ➜ Mergi spre {task.label}
-                    </button>
-                    <button onClick={advanceTask}
-                      style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:`1px solid ${c}`, borderRadius:12, color:c, fontWeight:600, fontSize:14, cursor:"pointer" }}>
-                      ✓ Am ajuns
-                    </button>
-                  </div>
-                </>
-              );
-            })()}
-
-            {boardingPhase === "done" && (
-              <>
-                <div style={{ textAlign:"center", marginBottom:20 }}>
-                  <div style={{ fontSize:52, marginBottom:8 }}>🎉</div>
-                  <div style={{ fontWeight:800, fontSize:19, color:"#34D399" }}>Îmbarcare completă!</div>
-                  <div style={{ fontSize:14, color:"var(--text-muted)", marginTop:6 }}>Zbor plăcut!</div>
-                </div>
-                <button onClick={() => setShowTaskPopup(false)}
-                  style={{ width:"100%", padding:"13px 0", background:"rgba(52,211,153,0.15)", border:"1px solid #34D399", borderRadius:12, color:"#34D399", fontWeight:700, fontSize:15, cursor:"pointer" }}>
-                  Închide
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </>
   );
 }
