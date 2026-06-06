@@ -1402,103 +1402,253 @@ function heatColor(density: number): string {
   return "var(--success)";
 }
 
+/* ═══════════════════════════ HEATMAP ═══════════════════════════ */
+
+// Zonele aeroportului cu coordonatele SVG exacte (harta_completa.svg, viewBox 0 0 1920 587)
+// Scalate proporțional față de viewBox 2262 (original) → 1920
+const SCALE = 1920 / 2262;
+
+const AIRPORT_ZONES: {
+  id: string; label: string; svgX: number; svgY: number;
+  baseLoad: number; // 0-1, cât de aglomerat e în mod normal
+  radius: number;
+  icon: string;
+}[] = [
+  { id: "checkin",   label: "Check-in",          svgX:  87, svgY: 391, baseLoad: 0.6, radius: 90,  icon: "ti-luggage" },
+  { id: "security",  label: "Control Securitate", svgX: 454, svgY: 261, baseLoad: 0.8, radius: 100, icon: "ti-shield-check" },
+  { id: "documente", label: "Verificare Documente",svgX: 837, svgY: 324, baseLoad: 0.5, radius: 85,  icon: "ti-id-badge" },
+  { id: "gate",      label: "Sosire la Poartă",   svgX:1371, svgY: 274, baseLoad: 0.7, radius: 95,  icon: "ti-door-enter" },
+  { id: "imbarcare", label: "Îmbarcare",           svgX:1607, svgY: 241, baseLoad: 0.75,radius: 90,  icon: "ti-plane-departure" },
+  { id: "bord",      label: "La bord",             svgX:1777, svgY: 271, baseLoad: 0.4, radius: 75,  icon: "ti-armchair" },
+];
+
+// Simulare date sintetice în stilul Orange Population Density API
+// Valorile oscilează realist în timp (±20% față de baseLoad)
+function generateSyntheticDensity(tick: number): { id: string; density: number; pax: number }[] {
+  return AIRPORT_ZONES.map(z => {
+    // Undă sinusoidală cu fază diferită per zonă + zgomot
+    const wave = Math.sin(tick * 0.08 + AIRPORT_ZONES.indexOf(z) * 1.3) * 0.15;
+    const noise = (Math.sin(tick * 0.31 + AIRPORT_ZONES.indexOf(z) * 2.7) * 0.05);
+    const raw = Math.max(0.05, Math.min(1, z.baseLoad + wave + noise));
+    // Pax estimat: 0-250 persoane per zonă
+    const pax = Math.round(raw * 250);
+    return { id: z.id, density: raw, pax };
+  });
+}
+
+function zoneColor(intensity: number): string {
+  if (intensity > 0.75) return "#EF5350";   // roșu — aglomerat
+  if (intensity > 0.50) return "#FFA726";   // portocaliu — moderat
+  if (intensity > 0.25) return "#FFEE58";   // galben — OK
+  return "#66BB6A";                          // verde — liber
+}
+
 function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
-  const [densityData, setDensityData] = useState<DensityCell[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [fromFixture, setFromFixture] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
 
-  const fetchDensity = async () => {
-    setLoading(true);
-    try {
-      const r = await fetch("/api/population-density", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
-      const d: DensityResponse = await r.json();
-      const cells = d.timedPopulationDensityData?.[0]?.cellPopulationDensityData ?? [];
-      setDensityData(cells);
-      setFromFixture(!!d.fromFixture);
-      onLog(`Population Density · ${cells.length} celule${d.fromFixture?" (fixture)":""}`);
-    } catch { onLog("Eroare Population Density API", false); }
-    finally { setLoading(false); }
-  };
-
+  // Tick la fiecare 2s pentru animație sintetică
   useEffect(() => {
-    fetchDensity();
-    const t = setInterval(fetchDensity, 30000);
-    return () => clearInterval(t);
-  }, []);
+    if (paused) return;
+    const id = setInterval(() => setTick(t => t + 1), 2000);
+    return () => clearInterval(id);
+  }, [paused]);
 
-  // Map GPS → SVG folosind cele 2 puncte ancorate (Security și Gate)
-  // Interpolare liniară pe axa lng → x, lat → y
-  const GPS_ANCHOR = [
-    { lat: 47.17439, lng: 27.61903, svgX: 852,  svgY: 349 },
-    { lat: 47.17406, lng: 27.61970, svgX: 2244, svgY: 256 },
-  ];
-  const dLng = GPS_ANCHOR[1].lng - GPS_ANCHOR[0].lng;
-  const dLat = GPS_ANCHOR[1].lat - GPS_ANCHOR[0].lat;
-  const dX   = GPS_ANCHOR[1].svgX - GPS_ANCHOR[0].svgX;
-  const dY   = GPS_ANCHOR[1].svgY - GPS_ANCHOR[0].svgY;
+  // Log la fiecare 10 tick-uri
+  useEffect(() => {
+    if (tick % 10 === 0 && tick > 0) {
+      const hot = data.filter(d => d.density > 0.7).map(d => AIRPORT_ZONES.find(z => z.id === d.id)?.label).join(", ");
+      onLog(`Heatmap T4 · ${hot ? "Aglomerare: " + hot : "Flux normal"}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
 
-  function gpsToSvg(lat: number, lng: number) {
-    const tLng = (lng - GPS_ANCHOR[0].lng) / dLng;
-    const tLat = (lat - GPS_ANCHOR[0].lat) / dLat;
-    return {
-      x: GPS_ANCHOR[0].svgX + tLng * dX + (tLat - tLng) * 200,
-      y: GPS_ANCHOR[0].svgY + tLng * dY + (tLat - tLng) * (-120),
-    };
-  }
+  const data = generateSyntheticDensity(tick);
+  const maxDensity = Math.max(...data.map(d => d.density), 0.01);
+  const totalPax = data.reduce((s, d) => s + d.pax, 0);
+  const alertZones = data.filter(d => d.density > 0.7);
 
-  const maxDensity = Math.max(...densityData.map(c => c.pplDensity ?? 0), 1);
+  const selectedData = selected ? data.find(d => d.id === selected) : null;
+  const selectedZone = selected ? AIRPORT_ZONES.find(z => z.id === selected) : null;
 
-  const circles = densityData
-    .filter(c => c.pplDensity)
-    .map(c => {
-      const { lat, lng } = decodeGeohash(c.geohash);
-      const pos = gpsToSvg(lat, lng);
-      const intensity = (c.pplDensity ?? 0) / maxDensity;
-      const r = 20 + intensity * 65;
-      const color = intensity > 0.7 ? "#EF5350" : intensity > 0.35 ? "#FFA726" : "#66BB6A";
-      return { ...pos, r, color, intensity, density: c.pplDensity ?? 0 };
-    });
+  // ViewBox al harta_completa.svg
+  const VB_W = 1920, VB_H = 587;
 
   return (
     <>
+      {/* ── Header ── */}
       <div className="map-header">
         <div>
-          <div className="map-title">Heatmap Terminal T4 — LRIA</div>
+          <div className="map-title">
+            <i className="ti ti-map-2" style={{ marginRight:6, color:"var(--brand)" }} />
+            Heatmap Terminal T4 — LRIA
+          </div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
-            Orange Population Density API{fromFixture && <span style={{ color:"var(--warning)", marginLeft:6 }}>· fixture</span>}
+            Orange Population Density (date sintetice) · {totalPax} pax detectați
           </div>
         </div>
         <div className="badges">
-          <div className="badge badge-live"><span className="dot red pulse-red"/>Live</div>
-          <button onClick={fetchDensity} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>
-            <i className={`ti ti-refresh${loading?" spin":""}`}/>
+          <div className="badge badge-live">
+            <span className={`dot ${paused ? "orange" : "red pulse-red"}`}/>
+            {paused ? "Pauzat" : "Live"}
+          </div>
+          <button
+            onClick={() => setPaused(p => !p)}
+            title={paused ? "Reia simularea" : "Pauză"}
+            style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12 }}
+          >
+            <i className={`ti ti-${paused ? "player-play" : "player-pause"}`}/>
           </button>
         </div>
       </div>
 
-      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
-        <img src="/harta_completa.svg" alt="Hartă T4" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}/>
-        <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}>
+      {/* ── Alert strip ── */}
+      {alertZones.length > 0 && (
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:8, flexShrink:0 }}>
+          {alertZones.map(az => {
+            const z = AIRPORT_ZONES.find(z => z.id === az.id)!;
+            return (
+              <div key={az.id} style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 10px", borderRadius:6, background:"rgba(239,83,80,0.12)", border:"1px solid #EF535044", fontSize:11, color:"#EF5350" }}>
+                <i className={`ti ${z.icon}`} />
+                {z.label} · {az.pax} pax
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Hartă cu heatmap ── */}
+      <div
+        className="map-container"
+        style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)", cursor:"pointer" }}
+        onClick={() => setSelected(null)}
+      >
+        <img
+          src="/harta_completa.svg"
+          alt="Hartă T4"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}
+        />
+
+        <svg
+          viewBox={`0 0 ${VB_W} ${VB_H}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}
+        >
           <defs>
-            {circles.map((c, i) => (
-              <radialGradient key={i} id={`hg${i}`} cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor={c.color} stopOpacity={0.6 + c.intensity * 0.3}/>
-                <stop offset="100%" stopColor={c.color} stopOpacity="0"/>
-              </radialGradient>
-            ))}
+            {AIRPORT_ZONES.map((z, i) => {
+              const d = data.find(x => x.id === z.id)!;
+              const color = zoneColor(d.density);
+              return (
+                <radialGradient key={z.id} id={`hg_${z.id}`} cx="50%" cy="50%" r="50%">
+                  <stop offset="0%"   stopColor={color} stopOpacity={0.55 + d.density * 0.35} />
+                  <stop offset="40%"  stopColor={color} stopOpacity={0.20 + d.density * 0.20} />
+                  <stop offset="100%" stopColor={color} stopOpacity="0" />
+                </radialGradient>
+              );
+            })}
           </defs>
-          {circles.map((c, i) => (
-            <g key={i}>
-              <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
-              {c.intensity > 0.85 && <circle cx={c.x} cy={c.y} r={8} fill={c.color} opacity="0.95"/>}
-            </g>
-          ))}
-          {/* Label cozi */}
-          <text x={852}  y={320} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Security</text>
-          <text x={2244} y={228} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Boarding</text>
+
+          {/* Heat blobs */}
+          {AIRPORT_ZONES.map(z => {
+            const d = data.find(x => x.id === z.id)!;
+            const color = zoneColor(d.density);
+            const r = z.radius * (0.7 + d.density * 0.5);
+            const isSelected = selected === z.id;
+            return (
+              <g
+                key={z.id}
+                onClick={(e) => { e.stopPropagation(); setSelected(selected === z.id ? null : z.id); }}
+                style={{ cursor:"pointer" }}
+              >
+                {/* Outer glow blob */}
+                <circle
+                  cx={z.svgX} cy={z.svgY} r={r}
+                  fill={`url(#hg_${z.id})`}
+                  style={{ transition:"r 0.8s ease, opacity 0.5s" }}
+                />
+                {/* Inner pulsing core */}
+                <circle
+                  cx={z.svgX} cy={z.svgY}
+                  r={d.density > 0.5 ? 10 + d.density * 8 : 6}
+                  fill={color}
+                  opacity={0.9}
+                  style={{ transition:"r 0.8s ease" }}
+                />
+                {/* Selection ring */}
+                {isSelected && (
+                  <circle cx={z.svgX} cy={z.svgY} r={r + 6} fill="none" stroke={color} strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
+                )}
+                {/* Label */}
+                <rect
+                  x={z.svgX - 52} y={z.svgY - r - 28}
+                  width="104" height="20" rx="4"
+                  fill="#0d1117cc" stroke={color} strokeWidth="0.8"
+                />
+                <text
+                  x={z.svgX} y={z.svgY - r - 14}
+                  textAnchor="middle" fontSize="10" fill={color} fontWeight="700"
+                >
+                  {z.label}
+                </text>
+                {/* Pax count */}
+                <text
+                  x={z.svgX} y={z.svgY - r - 4}
+                  textAnchor="middle" fontSize="9" fill={color} opacity="0.85"
+                >
+                  {d.pax} pax
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Orange API watermark */}
+          <rect x="4" y="4" width="148" height="18" rx="3" fill="#0d1117bb" />
+          <text x="10" y="16" fontSize="9" fill="#ff6600" fontWeight="700">Orange Population Density API</text>
+          <text x="152" y="16" fontSize="8" fill="#aaaaaa"> · synthetic</text>
         </svg>
       </div>
+
+      {/* ── Detail card la click pe zonă ── */}
+      {selectedZone && selectedData && (
+        <div className="fade-in" style={{ marginTop:10, padding:"12px 16px", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:`1px solid ${zoneColor(selectedData.density)}44`, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <i className={`ti ${selectedZone.icon}`} style={{ fontSize:20, color:zoneColor(selectedData.density) }} />
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:700, fontSize:14, color:zoneColor(selectedData.density) }}>{selectedZone.label}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)" }}>Orange Population Density · celulă geohash simulată</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:22, fontWeight:800, color:zoneColor(selectedData.density) }}>{selectedData.pax}</div>
+              <div style={{ fontSize:10, color:"var(--text-muted)" }}>persoane detectate</div>
+            </div>
+          </div>
+
+          {/* Progress bar intensitate */}
+          <div style={{ marginTop:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"var(--text-muted)", marginBottom:3 }}>
+              <span>Densitate</span>
+              <span style={{ fontWeight:600, color:zoneColor(selectedData.density) }}>{Math.round(selectedData.density * 100)}%</span>
+            </div>
+            <div style={{ height:6, background:"var(--bg-hover)", borderRadius:3, overflow:"hidden" }}>
+              <div style={{ width:`${selectedData.density * 100}%`, height:"100%", background:zoneColor(selectedData.density), borderRadius:3, transition:"width 0.8s", boxShadow:`0 0 8px ${zoneColor(selectedData.density)}` }} />
+            </div>
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginTop:10 }}>
+            {[
+              ["Status", selectedData.density > 0.7 ? "⚠ Aglomerat" : selectedData.density > 0.4 ? "⚡ Moderat" : "✓ Liber"],
+              ["ETA așteptare", selectedData.density > 0.7 ? `~${Math.round(selectedData.density * 25)} min` : "< 5 min"],
+              ["Trend", tick % 3 === 0 ? "↗ Crește" : tick % 3 === 1 ? "→ Stabil" : "↘ Scade"],
+            ].map(([l, v]) => (
+              <div key={l} style={{ textAlign:"center", padding:"6px 8px", background:"var(--bg-hover)", borderRadius:6 }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2 }}>{l}</div>
+                <div style={{ fontSize:12, fontWeight:600 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1986,200 +2136,170 @@ const AIRPORT_COORDS: Record<string, { lat: number; lon: number; label: string }
 };
 
 
-/* ─── FR24-style Route Map ─── */
-
-// Simplified Europe/Med coastline paths (SVG path data, equirectangular projection)
-// Covers lon: -15..45, lat: 30..72
-const FR24_LAND_PATHS = [
-  // Iberian Peninsula
-  "M 68,148 L 72,132 L 85,118 L 95,115 L 105,110 L 118,108 L 122,118 L 125,130 L 118,140 L 108,152 L 95,158 L 82,158 L 68,148 Z",
-  // France
-  "M 118,108 L 130,98 L 148,95 L 162,102 L 165,115 L 158,125 L 148,130 L 135,132 L 125,130 L 122,118 L 118,108 Z",
-  // UK
-  "M 130,80 L 140,72 L 148,75 L 145,85 L 138,92 L 128,92 L 125,85 L 130,80 Z",
-  "M 120,68 L 128,65 L 132,70 L 126,78 L 118,75 L 120,68 Z",
-  // Benelux + Germany
-  "M 148,95 L 162,88 L 178,88 L 192,95 L 195,108 L 185,118 L 172,120 L 162,115 L 158,108 L 162,102 L 148,95 Z",
-  // Italy
-  "M 158,125 L 168,118 L 178,120 L 182,132 L 178,148 L 170,162 L 162,172 L 155,162 L 152,148 L 155,138 L 158,125 Z",
-  // Scandinavia (simplified)
-  "M 162,55 L 172,42 L 185,38 L 192,45 L 188,58 L 178,68 L 168,72 L 160,68 L 162,55 Z",
-  "M 175,65 L 188,55 L 202,52 L 212,58 L 215,72 L 205,78 L 192,78 L 182,72 L 175,65 Z",
-  // Poland + Baltics
-  "M 192,88 L 208,85 L 225,85 L 232,95 L 228,108 L 215,112 L 202,108 L 195,100 L 192,88 Z",
-  // Romania + Balkans
-  "M 215,112 L 232,108 L 245,112 L 248,125 L 238,135 L 225,138 L 215,130 L 212,120 L 215,112 Z",
-  // Greece
-  "M 218,148 L 228,142 L 235,148 L 232,158 L 222,162 L 215,158 L 218,148 Z",
-  // Turkey (partial)
-  "M 245,125 L 268,118 L 285,120 L 295,130 L 288,142 L 272,148 L 255,145 L 245,135 L 245,125 Z",
-  // North Africa (simplified coastline)
-  "M 68,185 L 95,182 L 130,180 L 165,178 L 198,178 L 228,180 L 258,182 L 285,185 L 288,195 L 258,195 L 228,195 L 198,195 L 165,195 L 130,195 L 95,195 L 68,195 Z",
-];
-
-function RouteMapSVG({ dep, arr, progress, detail }: {
+/* ─── SVG Route Map ─── */
+function RouteMapSVG({ dep, arr, progress }: {
   dep: string; arr: string; progress: number | null;
-  detail?: { airline?: string; flight?: string; departure?: { scheduled?: string; actual?: string }; arrival?: { scheduled?: string; estimated?: string }; duration?: number | null; status?: string; };
 }) {
-  const [tick, setTick] = useState(0);
-  // Animate plane position smoothly
+  const [isMobile, setIsMobile] = useState(false);
+
   useEffect(() => {
-    if (progress === null) return;
-    const id = setInterval(() => setTick(t => t + 1), 2000);
-    return () => clearInterval(id);
-  }, [progress]);
-
-  const W = 500, H = 260, PAD = 28;
-  // Map viewport: lon -15..45, lat 28..72
-  const LON_MIN = -15, LON_MAX = 45, LAT_MIN = 28, LAT_MAX = 72;
-
-  const proj = (lat: number, lon: number) => ({
-    x: PAD + ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * (W - 2 * PAD),
-    y: (H - PAD) - ((lat - LAT_MIN) / (LAT_MAX - LAT_MIN)) * (H - 2 * PAD),
-  });
+    const mq = window.matchMedia("(max-width: 900px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const from = AIRPORT_COORDS[dep];
   const to   = AIRPORT_COORDS[arr];
-
-  // Fallback if coords outside our viewport
-  const inView = (lat: number, lon: number) =>
-    lat >= LAT_MIN - 5 && lat <= LAT_MAX + 5 && lon >= LON_MIN - 5 && lon <= LON_MAX + 5;
-
-  if (!from || !to || !inView(from.lat, from.lon) || !inView(to.lat, to.lon)) return (
-    <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)", fontSize:12, background:"#0d1117", borderRadius:"var(--radius-md)", border:"1px solid #1e2a3a" }}>
+  if (!from || !to) return (
+    <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)", fontSize:12 }}>
       <i className="ti ti-map-off" style={{ fontSize:28, display:"block", marginBottom:8, opacity:0.4 }} />
-      <div>Rută în afara zonei hărții</div>
-      <div style={{ fontSize:11, marginTop:4, opacity:0.6 }}>{dep} → {arr}</div>
+      Coordonate indisponibile pentru {dep} → {arr}
     </div>
   );
 
-  const pDep = proj(from.lat, from.lon);
-  const pArr = proj(to.lat, to.lon);
+  const minLon = Math.min(from.lon, to.lon);
+  const maxLon = Math.max(from.lon, to.lon);
+  const minLat = Math.min(from.lat, to.lat);
+  const maxLat = Math.max(from.lat, to.lat);
 
-  // Great-circle arc midpoint (raised above chord)
-  const chord = Math.hypot(pArr.x - pDep.x, pArr.y - pDep.y);
-  const mx = (pDep.x + pArr.x) / 2;
-  const my = (pDep.y + pArr.y) / 2 - chord * 0.28;
-  const pathD = `M ${pDep.x} ${pDep.y} Q ${mx} ${my} ${pArr.x} ${pArr.y}`;
+  const fontSize = 10;
+  const citySize = 9;
+  const dotR     = 6;
+  const planeSize = 8;
 
-  // Plane position on bezier
-  const t = progress !== null ? Math.min(progress / 100, 1) : 0.5;
-  const bx = (1-t)*(1-t)*pDep.x + 2*(1-t)*t*mx + t*t*pArr.x;
-  const by = (1-t)*(1-t)*pDep.y + 2*(1-t)*t*my + t*t*pArr.y;
-  const t2 = Math.min(t + 0.015, 1);
-  const bx2 = (1-t2)*(1-t2)*pDep.x + 2*(1-t2)*t2*mx + t2*t2*pArr.x;
-  const by2 = (1-t2)*(1-t2)*pDep.y + 2*(1-t2)*t2*my + t2*t2*pArr.y;
-  const angle = Math.atan2(by2 - by, bx2 - bx) * (180 / Math.PI);
+  if (isMobile) {
+    // Portrait: swap axes so route runs vertically on phone
+    // latitude → X axis, longitude → Y axis (higher lon = lower = more south visually rotated)
+    const W   = 220;
+    const H   = 400;
+    const PAD = 40;
 
-  // Lat/lon grid lines
-  const latLines = [35, 40, 45, 50, 55, 60, 65, 70].map(lat => {
-    const y = proj(lat, 0).y;
-    return <line key={lat} x1={PAD/2} y1={y} x2={W-PAD/2} y2={y} stroke="#1a2a3a" strokeWidth="0.6" />;
-  });
-  const lonLines = [-10, 0, 10, 20, 30, 40].map(lon => {
-    const x = proj(0, lon).x;
-    return <line key={lon} x1={x} y1={PAD/2} x2={x} y2={H-PAD/2} stroke="#1a2a3a" strokeWidth="0.6" />;
-  });
+    const spanLat = Math.max(maxLat - minLat, 0.5);
+    const spanLon = Math.max(maxLon - minLon, 1);
 
-  // Lat/lon labels
-  const latLabels = [40, 50, 60, 70].map(lat => {
-    const y = proj(lat, LON_MIN).y;
-    return <text key={lat} x={PAD/2 - 2} y={y + 3} fontSize="7" fill="#2a4a5a" textAnchor="end">{lat}°</text>;
-  });
-  const lonLabels = [0, 10, 20, 30].map(lon => {
-    const x = proj(LAT_MIN, lon).x;
-    return <text key={lon} x={x} y={H - 4} fontSize="7" fill="#2a4a5a" textAnchor="middle">{lon}°</text>;
-  });
+    const project = (lat: number, lon: number) => ({
+      x: PAD + ((lat - minLat) / spanLat) * (W - 2 * PAD),
+      y: PAD + ((lon - minLon) / spanLon) * (H - 2 * PAD),
+    });
 
-  const statusColor = detail?.status === "active" ? "#ff6600" : detail?.status === "landed" ? "#00c896" : "#4a9eff";
+    const pDep = project(from.lat, from.lon);
+    const pArr = project(to.lat, to.lon);
+    const dist = Math.hypot(pArr.x - pDep.x, pArr.y - pDep.y);
 
-  return (
-    <div style={{ position:"relative", borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid #1e2a3a", boxShadow:"0 4px 24px rgba(0,0,0,0.5)" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:"auto", display:"block", background:"#0d1117" }}>
-        {/* Ocean fill */}
-        <rect x="0" y="0" width={W} height={H} fill="#0d1117" />
+    // Arc curves to the right (eastward = rightward in this rotated projection)
+    const mx = (pDep.x + pArr.x) / 2 + dist * 0.22;
+    const my = (pDep.y + pArr.y) / 2;
 
-        {/* Grid */}
-        {latLines}{lonLines}
-        {latLabels}{lonLabels}
+    const pathD = `M ${pDep.x} ${pDep.y} Q ${mx} ${my} ${pArr.x} ${pArr.y}`;
 
-        {/* Land masses */}
-        {FR24_LAND_PATHS.map((d, i) => (
-          <path key={i} d={d} fill="#141e2e" stroke="#1e2f44" strokeWidth="0.7" />
-        ))}
+    let planeX = mx, planeY = my, planeAngle = 0;
+    if (progress !== null) {
+      const t = progress / 100;
+      const bx = (1-t)*(1-t)*pDep.x + 2*(1-t)*t*mx + t*t*pArr.x;
+      const by = (1-t)*(1-t)*pDep.y + 2*(1-t)*t*my + t*t*pArr.y;
+      const t2 = Math.min(t + 0.01, 1);
+      const bx2 = (1-t2)*(1-t2)*pDep.x + 2*(1-t2)*t2*mx + t2*t2*pArr.x;
+      const by2 = (1-t2)*(1-t2)*pDep.y + 2*(1-t2)*t2*my + t2*t2*pArr.y;
+      planeX = bx; planeY = by;
+      planeAngle = Math.atan2(by2 - by, bx2 - bx) * (180 / Math.PI);
+    }
 
-        {/* Route shadow */}
-        <path d={pathD} fill="none" stroke="#ff660022" strokeWidth="8" strokeLinecap="round" />
+    const gridLines = [0.25, 0.5, 0.75].map(f => (
+      <line key={f} x1={PAD/2} y1={PAD + f*(H-2*PAD)} x2={W-PAD/2} y2={PAD + f*(H-2*PAD)}
+        stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4" />
+    ));
 
-        {/* Dashed background arc */}
-        <path d={pathD} fill="none" stroke="#2a3f55" strokeWidth="1.5" strokeDasharray="5,4" />
-
-        {/* Completed portion — orange glow */}
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:"auto", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:"1px solid var(--border-color)" }}>
+        {gridLines}
+        <path d={pathD} fill="none" stroke="var(--border-color)" strokeWidth="1.5" strokeDasharray="6,4" />
         {progress !== null && progress > 0 && (
-          <>
-            <path d={pathD} fill="none" stroke="#ff660055" strokeWidth="5"
-              strokeDasharray={`${progress * 5.5} 9999`} strokeLinecap="round" />
-            <path d={pathD} fill="none" stroke="#ff6600" strokeWidth="2"
-              strokeDasharray={`${progress * 5.5} 9999`} strokeLinecap="round" />
-          </>
+          <path d={pathD} fill="none" stroke="var(--brand)" strokeWidth="3"
+            strokeDasharray={`${progress * 4} 9999`} strokeLinecap="round" opacity="0.9" />
         )}
-
-        {/* DEP airport */}
-        <circle cx={pDep.x} cy={pDep.y} r="10" fill="#00c89620" stroke="#00c89660" strokeWidth="1" />
-        <circle cx={pDep.x} cy={pDep.y} r="4" fill="#00c896" />
-        <text x={pDep.x} y={pDep.y - 14} textAnchor="middle" fontSize="9" fill="#00c896" fontWeight="700" letterSpacing="0.5">{dep}</text>
-        <text x={pDep.x} y={pDep.y - 5} textAnchor="middle" fontSize="7" fill="#00c89699">{from.label}</text>
-
-        {/* ARR airport */}
-        <circle cx={pArr.x} cy={pArr.y} r="10" fill="#4a9eff20" stroke="#4a9eff60" strokeWidth="1" />
-        <circle cx={pArr.x} cy={pArr.y} r="4" fill="#4a9eff" />
-        <text x={pArr.x} y={pArr.y - 14} textAnchor="middle" fontSize="9" fill="#4a9eff" fontWeight="700" letterSpacing="0.5">{arr}</text>
-        <text x={pArr.x} y={pArr.y - 5} textAnchor="middle" fontSize="7" fill="#4a9eff99">{to.label}</text>
-
-        {/* Plane icon */}
-        <g transform={`translate(${bx},${by}) rotate(${angle})`}>
-          {/* Glow */}
-          <circle cx="0" cy="0" r="12" fill={`${statusColor}25`} />
-          {/* Body */}
-          <polygon points="-9,4 9,0 -9,-4" fill={statusColor} />
-          {/* Wings */}
-          <polygon points="-4,-1 2,-7 4,-5 0,0" fill={statusColor} opacity="0.85" />
-          <polygon points="-4,1 2,7 4,5 0,0" fill={statusColor} opacity="0.85" />
-          {/* Tail */}
-          <polygon points="-9,-1 -12,-5 -10,-5 -7,0" fill={statusColor} opacity="0.7" />
-          <polygon points="-9,1 -12,5 -10,5 -7,0" fill={statusColor} opacity="0.7" />
-        </g>
-
-        {/* Info overlay — top-left */}
-        {detail && (
-          <g>
-            <rect x="6" y="6" width="115" height={detail.duration ? 46 : 36} rx="4" fill="#0d111788" stroke="#1e2a3a" strokeWidth="0.8" />
-            <text x="12" y="18" fontSize="10" fill="#ff6600" fontWeight="700">{detail.flight ?? dep+"→"+arr}</text>
-            <text x="12" y="29" fontSize="8" fill="#aaaaaa">{detail.airline ?? ""}</text>
-            {detail.duration ? (
-              <text x="12" y="40" fontSize="8" fill="#aaaaaa">
-                {Math.floor(detail.duration/60)}h {detail.duration%60}min
-                {detail.status === "active" ? " · în zbor" : ""}
-              </text>
-            ) : null}
-          </g>
-        )}
-
-        {/* Progress badge — top-right */}
+        <circle cx={pDep.x} cy={pDep.y} r={dotR} fill="var(--success)" opacity="0.9" />
+        <circle cx={pDep.x} cy={pDep.y} r={dotR/2} fill="#fff" />
+        <text x={pDep.x} y={pDep.y - dotR - 4} textAnchor="middle" fontSize={fontSize} fill="var(--success)" fontWeight="700">{dep}</text>
+        <text x={pDep.x} y={pDep.y + dotR + 14} textAnchor="middle" fontSize={citySize} fill="var(--text-muted)">{from.label}</text>
+        <circle cx={pArr.x} cy={pArr.y} r={dotR} fill="var(--info)" opacity="0.9" />
+        <circle cx={pArr.x} cy={pArr.y} r={dotR/2} fill="#fff" />
+        <text x={pArr.x} y={pArr.y - dotR - 4} textAnchor="middle" fontSize={fontSize} fill="var(--info)" fontWeight="700">{arr}</text>
+        <text x={pArr.x} y={pArr.y + dotR + 14} textAnchor="middle" fontSize={citySize} fill="var(--text-muted)">{to.label}</text>
         {progress !== null && (
-          <g>
-            <rect x={W - 52} y="6" width="46" height="22" rx="4" fill="#0d111788" stroke="#ff660044" strokeWidth="0.8" />
-            <text x={W - 29} y="21" fontSize="11" fill="#ff6600" fontWeight="700" textAnchor="middle">{progress}%</text>
+          <g transform={`translate(${planeX},${planeY}) rotate(${planeAngle})`}>
+            <polygon points={`-${planeSize},${planeSize*0.6} ${planeSize},0 -${planeSize},-${planeSize*0.6}`} fill="var(--brand)" opacity="0.95" />
+            <circle cx="0" cy="0" r={planeSize + 2} fill="var(--brand)" opacity="0.15" />
           </g>
         )}
       </svg>
+    );
+  }
 
-      {/* Live badge */}
-      <div style={{ position:"absolute", bottom:8, right:10, display:"flex", alignItems:"center", gap:5, background:"#0d111799", borderRadius:4, padding:"2px 7px", fontSize:10, color:"#aaa" }}>
-        <span style={{ width:5, height:5, borderRadius:"50%", background: detail?.status === "active" ? "#ff6600" : "#4a9eff", flexShrink:0, boxShadow: detail?.status === "active" ? "0 0 5px #ff6600" : "none" }} />
-        AirLabs live
-      </div>
-    </div>
+  // Desktop: wide & compact landscape
+  const W   = 440;
+  const H   = 200;
+  const PAD = 32;
+  const minSpan = 2;
+
+  const spanLon = Math.max(maxLon - minLon, minSpan);
+  const spanLat = Math.max(maxLat - minLat, minSpan);
+
+  const project = (lat: number, lon: number) => ({
+    x: PAD + ((lon - minLon) / spanLon) * (W - 2 * PAD),
+    y: (H - PAD) - ((lat - minLat) / spanLat) * (H - 2 * PAD),
+  });
+
+  const pDep = project(from.lat, from.lon);
+  const pArr = project(to.lat, to.lon);
+
+  // Arc midpoint elevated (great circle approximation)
+  const mx = (pDep.x + pArr.x) / 2;
+  const my = (pDep.y + pArr.y) / 2 - Math.hypot(pArr.x - pDep.x, pArr.y - pDep.y) * 0.22;
+
+  const pathD = `M ${pDep.x} ${pDep.y} Q ${mx} ${my} ${pArr.x} ${pArr.y}`;
+
+  let planeX = mx, planeY = my, planeAngle = 0;
+  if (progress !== null) {
+    const t = progress / 100;
+    const bx = (1-t)*(1-t)*pDep.x + 2*(1-t)*t*mx + t*t*pArr.x;
+    const by = (1-t)*(1-t)*pDep.y + 2*(1-t)*t*my + t*t*pArr.y;
+    const t2 = Math.min(t + 0.01, 1);
+    const bx2 = (1-t2)*(1-t2)*pDep.x + 2*(1-t2)*t2*mx + t2*t2*pArr.x;
+    const by2 = (1-t2)*(1-t2)*pDep.y + 2*(1-t2)*t2*my + t2*t2*pArr.y;
+    planeX = bx; planeY = by;
+    planeAngle = Math.atan2(by2 - by, bx2 - bx) * (180 / Math.PI);
+  }
+
+  const gridLines = [0.25, 0.5, 0.75].map(f => (
+    <line key={f} x1={PAD + f*(W-2*PAD)} y1={PAD/2} x2={PAD + f*(W-2*PAD)} y2={H-PAD/2}
+      stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4" />
+  ));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:"auto", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:"1px solid var(--border-color)" }}>
+      {gridLines}
+      <path d={pathD} fill="none" stroke="var(--border-color)" strokeWidth="1.5" strokeDasharray="6,4" />
+      {progress !== null && progress > 0 && (
+        <path d={pathD} fill="none" stroke="var(--brand)" strokeWidth="2.5"
+          strokeDasharray={`${progress * 4} 9999`} strokeLinecap="round" opacity="0.9" />
+      )}
+      <circle cx={pDep.x} cy={pDep.y} r={dotR} fill="var(--success)" opacity="0.9" />
+      <circle cx={pDep.x} cy={pDep.y} r={dotR/2} fill="#fff" />
+      <text x={pDep.x} y={pDep.y - dotR - 4} textAnchor="middle" fontSize={fontSize} fill="var(--success)" fontWeight="700">{dep}</text>
+      <text x={pDep.x} y={pDep.y + dotR + 14} textAnchor="middle" fontSize={citySize} fill="var(--text-muted)">{from.label}</text>
+      <circle cx={pArr.x} cy={pArr.y} r={dotR} fill="var(--info)" opacity="0.9" />
+      <circle cx={pArr.x} cy={pArr.y} r={dotR/2} fill="#fff" />
+      <text x={pArr.x} y={pArr.y - dotR - 4} textAnchor="middle" fontSize={fontSize} fill="var(--info)" fontWeight="700">{arr}</text>
+      <text x={pArr.x} y={pArr.y + dotR + 14} textAnchor="middle" fontSize={citySize} fill="var(--text-muted)">{to.label}</text>
+      {progress !== null && (
+        <g transform={`translate(${planeX},${planeY}) rotate(${planeAngle})`}>
+          <polygon points={`-${planeSize},${planeSize*0.6} ${planeSize},0 -${planeSize},-${planeSize*0.6}`} fill="var(--brand)" opacity="0.95" />
+          <circle cx="0" cy="0" r={planeSize + 2} fill="var(--brand)" opacity="0.15" />
+        </g>
+      )}
+    </svg>
   );
 }
 
@@ -2279,7 +2399,6 @@ function MyFlightCenter({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>voi
               dep={detail.departure.iata}
               arr={detail.arrival.iata}
               progress={detail.progressPct}
-              detail={detail}
             />
           </div>
 
@@ -3235,3 +3354,4 @@ function SettingsCenter() {
     </div>
   );
 }
+
