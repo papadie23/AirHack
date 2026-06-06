@@ -789,39 +789,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     dorel:  SVG_STARTS.dorel,
   });
 
-  // Smooth movement: interpolate displayed position toward target at constant SVG px/s
-  const SMOOTH_SPEED = 60; // SVG units per second
-  const targetPosRef = useRef<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
-  const smoothPosRef = useRef<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
-  const [smoothPositions, setSmoothPositions] = useState<Record<string, {x:number;y:number}>>({ ...SVG_STARTS });
-  const rafRef = useRef<number|null>(null);
-  const lastFrameRef = useRef<number>(0);
-
-  useEffect(() => {
-    const animate = (now: number) => {
-      const dt = Math.min((now - lastFrameRef.current) / 1000, 0.1);
-      lastFrameRef.current = now;
-      let changed = false;
-      const next = { ...smoothPosRef.current };
-      for (const id of Object.keys(targetPosRef.current)) {
-        const target = targetPosRef.current[id];
-        const cur = smoothPosRef.current[id] ?? target;
-        const dx = target.x - cur.x, dy = target.y - cur.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < 0.5) { next[id] = target; }
-        else {
-          const step = Math.min(SMOOTH_SPEED * dt, dist);
-          next[id] = { x: cur.x + dx/dist*step, y: cur.y + dy/dist*step };
-          changed = true;
-        }
-      }
-      smoothPosRef.current = next;
-      if (changed) setSmoothPositions({ ...next });
-      rafRef.current = requestAnimationFrame(animate);
-    };
-    rafRef.current = requestAnimationFrame(animate);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, []);
   const [locLoading, setLocLoading] = useState(false);
   const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
@@ -996,10 +963,28 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
-    targetPosRef.current[personId] = svgPos;
+    // Pan map to keep active person centered
+    if (personId === activePerson) {
+      setMapPan(pan => {
+        const containerEl = mapWrapRef.current;
+        if (!containerEl) return pan;
+        const { width, height } = containerEl.getBoundingClientRect();
+        return { x: width / 2 - svgPos.x * mapZoom, y: height / 2 - svgPos.y * mapZoom };
+      });
+    }
     if (personId !== "you") return;
     // Zone proximity check — auto-advance task when entering active zone
     // We compare SVG distance (approx 1 SVG unit ≈ 0.04m at LRIA scale)
+    // Recalculate route from current position if route is active
+    setTaskIdx(idx => {
+      setDynamicRoute(prev => {
+        if (!prev) return prev;
+        const zone = ZONES[idx];
+        if (!zone) return prev;
+        return makeOrthoRoute(svgPos, { x: zone.x, y: zone.y });
+      });
+      return idx;
+    });
     setBoardingPhase(phase => {
       if (phase !== "task") return phase;
       return phase; // handled below via setState callback trick
@@ -1194,6 +1179,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         <div style={{
           position: "absolute", inset: 0,
           transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
+          transition: "transform 0.4s ease-out",
           transformOrigin: "center center",
         }}>
           <img src="/harta_completa.svg" alt="Hartă T4 LRIA" draggable={false}
@@ -1270,7 +1256,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
             {/* All person dots — use smoothPositions for fluid movement */}
             {!calMode && PEOPLE.map(p => {
-              const pos = smoothPositions[p.id] ?? positions[p.id];
+              const pos = positions[p.id];
               return (
                 <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
                   <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
@@ -1356,17 +1342,16 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
       {/* ── Boarding task overlay ── */}
       {boardingPhase === "confirming" && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:16, padding:"28px 32px", maxWidth:340, width:"90%", textAlign:"center" }}>
-            <div style={{ fontSize:28, marginBottom:12 }}>✈️</div>
-            <div style={{ fontSize:18, fontWeight:700, marginBottom:8 }}>Începeți procesul de îmbarcare?</div>
-            <div style={{ fontSize:13, color:"var(--text-muted)", marginBottom:24 }}>Vă vom ghida pas cu pas până la avion.</div>
-            <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
-              <button onClick={() => setBoardingPhase("awaiting-location")}
-                style={{ flex:1, padding:"10px 0", background:"var(--brand)", border:"none", borderRadius:8, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Da</button>
-              <button onClick={() => setBoardingPhase("idle")}
-                style={{ flex:1, padding:"10px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:8, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>Nu</button>
-            </div>
+        <div style={{ marginTop:8, padding:"14px 16px", background:"var(--bg-card)", border:"1px solid var(--border-color)", borderRadius:12, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:22 }}>✈️</span>
+            <span style={{ fontWeight:700, fontSize:15 }}>Începeți procesul de îmbarcare?</span>
+          </div>
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={() => setBoardingPhase("awaiting-location")}
+              style={{ flex:1, padding:"10px 0", background:"var(--brand)", border:"none", borderRadius:8, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Da</button>
+            <button onClick={() => setBoardingPhase("idle")}
+              style={{ flex:1, padding:"10px 0", background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:8, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>Nu</button>
           </div>
         </div>
       )}
