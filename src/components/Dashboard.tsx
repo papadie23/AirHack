@@ -604,7 +604,13 @@ function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:
 
 function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
-  return [s, SVG_SECURITY, SVG_WAYPOINTS_NEW[0], SVG_WAYPOINTS_NEW[1], SVG_GATE];
+  const waypoints = [s, SVG_SECURITY, SVG_WAYPOINTS_NEW[0], SVG_WAYPOINTS_NEW[1], SVG_GATE];
+  const result: {x:number;y:number}[] = [waypoints[0]];
+  for (let i = 1; i < waypoints.length; i++) {
+    const segs = makeOrthoRoute(waypoints[i-1], waypoints[i]);
+    result.push(...segs.slice(1));
+  }
+  return result;
 }
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
