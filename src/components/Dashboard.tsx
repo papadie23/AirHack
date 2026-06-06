@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
-import { Loader } from "@googlemaps/js-api-loader";
 
 type Feature = "weather" | "route" | "heatmap";
 
@@ -491,24 +490,26 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     if (!key || !gmapRef.current) return;
     if (gmapInstance.current) return;
 
-    const loader = new Loader({ apiKey: key, version: "weekly" });
-    loader.load().then(() => {
-      if (!gmapRef.current) return;
-      const map = new google.maps.Map(gmapRef.current, {
-        center: { lat: 47.1744, lng: 27.6193 },
-        zoom: 18,
-        mapTypeId: "satellite",
-        disableDefaultUI: true,
-        zoomControl: false,
-        tilt: 0,
-      });
-      gmapInstance.current = map;
-      markerRef.current = new google.maps.Marker({
-        map,
-        position: { lat: 47.1744, lng: 27.6193 },
-        title: "Tu ești aici",
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
-      });
+    import("@googlemaps/js-api-loader").then(({ Loader }) => {
+      const loader = new Loader({ apiKey: key, version: "weekly" });
+      loader.load().then(() => {
+        if (!gmapRef.current) return;
+        const map = new google.maps.Map(gmapRef.current, {
+          center: { lat: 47.1744, lng: 27.6193 },
+          zoom: 18,
+          mapTypeId: "satellite",
+          disableDefaultUI: true,
+          zoomControl: false,
+          tilt: 0,
+        });
+        gmapInstance.current = map;
+        markerRef.current = new google.maps.Marker({
+          map,
+          position: { lat: 47.1744, lng: 27.6193 },
+          title: "Tu ești aici",
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#ff6600", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
+        });
+      }).catch(() => {});
     }).catch(() => {});
   }, []);
 
@@ -713,24 +714,26 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
     const apiKey = (window as any).__GOOGLE_MAPS_KEY__ as string | undefined;
     if (!apiKey) { setHasGoogleKey(false); return; }
 
-    const loader = new Loader({
-      apiKey,
-      version: "weekly",
-      libraries: ["visualization"],
-    });
-    loader.load().then(() => {
-      if (!mapRef.current) return;
-      const map = new google.maps.Map(mapRef.current, {
-        center: LRIA_CENTER,
-        zoom: 16,
-        mapTypeId: "satellite",
-        disableDefaultUI: true,
-        zoomControl: true,
-        styles: [{ featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] }],
+    import("@googlemaps/js-api-loader").then(({ Loader }) => {
+      const loader = new Loader({
+        apiKey,
+        version: "weekly",
+        libraries: ["visualization"],
       });
-      googleMapRef.current = map;
-      heatmapLayerRef.current = new google.maps.visualization.HeatmapLayer({ map, radius: 40 });
-      setMapReady(true);
+      loader.load().then(() => {
+        if (!mapRef.current) return;
+        const map = new google.maps.Map(mapRef.current, {
+          center: LRIA_CENTER,
+          zoom: 16,
+          mapTypeId: "satellite",
+          disableDefaultUI: true,
+          zoomControl: true,
+          styles: [{ featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] }],
+        });
+        googleMapRef.current = map;
+        heatmapLayerRef.current = new google.maps.visualization.HeatmapLayer({ map, radius: 40 });
+        setMapReady(true);
+      }).catch(() => setHasGoogleKey(false));
     }).catch(() => setHasGoogleKey(false));
   }, []);
 
