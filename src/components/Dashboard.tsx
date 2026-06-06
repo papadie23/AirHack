@@ -972,9 +972,12 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
           {circles.map((c, i) => (
             <g key={i}>
               <circle cx={c.x} cy={c.y} r={c.r} fill={`url(#hg${i})`}/>
-              <circle cx={c.x} cy={c.y} r={6} fill={c.color} opacity="0.9"/>
+              {c.intensity > 0.85 && <circle cx={c.x} cy={c.y} r={8} fill={c.color} opacity="0.95"/>}
             </g>
           ))}
+          {/* Label cozi */}
+          <text x={852}  y={320} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Security</text>
+          <text x={2244} y={228} textAnchor="middle" fill="#EF5350" fontSize="13" fontWeight="700">⚠ Coadă Boarding</text>
         </svg>
       </div>
     </>
