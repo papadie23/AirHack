@@ -15,5 +15,8 @@ next-env.d.ts
 .env*.local
 
 # CV video feeds — large files, not versioned
+video_analytics/*.mp4
+video_analytics/*.avi
+video_analytics/*.mov
 video_analytics/videos/
 public/cv-output.json
