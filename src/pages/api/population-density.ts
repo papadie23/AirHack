@@ -32,7 +32,7 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response(JSON.stringify({ error: result.error }), { status: 502 });
   }
 
-  return new Response(JSON.stringify({ ...result.data, fromFixture: result.fromFixture }), {
+  return new Response(JSON.stringify({ ...(result.data as object), fromFixture: result.fromFixture }), {
     headers: { "Content-Type": "application/json" },
   });
 };
