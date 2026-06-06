@@ -67,11 +67,11 @@ export default function Dashboard() {
   return (
     <div id="dashboard">
       <div className="dashboard-grid">
-        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} announcements={announcements} />
+        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} logs={logs} announcements={announcements} />
         <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} activePerson={activePerson} announcements={announcements} setAnnouncements={setAnnouncements} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
-      <BottomBar logs={logs} activePerson={activePerson} setActivePerson={setActivePerson} feature={feature} setFeature={setFeature} />
+      <BottomBar activePerson={activePerson} setActivePerson={setActivePerson} />
     </div>
   );
 }
@@ -83,82 +83,171 @@ const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
   { id: "heatmap", icon: "ti-map-2",       label: "Heatmap Terminal", sub: "Aglomerație zone"          },
 ];
 
+const USER_NAV = [
+  { icon: "ti-user-circle",    label: "Contul meu"  },
+  { icon: "ti-plane-departure",label: "Zborul meu"  },
+  { icon: "ti-bell",           label: "Notificări"  },
+  { icon: "ti-settings",       label: "Setări"      },
+  { icon: "ti-help-circle",    label: "Ajutor"      },
+];
+
 function LeftPanel({
-  feature, setFeature, theme, setTheme, announcements,
+  feature, setFeature, theme, setTheme, logs, announcements,
 }: {
   feature: Feature; setFeature: (f: Feature) => void;
   theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
+  logs: { ts: string; msg: string; ok: boolean }[];
   announcements: Announcement[];
 }) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
-    <div className="card sidebar-left">
-      <div className="brand-header">
-        <div className="brand-icon"><i className="ti ti-wifi" /></div>
-        <div style={{ flex: 1 }}>
-          <div className="brand-title">AirFlow Nexus</div>
-          <div className="brand-sub">powered by Orange APIs</div>
-        </div>
-        <button
-          className="btn-theme-toggle"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-        >
-          <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
-        </button>
-      </div>
+    <>
+      {/* ── Mobile: backdrop + floating hamburger + drawer ── */}
+      {drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          style={{
+            position:"fixed", inset:0, zIndex:200,
+            background:"rgba(0,0,0,0.5)", backdropFilter:"blur(2px)",
+          }}
+        />
+      )}
 
-      <div className="section-title">Funcționalități</div>
-      <div className="api-list">
-        {NAV.map(n => (
-          <div key={n.id} className={`api-card${feature === n.id ? " active" : ""}`} onClick={() => setFeature(n.id)}>
-            <div className="api-card-header"><i className={`ti ${n.icon}`} /> {n.label}</div>
-            <div className="api-val">{n.sub}</div>
-            <div className="api-status">
-              <span className="dot green pulse-green" />
-              {feature === n.id ? "Activ acum" : "Disponibil"}
+      {/* Floating hamburger — mobile only (hidden on desktop via CSS) */}
+      <button
+        className="hamburger-float"
+        onClick={() => setDrawerOpen(true)}
+        title="Meniu"
+      >
+        <i className="ti ti-menu-2" />
+      </button>
+
+      {/* Drawer — mobile only (hidden on desktop via CSS) */}
+      <div className={`side-drawer${drawerOpen ? " open" : ""}`}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+          <span style={{ fontSize:14, fontWeight:600 }}>Meniu</span>
+          <button className="btn-theme-toggle" onClick={() => setDrawerOpen(false)} title="Închide">
+            <i className="ti ti-x" />
+          </button>
+        </div>
+
+        <div className="section-title">Navigare</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:20 }}>
+          {NAV.map(n => (
+            <button
+              key={n.id}
+              className={`btn-tab${feature === n.id ? " active" : ""}`}
+              style={{ justifyContent:"flex-start", flex:"unset", padding:"10px 12px" }}
+              onClick={() => { setFeature(n.id); setDrawerOpen(false); }}
+            >
+              <i className={`ti ${n.icon}`} style={{ fontSize:17 }} />
+              {n.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="section-title">Pasager</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:20 }}>
+          {USER_NAV.map(n => (
+            <button
+              key={n.label}
+              className="btn-tab"
+              style={{ justifyContent:"flex-start", flex:"unset", padding:"10px 12px" }}
+              onClick={() => setDrawerOpen(false)}
+            >
+              <i className={`ti ${n.icon}`} style={{ fontSize:17 }} />
+              {n.label}
+            </button>
+          ))}
+        </div>
+
+        {logs.length > 0 && (
+          <>
+            <div className="section-title">Activitate recentă</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+              {logs.slice(0,8).map((l,i) => (
+                <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:7, fontSize:11, color:"var(--text-muted)" }}>
+                  <span style={{ width:6, height:6, borderRadius:"50%", marginTop:3, background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
+                  <span style={{ flexShrink:0 }}>{l.ts}</span>
+                  <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
+                </div>
+              ))}
             </div>
-          </div>
-        ))}
+          </>
+        )}
+      </div>
 
-        <div style={{ marginTop: 12 }}>
-          <div className="section-title">Status API Orange</div>
+      {/* ── Main left panel — desktop only (hidden on mobile via CSS) ── */}
+      <div className="card sidebar-left">
+        <div className="brand-header">
+          <div className="brand-icon"><i className="ti ti-wifi" /></div>
+          <div style={{ flex: 1 }}>
+            <div className="brand-title">AirFlow Nexus</div>
+            <div className="brand-sub">powered by Orange APIs</div>
+          </div>
+          <button
+            className="btn-theme-toggle"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            <i className={`ti ${theme === "dark" ? "ti-sun" : "ti-moon"}`} />
+          </button>
         </div>
-        {[
-          { icon:"ti-map-pin", label:"Device Location", val:"342 dispozitive", dot:"green", pulse:true },
-          { icon:"ti-id-badge",label:"Number Verification", val:"12 verificări/oră", dot:"orange", pulse:false },
-          { icon:"ti-bolt",    label:"Quality on Demand", val:"2 sesiuni active", dot:"blue", pulse:false },
-        ].map(a => (
-          <div key={a.label} className="api-card">
-            <div className="api-card-header"><i className={`ti ${a.icon}`} /> {a.label}</div>
-            <div className="api-val">{a.val}</div>
-            <div className="api-status">
-              <span className={`dot ${a.dot}${a.pulse ? " pulse-green" : ""}`} />
-              Activ
+
+        <div className="section-title">Funcționalități</div>
+        <div className="api-list">
+          {NAV.map(n => (
+            <div key={n.id} className={`api-card${feature === n.id ? " active" : ""}`} onClick={() => setFeature(n.id)}>
+              <div className="api-card-header"><i className={`ti ${n.icon}`} /> {n.label}</div>
+              <div className="api-val">{n.sub}</div>
+              <div className="api-status">
+                <span className="dot green pulse-green" />
+                {feature === n.id ? "Activ acum" : "Disponibil"}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
 
-        <div style={{ marginTop: 12 }}>
-          <div className="section-title">Operațiuni & Securitate</div>
+          <div style={{ marginTop: 12 }}>
+            <div className="section-title">Status API Orange</div>
+          </div>
+          {[
+            { icon:"ti-map-pin", label:"Device Location", val:"342 dispozitive", dot:"green", pulse:true },
+            { icon:"ti-id-badge",label:"Number Verification", val:"12 verificări/oră", dot:"orange", pulse:false },
+            { icon:"ti-bolt",    label:"Quality on Demand", val:"2 sesiuni active", dot:"blue", pulse:false },
+          ].map(a => (
+            <div key={a.label} className="api-card">
+              <div className="api-card-header"><i className={`ti ${a.icon}`} /> {a.label}</div>
+              <div className="api-val">{a.val}</div>
+              <div className="api-status">
+                <span className={`dot ${a.dot}${a.pulse ? " pulse-green" : ""}`} />
+                Activ
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: 12 }}>
+            <div className="section-title">Operațiuni & Securitate</div>
+          </div>
+          {([
+            { id:"flow-prediction",  icon:"ti-clock-play",           label:"Flow Prediction",      sub:"Estimează ETA cozi" },
+            { id:"boarding-verify",  icon:"ti-shield-check",          label:"Verificare Boarding",  sub:"Prevenție fraudă SIM" },
+            { id:"admin",            icon:"ti-settings-automation",   label:"Control Panel Admin",  sub:"QoD & Gestiune crize" },
+            { id:"announcements",    icon:"ti-megaphone",             label:"Anunțuri Pasageri",    sub:`${announcements.length} alerte active` },
+          ] as {id:Feature;icon:string;label:string;sub:string}[]).map(n => (
+            <div key={n.id} className={`api-card${feature===n.id?" active":""}`} onClick={() => setFeature(n.id)}>
+              <div className="api-card-header"><i className={`ti ${n.icon}`}/> {n.label}</div>
+              <div className="api-val">{n.sub}</div>
+            </div>
+          ))}
         </div>
-        {([
-          { id:"flow-prediction",  icon:"ti-clock-play",           label:"Flow Prediction",      sub:"Estimează ETA cozi" },
-          { id:"boarding-verify",  icon:"ti-shield-check",          label:"Verificare Boarding",  sub:"Prevenție fraudă SIM" },
-          { id:"admin",            icon:"ti-settings-automation",   label:"Control Panel Admin",  sub:"QoD & Gestiune crize" },
-          { id:"announcements",    icon:"ti-megaphone",             label:"Anunțuri Pasageri",    sub:`${announcements.length} alerte active` },
-        ] as {id:Feature;icon:string;label:string;sub:string}[]).map(n => (
-          <div key={n.id} className={`api-card${feature===n.id?" active":""}`} onClick={() => setFeature(n.id)}>
-            <div className="api-card-header"><i className={`ti ${n.icon}`}/> {n.label}</div>
-            <div className="api-val">{n.sub}</div>
-          </div>
-        ))}
-      </div>
 
-      <div className="alert-box" style={{ marginTop: 12 }}>
-        <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
-        <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
+        <div className="alert-box" style={{ marginTop: 12 }}>
+          <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
+          <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -572,6 +661,18 @@ const PEOPLE: Person[] = [
   { id: "dorel",  name: "Dorel",  flightId: "4", color: "#34D399" },
 ];
 
+/* 3 mock phone numbers → passenger mock data */
+const PHONE_PERSONS: Record<string, string> = {
+  "+40721000001": "misu",
+  "+40721000002": "ionica",
+  "+40721000003": "dorel",
+};
+
+/* Estimated walking time (min) to each gate from check-in */
+const GATE_ETA_MIN: Record<string, number> = {
+  "1":5, "2":6, "3":7, "4":8, "5":10, "6":12, "T3":15,
+};
+
 function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>void; activePerson: string }) {
   const [positions, setPositions] = useState<Record<string, {x:number;y:number}>>({
     you:    SVG_STARTS.you,
@@ -593,11 +694,50 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const [gpsInput, setGpsInput] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
 
+  // Zoom / pan state (disabled in calMode / pixelLog)
+  const [mapZoom, setMapZoom] = useState(1);
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+  const mapWrapRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const saved = loadCalibration();
     setCalPoints(saved.points);
     setCalTransform(saved.transform);
   }, []);
+
+  useEffect(() => {
+    const el = mapWrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (calMode || pixelLog) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 0.87;
+      setMapZoom(z => Math.min(Math.max(z * factor, 0.5), 6));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [calMode, pixelLog]);
+
+  const startDrag = (clientX: number, clientY: number) => {
+    if (calMode || pixelLog) return;
+    dragRef.current = { startX: clientX, startY: clientY, panX: mapPan.x, panY: mapPan.y };
+    setIsDragging(true);
+  };
+  const moveDrag = (clientX: number, clientY: number) => {
+    if (!dragRef.current) return;
+    const { startX, startY, panX, panY } = dragRef.current;
+    setMapPan({ x: panX + clientX - startX, y: panY + clientY - startY });
+  };
+  const endDrag = () => { dragRef.current = null; setIsDragging(false); };
+
+  const zoomBtnStyle: React.CSSProperties = {
+    width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+    background: "var(--bg-card)", border: "1px solid var(--border-color)",
+    borderRadius: "var(--radius-md)", color: "var(--text-main)", cursor: "pointer",
+    fontSize: 16, fontWeight: 700, lineHeight: 1, boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+  };
 
   const person = PEOPLE.find(p => p.id === activePerson)!;
   const flight = FLIGHTS.find(f => f.id === person.flightId) ?? null;
@@ -712,6 +852,36 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
       )}
 
+      {/* Map — zoomable/pannable (pan/wheel disabled in calMode/pixelLog) */}
+      <div
+        ref={mapWrapRef}
+        className="map-container"
+        style={{
+          position: "relative", flex: 1,
+          borderRadius: "var(--radius-md)", overflow: "hidden",
+          border: `1px solid ${calMode?"var(--brand)":pixelLog?"#F59E0B":"var(--border-color)"}`,
+          cursor: calMode||pixelLog ? "crosshair" : (isDragging ? "grabbing" : "grab"),
+          userSelect: "none",
+        }}
+        onMouseDown={e => startDrag(e.clientX, e.clientY)}
+        onMouseMove={e => moveDrag(e.clientX, e.clientY)}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
+        onTouchStart={e => e.touches.length === 1 && startDrag(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={e => { e.preventDefault(); e.touches.length === 1 && moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
+        onTouchEnd={endDrag}
+      >
+        {/* Zoom controls — hidden in calMode/pixelLog */}
+        {!calMode && !pixelLog && (
+          <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
+            <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.min(z * 1.25, 6))} title="Zoom in">+</button>
+            <button style={zoomBtnStyle} onClick={() => setMapZoom(z => Math.max(z * 0.8, 0.5))} title="Zoom out">−</button>
+            <button style={{ ...zoomBtnStyle, fontSize:12 }} onClick={() => { setMapZoom(1); setMapPan({ x:0, y:0 }); }} title="Reset">
+              <i className="ti ti-home-2" />
+            </button>
+          </div>
+        )}
+
       {calMode && pendingPin && (
         <div style={{ margin:"0 0 6px", padding:"8px 12px", background:"var(--bg-card)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:12, color:"var(--text-muted)", whiteSpace:"nowrap" }}>SVG ({pendingPin.svgX.toFixed(0)}, {pendingPin.svgY.toFixed(0)})</span>
@@ -722,66 +892,71 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
       )}
 
-      {/* Map */}
-      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:`1px solid ${calMode?"var(--brand)":pixelLog?"#F59E0B":"var(--border-color)"}`, cursor: calMode||pixelLog ? "crosshair" : "default" }}>
-        <img src="/harta_completa.svg" alt="Hartă T4 LRIA" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
-
-        {/* Pixel logger input popover */}
+        {/* Pixel logger hover coords — outside transform so it stays fixed top-left */}
         {pixelLog && hoverPos && (
           <div style={{ position:"absolute", top:8, left:8, zIndex:10, background:"rgba(11,17,32,0.92)", border:"1px solid #F59E0B", borderRadius:6, padding:"6px 10px", fontSize:12, color:"#F59E0B", pointerEvents:"none" }}>
             x: <b>{hoverPos.x.toFixed(0)}</b> · y: <b>{hoverPos.y.toFixed(0)}</b>
           </div>
         )}
 
-        <svg ref={svgRef} viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
-          onClick={e => {
-            if (pixelLog && svgRef.current) {
+        {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
+        <div style={{
+          position: "absolute", inset: 0,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`,
+          transformOrigin: "center center",
+        }}>
+          <img src="/harta_completa.svg" alt="Hartă T4 LRIA" draggable={false}
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
+
+          <svg ref={svgRef} viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
+            onClick={e => {
+              if (pixelLog && svgRef.current) {
+                const rect = svgRef.current.getBoundingClientRect();
+                const x = ((e.clientX-rect.left)/rect.width)*2262;
+                const y = ((e.clientY-rect.top)/rect.height)*587;
+                const label = window.prompt(`SVG (${x.toFixed(0)}, ${y.toFixed(0)}) — ce este acest punct?`) ?? "";
+                if (label) setPixelEntries(prev => [...prev, {x, y, label}]);
+              } else { handleSvgClick(e); }
+            }}
+            onMouseMove={e => {
+              if (!pixelLog || !svgRef.current) { setHoverPos(null); return; }
               const rect = svgRef.current.getBoundingClientRect();
-              const x = ((e.clientX-rect.left)/rect.width)*2262;
-              const y = ((e.clientY-rect.top)/rect.height)*587;
-              const label = window.prompt(`SVG (${x.toFixed(0)}, ${y.toFixed(0)}) — ce este acest punct?`) ?? "";
-              if (label) setPixelEntries(prev => [...prev, {x, y, label}]);
-            } else { handleSvgClick(e); }
-          }}
-          onMouseMove={e => {
-            if (!pixelLog || !svgRef.current) { setHoverPos(null); return; }
-            const rect = svgRef.current.getBoundingClientRect();
-            setHoverPos({ x:((e.clientX-rect.left)/rect.width)*2262, y:((e.clientY-rect.top)/rect.height)*587 });
-          }}
-          onMouseLeave={() => setHoverPos(null)}
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode||pixelLog ? "all" : "none", zIndex:2 }}>
-          <defs>
-            <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          </defs>
+              setHoverPos({ x:((e.clientX-rect.left)/rect.width)*2262, y:((e.clientY-rect.top)/rect.height)*587 });
+            }}
+            onMouseLeave={() => setHoverPos(null)}
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode||pixelLog ? "all" : "none", zIndex:2 }}>
+            <defs>
+              <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
 
-          {/* Route for active person */}
-          {!calMode && pts && (
-            <polyline points={polyline} fill="none" stroke={person.color} strokeWidth="4"
-              strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
-              style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
-          )}
+            {/* Route for active person */}
+            {!calMode && pts && (
+              <polyline points={polyline} fill="none" stroke={person.color} strokeWidth="4"
+                strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
+                style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
+            )}
 
-          {/* Gate */}
-          {!calMode && gatePos && (
-            <g filter="url(#glow2)">
-              <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
-              <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
-              <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">{GATE_LABELS[flight?.gate ?? ""]}</text>
-            </g>
-          )}
-
-          {/* All person dots */}
-          {!calMode && PEOPLE.map(p => {
-            const pos = positions[p.id];
-            return (
-              <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
-                <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
-                <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?7:5} fill={p.color}/>
-                <circle cx={pos.x} cy={pos.y} r="2" fill="#fff"/>
-                <text x={pos.x} y={pos.y+20} textAnchor="middle" fill={p.color} fontSize="10" fontWeight="600">{p.name}</text>
+            {/* Gate */}
+            {!calMode && gatePos && (
+              <g filter="url(#glow2)">
+                <circle cx={gatePos.x} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2" opacity="0.6" style={{animation:"pulse 2s infinite"}}/>
+                <circle cx={gatePos.x} cy={gatePos.y} r="7" fill="#10B981"/>
+                <text x={gatePos.x} y={gatePos.y-18} textAnchor="middle" fill="#10B981" fontSize="12" fontWeight="700">{GATE_LABELS[flight?.gate ?? ""]}</text>
               </g>
-            );
-          })}
+            )}
+
+            {/* All person dots */}
+            {!calMode && PEOPLE.map(p => {
+              const pos = positions[p.id];
+              return (
+                <g key={p.id} filter="url(#glow2)" opacity={p.id === activePerson ? 1 : 0.5}>
+                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?14:10} fill="none" stroke={p.color} strokeWidth="2" opacity="0.5" style={p.id===activePerson?{animation:"pulse 2s infinite"}:{}}/>
+                  <circle cx={pos.x} cy={pos.y} r={p.id===activePerson?7:5} fill={p.color}/>
+                  <circle cx={pos.x} cy={pos.y} r="2" fill="#fff"/>
+                  <text x={pos.x} y={pos.y+20} textAnchor="middle" fill={p.color} fontSize="10" fontWeight="600">{p.name}</text>
+                </g>
+              );
+            })}
 
           {/* Calibration points */}
           {calMode && calPoints.map((p, i) => (
@@ -797,7 +972,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               <circle cx={pendingPin.svgX} cy={pendingPin.svgY} r="5" fill="none" stroke="#ff6600" strokeWidth="2"/>
             </g>
           )}
-        </svg>
+          </svg>
+        </div>
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
           @keyframes pulse { 0%,100%{transform:scale(0.9);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
@@ -823,12 +999,33 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         </div>
       )}
 
+      {/* ETA card — shown on all screens, prominent on mobile */}
+      {flight && (
+        <div className="route-eta-card fade-in">
+          <div style={{ display:"flex", alignItems:"center", gap:10, flex:1 }}>
+            <i className="ti ti-walk" style={{ fontSize:22, color:"var(--brand)", flexShrink:0 }}/>
+            <div>
+              <div style={{ fontSize:11, color:"var(--text-muted)", marginBottom:2 }}>Timp estimat până la poartă</div>
+              <div style={{ fontSize:22, fontWeight:700, color:"var(--text-main)", lineHeight:1 }}>
+                {GATE_ETA_MIN[flight.gate] ?? 8}
+                <span style={{ fontSize:13, fontWeight:400, color:"var(--text-muted)", marginLeft:4 }}>min mers</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0 }}>
+            <div style={{ fontSize:11, color:"var(--text-muted)" }}>Decolare</div>
+            <div style={{ fontSize:15, fontWeight:600, color:person.color }}>{flight.departs}</div>
+            <div style={{ fontSize:11, color:"var(--text-muted)" }}>{GATE_LABELS[flight.gate]}</div>
+          </div>
+        </div>
+      )}
+
       {/* Flight info strip */}
       {flight && (
         <div style={{ marginTop:8, padding:"10px 14px", borderRadius:"var(--radius-md)", border:`1px solid ${person.color}44`, background:`${person.color}11`, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
           <i className="ti ti-plane" style={{color:person.color,fontSize:20}}/>
           <div style={{flex:1}}>
-            <div style={{fontWeight:600,fontSize:14,color:person.color}}>{person.name} · {flight.flight} → {flight.dest}</div>
+            <div style={{fontWeight:600,fontSize:14,color:person.color}}>{flight.flight} → {flight.dest}</div>
             <div style={{fontSize:12,color:"var(--text-muted)"}}>{GATE_LABELS[flight.gate]} · Decolare {flight.departs}</div>
           </div>
         </div>
@@ -1303,46 +1500,84 @@ function HeatmapRight() {
 }
 
 /* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
-function BottomBar({ logs, activePerson, setActivePerson, feature, setFeature }: {
-  logs:{ts:string;msg:string;ok:boolean}[];
+const PHONE_HISTORY_KEY = "airhack_phone_history";
+
+function loadPhoneHistory(): string[] {
+  try { return JSON.parse(localStorage.getItem(PHONE_HISTORY_KEY) ?? "[]"); }
+  catch { return []; }
+}
+function savePhoneHistory(num: string) {
+  const prev = loadPhoneHistory().filter(n => n !== num);
+  localStorage.setItem(PHONE_HISTORY_KEY, JSON.stringify([num, ...prev].slice(0, 10)));
+}
+
+function BottomBar({ activePerson, setActivePerson }: {
   activePerson: string; setActivePerson: (id:string)=>void;
-  feature: Feature; setFeature: (f:Feature)=>void;
 }) {
+  const [phone, setPhone] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
+
+  useEffect(() => { setHistory(loadPhoneHistory()); }, []);
+
+  const handlePhone = (val: string) => {
+    setPhone(val);
+    const match = PHONE_PERSONS[val.trim()];
+    if (match) {
+      setActivePerson(match);
+      savePhoneHistory(val.trim());
+      setHistory(loadPhoneHistory());
+    }
+  };
+
+  const person = PEOPLE.find(p => p.id === activePerson && p.id !== "you");
+  const flight = person ? FLIGHTS.find(f => f.id === person.flightId) : null;
+  const isAdmin = activePerson === "you";
+
   return (
     <div className="bottom-bar">
-      {PEOPLE.map(p => (
-        <button key={p.id} className={`btn-tab${activePerson===p.id?" active":""}`} onClick={() => setActivePerson(p.id)}
-          style={{ color: activePerson===p.id ? p.color : undefined, borderBottom: activePerson===p.id ? `2px solid ${p.color}` : undefined }}>
-          <i className={`ti ${p.id==="you" ? "ti-user-circle" : "ti-user"}`}/> {p.name}
-          {p.id==="you" && <span style={{ fontSize:10, marginLeft:4, color:"var(--brand)", opacity:0.8 }}>Admin</span>}
-        </button>
-      ))}
-      <div style={{ width:1, background:"var(--border-color)", margin:"4px 6px" }}/>
-      <button className={`btn-tab${feature==="account"?" active":""}`} onClick={() => setFeature("account")}>
-        <i className="ti ti-user-circle"/> Contul meu
+      {/* Admin button */}
+      <button
+        className={`btn-tab${isAdmin ? " active" : ""}`}
+        onClick={() => { setActivePerson("you"); setPhone(""); }}
+        style={{ flex:"0 0 auto", gap:6, color: isAdmin ? "var(--brand)" : undefined, borderColor: isAdmin ? "var(--brand)" : undefined }}
+      >
+        <i className="ti ti-shield-half" style={{ fontSize:17 }}/>
+        <span>Admin</span>
       </button>
-      <button className={`btn-tab${feature==="status-api"?" active":""}`} onClick={() => setFeature("status-api")}>
-        <i className="ti ti-server"/> Status API
-      </button>
-      <button className={`btn-tab${feature==="settings"?" active":""}`} onClick={() => setFeature("settings")}>
-        <i className="ti ti-settings"/> Setări
-      </button>
-      <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:16, overflow:"hidden" }}>
 
-        {logs.slice(0,2).map((l,i) => (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
-            <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
-            <span>{l.ts}</span>
-            <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
+      {/* Phone input + matched passenger info */}
+      <div style={{ flex:1, display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+        <div style={{ flex:1, position:"relative", minWidth:0 }}>
+          {/* datalist for autocomplete from history */}
+          <datalist id="phone-history">
+            {history.map(n => <option key={n} value={n} />)}
+          </datalist>
+          <input
+            type="tel"
+            list="phone-history"
+            className="phone-input"
+            placeholder="Introdu numărul de telefon"
+            value={phone}
+            onChange={e => handlePhone(e.target.value)}
+          />
+        </div>
+        {person && flight && (
+          <div className="fade-in" style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+            <span style={{ width:8, height:8, borderRadius:"50%", background:person.color, flexShrink:0 }}/>
+            <span style={{ fontSize:12, fontWeight:600, color:person.color, whiteSpace:"nowrap" }}>
+              {flight.flight} · {GATE_LABELS[flight.gate]}
+            </span>
+            <span style={{ fontSize:11, color:"var(--text-muted)", whiteSpace:"nowrap" }}>
+              {flight.departs}
+            </span>
           </div>
-        ))}
-        {logs.length===0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
+        )}
+        {!person && !isAdmin && phone.length > 4 && (
+          <span style={{ fontSize:12, color:"var(--text-muted)", whiteSpace:"nowrap" }}>
+            Număr nerecunoscut
+          </span>
+        )}
       </div>
-
-      <button className="btn-tab">
-        <i className="ti ti-help-circle" />
-        <span className="btn-tab-label">Ajutor</span>
-      </button>
     </div>
   );
 }
