@@ -552,9 +552,51 @@ const GATE_SVG: Record<string, { x: number; y: number }> = {
   "4": SVG_GATE, "5": SVG_GATE, "6": SVG_GATE, "T3": SVG_GATE,
 };
 
-function makeRoute(personId: string) {
+// Obstacole din pixel log (SVG coords) — fiecare e un dreptunghi cx±r, cy±r
+const OBSTACLES: { x: number; y: number; r: number }[] = [
+  { x: 306, y: 365, r: 30 },
+  { x: 397, y: 373, r: 30 },
+  { x: 468, y: 373, r: 30 },
+  { x: 566, y: 374, r: 30 },
+];
+
+// Generează rută ortogonală (L-shape segmente) între două puncte, ocolind obstacole
+// Strategia: mers pe coridor Y comun (detour_y) ales să evite zona obstacolelor
+function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:number;y:number}[] {
+  // Detectează dacă segmentul orizontal la y=detourY intersectează vreun obstacol
+  const blocked = (y: number, x1: number, x2: number) => {
+    const xMin = Math.min(x1, x2), xMax = Math.max(x1, x2);
+    return OBSTACLES.some(o => Math.abs(o.y - y) < o.r && o.x + o.r > xMin && o.x - o.r < xMax);
+  };
+
+  // Încearcă coridor direct (from.y → to.x)
+  if (!blocked(from.y, from.x, to.x) && !blocked(to.y, from.x, to.x)) {
+    // L-shape simplu: merge orizontal la from.y, apoi vertical
+    return [from, { x: to.x, y: from.y }, to];
+  }
+
+  // Găsește un y de detour deasupra sau dedesubtul obstacolelor
+  const obsTop    = Math.min(...OBSTACLES.map(o => o.y - o.r)) - 20;
+  const obsBottom = Math.max(...OBSTACLES.map(o => o.y + o.r)) + 20;
+
+  // Alege detour-ul mai aproape de from.y
+  const detourY = Math.abs(obsTop - from.y) < Math.abs(obsBottom - from.y) ? obsTop : obsBottom;
+
+  return [
+    from,
+    { x: from.x, y: detourY },   // coboară/urcă vertical
+    { x: to.x,   y: detourY },   // merge orizontal pe culoarul liber
+    to,                           // ajunge la destinație
+  ];
+}
+
+function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
-  return [s, SVG_SECURITY, { x: 1600, y: 300 }, SVG_GATE];
+  const seg1 = makeOrthoRoute(s, SVG_SECURITY);
+  const seg2 = makeOrthoRoute(SVG_SECURITY, { x: 1600, y: 300 });
+  const seg3 = makeOrthoRoute({ x: 1600, y: 300 }, SVG_GATE);
+  // Deduplicăm joncțiunile
+  return [...seg1, ...seg2.slice(1), ...seg3.slice(1)];
 }
 
 const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
@@ -760,6 +802,15 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               strokeDasharray="12 8" strokeLinecap="round" strokeLinejoin="round"
               style={{ animation:"moveDash 1.5s linear infinite", filter:`drop-shadow(0 0 6px ${person.color}88)` }} />
           )}
+
+          {/* Obstacole */}
+          {!calMode && OBSTACLES.map((o, i) => (
+            <g key={i}>
+              <rect x={o.x-o.r} y={o.y-o.r} width={o.r*2} height={o.r*2} rx="6"
+                fill="rgba(239,68,68,0.15)" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4 2"/>
+              <text x={o.x} y={o.y+4} textAnchor="middle" fill="#EF4444" fontSize="10" fontWeight="700">⚠</text>
+            </g>
+          ))}
 
           {/* Gate */}
           {!calMode && gatePos && (
