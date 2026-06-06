@@ -471,7 +471,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 }
 
 /* ── SVG affine calibration ── */
-const CAL_KEY = "svg_cal_v1";
+const CAL_KEY = "svg_cal_v2";
 interface CalPoint { svgX: number; svgY: number; lat: number; lng: number }
 interface CalTransform { A:number; B:number; C:number; D:number; E:number; F:number }
 
@@ -514,9 +514,9 @@ function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:numb
 }
 
 const defaultPoints: CalPoint[] = [
-  { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // control check / masa echipei
-  { svgX: 2244, svgY: 256, lat: 47.17406410, lng: 27.61970100 }, // destinație pasageri / dozator
-  { svgX: 100,  svgY: 500, lat: 47.17460000, lng: 27.61850000 }, // colț stânga-jos (estimat)
+  { svgX: 70,   svgY: 335, lat: 47.1746342,  lng: 27.6192034 }, // baza scări (calibrat)
+  { svgX: 2207, svgY: 269, lat: 47.1740641,  lng: 27.6197010 }, // baie spate (calibrat)
+  { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // masa echipei (anterior)
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
@@ -649,6 +649,19 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const [gpsInput, setGpsInput] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
 
+  // Dead-zone: only update position if moved > DEAD_ZONE_M metres
+  const lastGps = useRef<Record<string, {lat:number;lng:number}>>({});
+  const DEAD_ZONE_M = 5;
+
+  // Haversine distance between two GPS points (in metres)
+  const haversineM = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
   useEffect(() => {
     const saved = loadCalibration();
     setCalPoints(saved.points);
@@ -662,28 +675,46 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
   const placeOnMap = (lat: number, lng: number, personId: string) => {
-    if (calTransform) {
-      setPositions(prev => ({ ...prev, [personId]: svgFromGps(calTransform, lat, lng) }));
-    }
+    if (!calTransform) return;
+    const prev = lastGps.current[personId];
+    if (prev && haversineM(prev.lat, prev.lng, lat, lng) < DEAD_ZONE_M) return;
+    lastGps.current[personId] = { lat, lng };
+    setPositions(prev => ({ ...prev, [personId]: svgFromGps(calTransform, lat, lng) }));
   };
 
-  const getLocation = async () => {
+  // Auto-trigger permission prompt on mount for activePerson === "you"
+  const locationAsked = useRef(false);
+  useEffect(() => {
+    if (activePerson === "you" && navigator.geolocation && !locationAsked.current) {
+      locationAsked.current = true;
+      navigator.geolocation.getCurrentPosition(
+        () => {}, // doar cere permisiunea, fără a face nimic
+        () => {}, // ignoră eroarea — utilizatorul poate refuza
+        { timeout: 5000 }
+      );
+    }
+  }, [activePerson]);
+
+  const getLocation = () => {
+    if (!navigator.geolocation) {
+      onLog("Geolocația nu e suportată de acest browser", false);
+      return;
+    }
     setLocLoading(true);
-    try {
-      const r = await fetch("/api/location", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ person: activePerson }),
-      });
-      const d = await r.json();
-      const lat = d.location?.latitude, lng = d.location?.longitude;
-      if (lat && lng) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
         placeOnMap(lat, lng, activePerson);
-        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)}${d.fromFixture ? " (mock)" : ""}`);
-      } else {
-        onLog(`${person.name}: ${d.error ?? "fără locație"}`, false);
-      }
-    } catch { onLog("Eroare locație", false); }
-    finally { setLocLoading(false); }
+        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} (acuratețe ${pos.coords.accuracy.toFixed(0)}m)`);
+        setLocLoading(false);
+      },
+      (err) => {
+        onLog(`Eroare locație: ${err.message}`, false);
+        setLocLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
   };
 
   // ── Calibration handlers ──
