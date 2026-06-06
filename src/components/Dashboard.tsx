@@ -1853,28 +1853,43 @@ const AIRPORT_COORDS: Record<string, { lat: number; lon: number; label: string }
   TSR: { lat: 45.809, lon: 21.338, label: "Timișoara" },
 };
 
-/* ─── Flight Route Map — Google Maps on mobile, SVG on desktop ─── */
+/* ─── Flight Route Map — Google Maps Static on mobile, SVG on desktop ─── */
 function FlightRouteMap({ dep, arr, progress }: {
   dep: string; arr: string; progress: number | null;
 }) {
-  const [isMobile, setIsMobile] = useState(false);
+  const [mapSrc, setMapSrc] = useState<string | null>(null);
 
   useEffect(() => {
+    const from = AIRPORT_COORDS[dep];
+    const to   = AIRPORT_COORDS[arr];
+
+    const build = (mobile: boolean) => {
+      if (!mobile || !from || !to) { setMapSrc(null); return; }
+      // Key is injected server-side into window.__GOOGLE_MAPS_KEY__ by index.astro
+      const key = (window as unknown as Record<string, string>).__GOOGLE_MAPS_KEY__;
+      if (!key) { setMapSrc(null); return; }
+      // Static Maps API: no multi-char labels, plain named colors for markers
+      setMapSrc([
+        "https://maps.googleapis.com/maps/api/staticmap",
+        "?size=640x300&scale=2&maptype=terrain",
+        `&markers=color:green|size:mid|${from.lat},${from.lon}`,
+        `&markers=color:blue|size:mid|${to.lat},${to.lon}`,
+        `&path=geodesic:true|color:0xFF6600CC|weight:4|${from.lat},${from.lon}|${to.lat},${to.lon}`,
+        `&key=${key}`,
+      ].join(""));
+    };
+
     const mq = window.matchMedia("(max-width: 900px)");
-    setIsMobile(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    build(mq.matches);
+    const handler = (e: MediaQueryListEvent) => build(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
-  }, []);
+  }, [dep, arr]);
 
-  const from = AIRPORT_COORDS[dep];
-  const to   = AIRPORT_COORDS[arr];
-
-  if (isMobile && from && to) {
-    const mapUrl = `/api/flight-map?dep=${dep}&arr=${arr}&depLat=${from.lat}&depLon=${from.lon}&arrLat=${to.lat}&arrLon=${to.lon}`;
+  if (mapSrc) {
     return (
       <img
-        src={mapUrl}
+        src={mapSrc}
         alt={`Rută ${dep} → ${arr}`}
         style={{
           width: "100%", display: "block",
