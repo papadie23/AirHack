@@ -64,6 +64,7 @@ export default function Dashboard() {
         <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
+      <BottomBar logs={logs} />
     </div>
   );
 }
@@ -1192,6 +1193,31 @@ function HeatmapRight() {
         </div>
       )}
     </>
+  );
+}
+
+/* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
+function BottomBar({ logs }: { logs: { ts: string; msg: string; ok: boolean }[] }) {
+  return (
+    <div className="bottom-bar">
+      {USER_NAV.map(n => (
+        <button key={n.label} className="btn-tab">
+          <i className={`ti ${n.icon}`} />
+          <span className="btn-tab-label">{n.label}</span>
+        </button>
+      ))}
+
+      <div className="activity-log">
+        {logs.slice(0, 2).map((l, i) => (
+          <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
+            <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
+            <span>{l.ts}</span>
+            <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
+          </div>
+        ))}
+        {logs.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
+      </div>
+    </div>
   );
 }
 

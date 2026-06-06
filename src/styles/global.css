@@ -67,13 +67,34 @@ html, body {
   overflow: hidden;
 }
 
-.btn-tab {
+/* ── Bottom bar ── */
+.bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 8px 12px;
+  flex-shrink: 0;
+}
+
+.activity-log {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-left: 8px;
+  overflow: hidden;
+}
+
+.btn-tab {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 14px;
   background: transparent;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
