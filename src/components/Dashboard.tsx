@@ -1858,6 +1858,16 @@ const AIRPORT_COORDS: Record<string, { lat: number; lon: number; label: string }
 function RouteMapSVG({ dep, arr, progress }: {
   dep: string; arr: string; progress: number | null;
 }) {
+  const [portrait, setPortrait] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    setPortrait(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setPortrait(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   const from = AIRPORT_COORDS[dep];
   const to   = AIRPORT_COORDS[arr];
   if (!from || !to) return (
@@ -1867,16 +1877,19 @@ function RouteMapSVG({ dep, arr, progress }: {
     </div>
   );
 
-  // Project lat/lon to SVG viewport (simple equirectangular)
-  const W = 440, H = 200, PAD = 32;
+  // Portrait (mobile): tall canvas fills the screen; landscape (desktop): wide & compact
+  const W   = portrait ? 300 : 440;
+  const H   = portrait ? 440 : 200;
+  const PAD = portrait ? 50  : 32;
+  // Smaller minimum span on portrait so airports spread diagonally across the full canvas
+  const minSpan = portrait ? 1 : 2;
 
-  // Bounding box with padding
   const minLon = Math.min(from.lon, to.lon);
   const maxLon = Math.max(from.lon, to.lon);
   const minLat = Math.min(from.lat, to.lat);
   const maxLat = Math.max(from.lat, to.lat);
-  const spanLon = Math.max(maxLon - minLon, 2);
-  const spanLat = Math.max(maxLat - minLat, 2);
+  const spanLon = Math.max(maxLon - minLon, minSpan);
+  const spanLat = Math.max(maxLat - minLat, minSpan);
 
   const project = (lat: number, lon: number) => ({
     x: PAD + ((lon - minLon) / spanLon) * (W - 2 * PAD),
@@ -1906,43 +1919,53 @@ function RouteMapSVG({ dep, arr, progress }: {
     planeAngle = Math.atan2(by2 - by, bx2 - bx) * (180 / Math.PI);
   }
 
+  // Grid lines: horizontal for portrait, vertical for landscape
+  const gridLines = portrait
+    ? [0.25, 0.5, 0.75].map(f => (
+        <line key={f} x1={PAD/2} y1={PAD + f*(H-2*PAD)} x2={W-PAD/2} y2={PAD + f*(H-2*PAD)}
+          stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4" />
+      ))
+    : [0.25, 0.5, 0.75].map(f => (
+        <line key={f} x1={PAD + f*(W-2*PAD)} y1={PAD/2} x2={PAD + f*(W-2*PAD)} y2={H-PAD/2}
+          stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4" />
+      ));
+
+  const fontSize = portrait ? 13 : 10;
+  const citySize = portrait ? 11 : 9;
+  const dotR     = portrait ? 8  : 6;
+  const planeSize = portrait ? 11 : 8;
+
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", borderRadius:"var(--radius-md)", background:"var(--bg-body)", border:"1px solid var(--border-color)" }}>
-      {/* Grid lines */}
-      {[0.25, 0.5, 0.75].map(f => (
-        <line key={f}
-          x1={PAD + f*(W-2*PAD)} y1={PAD/2} x2={PAD + f*(W-2*PAD)} y2={H - PAD/2}
-          stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,4"
-        />
-      ))}
+      {gridLines}
 
       {/* Dashed background path */}
       <path d={pathD} fill="none" stroke="var(--border-color)" strokeWidth="1.5" strokeDasharray="6,4" />
 
       {/* Filled progress path */}
       {progress !== null && progress > 0 && (
-        <path d={pathD} fill="none" stroke="var(--brand)" strokeWidth="2.5"
+        <path d={pathD} fill="none" stroke="var(--brand)" strokeWidth={portrait ? 3 : 2.5}
           strokeDasharray={`${progress * 4} 9999`} strokeLinecap="round" opacity="0.9"
         />
       )}
 
       {/* DEP dot */}
-      <circle cx={pDep.x} cy={pDep.y} r="6" fill="var(--success)" opacity="0.9" />
-      <circle cx={pDep.x} cy={pDep.y} r="3" fill="#fff" />
-      <text x={pDep.x} y={pDep.y - 10} textAnchor="middle" fontSize="10" fill="var(--success)" fontWeight="700">{dep}</text>
-      <text x={pDep.x} y={pDep.y + 18} textAnchor="middle" fontSize="9" fill="var(--text-muted)">{from.label}</text>
+      <circle cx={pDep.x} cy={pDep.y} r={dotR} fill="var(--success)" opacity="0.9" />
+      <circle cx={pDep.x} cy={pDep.y} r={dotR/2} fill="#fff" />
+      <text x={pDep.x} y={pDep.y - dotR - 4} textAnchor="middle" fontSize={fontSize} fill="var(--success)" fontWeight="700">{dep}</text>
+      <text x={pDep.x} y={pDep.y + dotR + 14} textAnchor="middle" fontSize={citySize} fill="var(--text-muted)">{from.label}</text>
 
       {/* ARR dot */}
-      <circle cx={pArr.x} cy={pArr.y} r="6" fill="var(--info)" opacity="0.9" />
-      <circle cx={pArr.x} cy={pArr.y} r="3" fill="#fff" />
-      <text x={pArr.x} y={pArr.y - 10} textAnchor="middle" fontSize="10" fill="var(--info)" fontWeight="700">{arr}</text>
-      <text x={pArr.x} y={pArr.y + 18} textAnchor="middle" fontSize="9" fill="var(--text-muted)">{to.label}</text>
+      <circle cx={pArr.x} cy={pArr.y} r={dotR} fill="var(--info)" opacity="0.9" />
+      <circle cx={pArr.x} cy={pArr.y} r={dotR/2} fill="#fff" />
+      <text x={pArr.x} y={pArr.y - dotR - 4} textAnchor="middle" fontSize={fontSize} fill="var(--info)" fontWeight="700">{arr}</text>
+      <text x={pArr.x} y={pArr.y + dotR + 14} textAnchor="middle" fontSize={citySize} fill="var(--text-muted)">{to.label}</text>
 
-      {/* Plane icon (triangle) */}
+      {/* Plane icon */}
       {progress !== null && (
         <g transform={`translate(${planeX},${planeY}) rotate(${planeAngle})`}>
-          <polygon points="-8,5 8,0 -8,-5" fill="var(--brand)" opacity="0.95" />
-          <circle cx="0" cy="0" r="10" fill="var(--brand)" opacity="0.15" />
+          <polygon points={`-${planeSize},${planeSize*0.6} ${planeSize},0 -${planeSize},-${planeSize*0.6}`} fill="var(--brand)" opacity="0.95" />
+          <circle cx="0" cy="0" r={planeSize + 2} fill="var(--brand)" opacity="0.15" />
         </g>
       )}
     </svg>
