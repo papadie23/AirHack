@@ -60,11 +60,10 @@ export default function Dashboard() {
   return (
     <div id="dashboard">
       <div className="dashboard-grid">
-        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} />
+        <LeftPanel feature={feature} setFeature={setFeature} theme={theme} setTheme={setTheme} logs={logs} />
         <CenterPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} />
         <RightPanel feature={feature} onLog={addLog} weatherProvider={weatherProvider} setWeatherProvider={setWeatherProvider} />
       </div>
-      <BottomBar logs={logs} />
     </div>
   );
 }
@@ -76,11 +75,20 @@ const NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
   { id: "heatmap", icon: "ti-map-2",       label: "Heatmap Terminal", sub: "Aglomerație zone"          },
 ];
 
+const USER_NAV = [
+  { icon: "ti-user-circle",    label: "Contul meu"  },
+  { icon: "ti-plane-departure",label: "Zborul meu"  },
+  { icon: "ti-bell",           label: "Notificări"  },
+  { icon: "ti-settings",       label: "Setări"      },
+  { icon: "ti-help-circle",    label: "Ajutor"      },
+];
+
 function LeftPanel({
-  feature, setFeature, theme, setTheme,
+  feature, setFeature, theme, setTheme, logs,
 }: {
   feature: Feature; setFeature: (f: Feature) => void;
   theme: "dark" | "light"; setTheme: (t: "dark" | "light") => void;
+  logs: { ts: string; msg: string; ok: boolean }[];
 }) {
   return (
     <div className="card sidebar-left">
@@ -135,6 +143,35 @@ function LeftPanel({
         <div className="alert-title"><i className="ti ti-alert-triangle" /> Alertă activă</div>
         <div className="alert-desc">Aglomerație poarta C3 — QoD alocat camere video.</div>
       </div>
+
+      {/* ── User section ── */}
+      <div style={{ marginTop: 12 }}>
+        <div className="section-title">Pasager</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+          {USER_NAV.map(n => (
+            <button key={n.label} className="btn-tab" style={{ justifyContent:"flex-start", flex:"unset", padding:"8px 10px" }}>
+              <i className={`ti ${n.icon}`} style={{ fontSize:16 }} />
+              {n.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Activity log ── */}
+      {logs.length > 0 && (
+        <div style={{ marginTop:12, borderTop:"1px solid var(--border-color)", paddingTop:10 }}>
+          <div className="section-title">Activitate</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {logs.slice(0,4).map((l,i) => (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, color:"var(--text-muted)" }}>
+                <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
+                <span style={{ flexShrink:0 }}>{l.ts}</span>
+                <span style={{ color:l.ok?"var(--text-main)":"var(--danger)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{l.msg}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -334,7 +371,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 
       {/* ── Vânt + pistă ── */}
       <SectionTitle>Vânt & Componente Pistă</SectionTitle>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+      <div className="info-grid">
         <InfoCard icon="ti-wind" label="Direcție / Viteză"
           value={wind?.isVariable ? `VRB ${wind.speedKt}kt` : `${wind?.directionDeg}° / ${wind?.speedKt}kt`}
           sub={wind?.gustKt ? `Rafale G${wind.gustKt}kt` : "Fără rafale"}
@@ -364,7 +401,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 
       {/* ── Vizibilitate & nori ── */}
       <SectionTitle>Vizibilitate & Plafon Noros</SectionTitle>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+      <div className="info-grid">
         <InfoCard icon="ti-eye" label="Vizibilitate"
           value={visText}
           color={visM < 1000 ? "var(--danger)" : visM < 3000 ? "var(--warning)" : "var(--success)"}
@@ -389,7 +426,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 
       {/* ── Temperatură & presiune ── */}
       <SectionTitle>Temperatură, Presiune & Performanță</SectionTitle>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+      <div className="info-grid">
         <InfoCard icon="ti-temperature" label="Temperatură / Dew"
           value={temp ? `${temp.tempC > 0 ? "+" : ""}${temp.tempC}°C / ${temp.dewpointC}°C` : "—"}
           sub={`Spread ${temp ? temp.tempC - temp.dewpointC : "—"}°C`}
@@ -546,14 +583,30 @@ function RouteCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   return (
     <>
       <div className="map-header">
-        <div>
-          <div className="map-title">My Route — Terminal T4 LRIA (Hartă Completă)</div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div className="map-title">My Route — Terminal T4 LRIA</div>
           <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>
             {userGps ? `GPS: ${userGps.lat.toFixed(5)}, ${userGps.lng.toFixed(5)}` : "Locație neprimită încă"}
           </div>
         </div>
-        <div className="badges">
-          <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"4px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
+        <div className="badges" style={{ gap:8, flexShrink:0 }}>
+          {/* Flight dropdown */}
+          <select
+            value={selFlight ?? ""}
+            onChange={e => setSelFlight(e.target.value || null)}
+            style={{
+              background:"var(--bg-hover)", border:"1px solid var(--border-color)",
+              borderRadius:"var(--radius-md)", color:"var(--text-main)",
+              padding:"5px 10px", fontSize:12, cursor:"pointer",
+              fontFamily:"inherit", outline:"none",
+            }}
+          >
+            <option value="">— Selectează zborul —</option>
+            {FLIGHTS.map(f => (
+              <option key={f.id} value={f.id}>{f.flight} → {f.dest} · {f.departs}</option>
+            ))}
+          </select>
+          <button onClick={getLocation} disabled={locLoading} style={{ background:"var(--bg-hover)", border:"1px solid var(--border-color)", borderRadius:"var(--radius-md)", color:"var(--text-muted)", padding:"5px 10px", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", gap:6 }}>
             <i className={`ti ti-navigation${locLoading?" spin":""}`}/> Orange Location
           </button>
         </div>
@@ -1108,39 +1161,3 @@ function HeatmapRight() {
   );
 }
 
-/* ═══════════════════════════ BOTTOM BAR ═══════════════════════════ */
-function BottomBar({ logs }: { logs:{ts:string;msg:string;ok:boolean}[] }) {
-  return (
-    <div className="bottom-bar">
-      {/* Cont / profil */}
-      <button className="btn-tab">
-        <i className="ti ti-user-circle" /> Contul meu
-      </button>
-      <button className="btn-tab">
-        <i className="ti ti-plane-departure" /> Zborul meu
-      </button>
-      <button className="btn-tab">
-        <i className="ti ti-bell" /> Notificări
-      </button>
-      <button className="btn-tab">
-        <i className="ti ti-settings" /> Setări
-      </button>
-
-      {/* Activity log inline */}
-      <div style={{ flex:3, display:"flex", alignItems:"center", gap:14, paddingLeft:8, overflow:"hidden" }}>
-        {logs.slice(0,2).map((l,i) => (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, whiteSpace:"nowrap", color:"var(--text-muted)" }}>
-            <span style={{ width:6, height:6, borderRadius:"50%", background:l.ok?"var(--success)":"var(--danger)", flexShrink:0 }}/>
-            <span>{l.ts}</span>
-            <span style={{ color:l.ok?"var(--text-main)":"var(--danger)" }}>{l.msg}</span>
-          </div>
-        ))}
-        {logs.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)" }}>Activity log</span>}
-      </div>
-
-      <button className="btn-tab" style={{ flex:"0 0 auto" }}>
-        <i className="ti ti-help-circle" /> Ajutor
-      </button>
-    </div>
-  );
-}

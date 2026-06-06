@@ -67,17 +67,6 @@ html, body {
   overflow: hidden;
 }
 
-/* ── Bottom bar ── */
-.bottom-bar {
-  display: flex;
-  gap: 12px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  padding: 10px;
-  flex-shrink: 0;
-}
-
 .btn-tab {
   flex: 1;
   display: flex;
@@ -340,36 +329,52 @@ html, body {
   color: var(--brand);
 }
 
+/* ── Info grid — WeatherCenter 4-col data cards ── */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
-/* ── Responsive — tablet/phone ── */
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — Tablet ≤ 900px
+   ══════════════════════════════════════════════════ */
 @media (max-width: 900px) {
   html, body { overflow: auto; height: auto; }
 
-  #dashboard { height: auto; min-height: 100vh; padding: 10px; gap: 10px; }
+  #dashboard { height: auto; min-height: 100svh; padding: 10px; gap: 10px; }
 
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-  }
+  .dashboard-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
 
-  .card { min-height: 240px; }
-
-  /* on mobile sidebar-left is shown as a collapsible */
-  .sidebar-left { order: 0; }
-  .main-center { order: 1; }
+  /* Content-first order: center → right details → left nav last */
+  .main-center   { order: 1; }
   .sidebar-right { order: 2; }
+  .sidebar-left  { order: 3; }
 
-  .bottom-bar { flex-wrap: wrap; }
-  .btn-tab { flex: 0 0 calc(50% - 6px); }
+  .card { min-height: 0; }
 
+  .info-grid { grid-template-columns: repeat(2, 1fr); }
   .weather-grid { grid-template-columns: 1fr 1fr; }
 }
 
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — Phone ≤ 480px
+   ══════════════════════════════════════════════════ */
 @media (max-width: 480px) {
-  .btn-tab { flex: 0 0 100%; }
+  #dashboard { padding: 8px; gap: 8px; }
+  .card { padding: 14px; }
+  .info-grid { grid-template-columns: 1fr; }
   .weather-grid { grid-template-columns: 1fr; }
+  .map-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .badges { flex-wrap: wrap; }
+  .metar-raw { font-size: 11px; }
+  .brand-title { font-size: 13px; }
+  .brand-sub { font-size: 10px; }
 }
