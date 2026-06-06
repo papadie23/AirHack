@@ -1664,6 +1664,14 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
   const [densityData, setDensityData] = useState<DensityCell[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromFixture, setFromFixture] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
+    setIsPortrait(mq.matches);
+    const h = (e: MediaQueryListEvent) => setIsPortrait(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
 
   const fetchDensity = async () => {
     setLoading(true);
@@ -1742,7 +1750,7 @@ function HeatmapCenter({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
         </div>
       </div>
 
-      <div className="map-container" style={{ position:"relative", flex:1, borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
+      <div className="map-container" style={{ position:"relative", flex:1, ...(isPortrait ? { height:"calc(100svh - 195px)", minHeight:300 } : {}), borderRadius:"var(--radius-md)", overflow:"hidden", border:"1px solid var(--border-color)" }}>
         <img src="/harta_completa.svg" alt="Hartă T4" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }}/>
         <svg viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
           style={{ position:"absolute", inset:0, width:"100%", height:"100%", zIndex:2 }}>
