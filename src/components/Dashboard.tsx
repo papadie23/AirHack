@@ -1585,6 +1585,10 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
                           </button>
                           {prevTask && (
                             <button onClick={() => {
+                              arrivedZoneRef.current = null;
+                              setAtZone(false);
+                              setTaskIdx(taskIdx - 1);
+                              setBoardingPhase("task");
                               const from = positionsRef.current[activePersonRef.current];
                               const pz = prevTask.zone;
                               if (from) setDynamicRoute(makeOrthoRoute(from, { x: pz.x, y: pz.y }));
