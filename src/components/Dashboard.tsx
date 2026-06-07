@@ -798,7 +798,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // SSR-safe defaults (must match server render to avoid hydration mismatch)
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
-  const [mapHeading, setMapHeading] = useState(0); // degrees: angle to rotate map so route points up
+  const [mapHeading, setMapHeading] = useState(0); // 0 or 180 snap based on device compass
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
@@ -811,6 +811,17 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     mq.addEventListener("change", handler);
     setIsPortrait(mq.matches);
     return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  // Compass heading snap: 0° or 180° based on device orientation
+  useEffect(() => {
+    const handler = (e: DeviceOrientationEvent) => {
+      const alpha = e.alpha;
+      if (alpha === null) return;
+      setMapHeading((alpha > 135 && alpha < 225) ? 180 : 0);
+    };
+    window.addEventListener("deviceorientation", handler);
+    return () => window.removeEventListener("deviceorientation", handler);
   }, []);
 
   // Auto-zoom to fill container when entering/leaving portrait mode
@@ -1156,13 +1167,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       setDynamicRoute(zone.id === "imbarcare"
         ? makeOrthoRouteVia(svgPos, SVG_GATE, { x: zone.x, y: zone.y })
         : makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
-      // Rotate map so direction-of-travel points up
-      const dx = zone.x - svgPos.x;
-      const dy = zone.y - svgPos.y;
-      if (Math.sqrt(dx*dx + dy*dy) > 10) {
-        // SVG: +x=right, +y=down. Angle from "up" (negative y) clockwise.
-        setMapHeading(Math.atan2(dx, -dy) * 180 / Math.PI);
-      }
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6 && arrivedZoneRef.current !== zone.id) {
         arrivedZoneRef.current = zone.id;
@@ -1393,10 +1397,17 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           </div>
         )}
 
+        {/* Rotation wrapper — snap 0/180 from compass, outside pan/zoom so drag coords are unaffected */}
+        <div style={{
+          position: "absolute", inset: 0,
+          transform: `rotate(${isPortrait ? mapHeading - 90 : mapHeading}deg)`,
+          transformOrigin: "center center",
+          transition: "transform 0.4s ease",
+        }}>
         {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
           position: "absolute", inset: 0,
-          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom}) rotate(${isPortrait ? mapHeading - 90 : mapHeading}deg)`,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`,
           transformOrigin: "center center",
           willChange: "transform",
           // Smooth when auto-following; instant when the user is dragging/pinching
@@ -1508,6 +1519,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           )}
           </svg>
         </div>
+        </div>{/* end rotation wrapper */}
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
           @keyframes pulse { 0%,100%{opacity:0.2} 50%{opacity:0.8} }
