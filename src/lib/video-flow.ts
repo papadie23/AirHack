@@ -37,10 +37,12 @@ export interface TrafficHistory {
 }
 
 // Zone metadata — static definitions for IAS airport zones
-const ZONE_META: Record<ZoneId, { label: string; capacity: number; baseCount: number }> = {
-  gate1:     { label: "Poarta",    capacity: 120, baseCount: 35 },
-  gate2:     { label: "Check In", capacity: 80,  baseCount: 20 },
-  disembark: { label: "Zona Sosiri",                capacity: 200, baseCount: 55 },
+// capacity  = displayed total capacity shown in the UI (e.g. "47 / 120")
+// softCap   = hard upper bound enforced on mock counts — never exceeded in practice
+const ZONE_META: Record<ZoneId, { label: string; capacity: number; softCap: number; baseCount: number }> = {
+  gate1:     { label: "Poarta",      capacity: 120, softCap: 100, baseCount: 35 },
+  gate2:     { label: "Check In",    capacity: 80,  softCap: 50,  baseCount: 20 },
+  disembark: { label: "Zona Sosiri", capacity: 200, softCap: 70,  baseCount: 45 },
 };
 
 /** Thresholds (% of capacity) that trigger alert levels */
@@ -58,11 +60,11 @@ function alertLevel(count: number, capacity: number): ZoneReading["alertLevel"] 
 const _mockState: Record<ZoneId, { count: number; direction: number }> = {
   gate1:     { count: 35, direction: 1 },
   gate2:     { count: 20, direction: 1 },
-  disembark: { count: 55, direction: -1 },
+  disembark: { count: 45, direction: -1 },
 };
 
 let _prevCounts: Record<ZoneId, number> = {
-  gate1: 35, gate2: 20, disembark: 55,
+  gate1: 35, gate2: 20, disembark: 45,
 };
 
 /**
@@ -92,8 +94,8 @@ export function tickMockData(): TrafficSnapshot {
       newCount += Math.floor(Math.random() * 40) + 20;
     }
 
-    // Clamp to zone capacity
-    newCount = Math.max(0, Math.min(meta.capacity, newCount));
+    // Clamp to softCap — displayed capacity is higher but counts never exceed softCap
+    newCount = Math.max(0, Math.min(meta.softCap, newCount));
 
     const prev = _prevCounts[id];
     const trend: ZoneReading["trend"] =
