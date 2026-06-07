@@ -1147,18 +1147,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
-        setTimeout(() => {
-          setTaskIdx(i => {
-            const next = i + 1;
-            if (next >= ZONES.length) { setDynamicRoute(null); setBoardingPhase("done"); setShowTaskPopup(true); return next; }
-            setBoardingPhase("task");
-            setShowTaskPopup(true);
-            const nextZone = ZONES[next];
-            const currentPos = positionsRef.current[activePersonRef.current];
-            setDynamicRoute(nextZone && currentPos ? makeOrthoRoute(currentPos, { x: nextZone.x, y: nextZone.y }) : null);
-            return next;
-          });
-        }, 800);
+        // Just show the popup — user confirms arrival via "Am ajuns" button
+        setShowTaskPopup(true);
       }
     }
   };
@@ -1347,19 +1337,24 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             <button style={{ ...zoomBtnStyle, fontSize:14 }} onClick={toggleFullscreen} title={isFullscreen ? "Ieși din ecran complet" : "Ecran complet"}>
               <i className={`ti ti-arrows-${isFullscreen ? "minimize" : "maximize"}`} />
             </button>
-            {/* Boarding guide re-open button — visible when guide is active but popup is dismissed */}
-            {boardingPhase !== "idle" && !showTaskPopup && (
-              <button
-                onClick={() => setShowTaskPopup(true)}
-                title="Ghid îmbarcare"
-                style={{ ...zoomBtnStyle,
-                  color: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--brand)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
-                  borderColor: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--border-color)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
-                  fontSize: 13,
-                }}>
-                <i className="ti ti-list-check" />
-              </button>
-            )}
+            {/* Boarding guide button — always visible; reopens or restarts the process */}
+            <button
+              onClick={() => {
+                if (boardingPhase === "idle") {
+                  setBoardingPhase("confirming");
+                  setTaskIdx(0);
+                  setDynamicRoute(null);
+                }
+                setShowTaskPopup(true);
+              }}
+              title="Procesul de îmbarcare"
+              style={{ ...zoomBtnStyle,
+                color: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--brand)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
+                borderColor: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--border-color)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
+                fontSize: 13,
+              }}>
+              <i className="ti ti-list-check" />
+            </button>
           </div>
         )}
 
