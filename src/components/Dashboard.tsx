@@ -1474,7 +1474,10 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               const pos = positions[p.id];
               return (
                 <g filter="url(#glow2)">
-                  <circle cx={pos.x} cy={pos.y} r="12" fill={p.color} opacity="0.3"/>
+                  <circle cx={pos.x} cy={pos.y} r="12" fill={p.color} opacity="0.3">
+                    <animate attributeName="r" values="12;22;12" dur="1.8s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" values="0.3;0;0.3" dur="1.8s" repeatCount="indefinite"/>
+                  </circle>
                   <circle cx={pos.x} cy={pos.y} r="7" fill={p.color}/>
                   <circle cx={pos.x} cy={pos.y} r="2.5" fill="#fff"/>
                 </g>
