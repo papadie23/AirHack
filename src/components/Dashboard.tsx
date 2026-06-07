@@ -614,7 +614,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 }
 
 /* ── SVG affine calibration ── */
-const CAL_KEY = "svg_cal_v5";
+const CAL_KEY = "svg_cal_v6";
 interface CalPoint { svgX: number; svgY: number; lat: number; lng: number }
 interface CalTransform { A:number; B:number; C:number; D:number; E:number; F:number }
 
@@ -680,10 +680,9 @@ function svgFromGps(_t: CalTransform, lat: number, lng: number, inv: InvTransfor
 }
 
 const defaultPoints: CalPoint[] = [
-  { svgX: 76,  svgY: 2220, lat: 47.17439229, lng: 27.61903507 }, // masa echipei — masurat real
-  { svgX: 76,  svgY: 460,  lat: 47.17439229, lng: 27.61823507 }, // vest estimat (același lat, -0.0008 lng)
-  { svgX: 76,  svgY: 3980, lat: 47.17439229, lng: 27.61983507 }, // est estimat  (același lat, +0.0008 lng)
-  { svgX: 500, svgY: 2220, lat: 47.17399229, lng: 27.61903507 }, // sud estimat  (-0.0004 lat, același lng)
+  { svgX: 0,   svgY: 2262, lat: 47.174029,   lng: 27.619728   }, // colt stanga-sus portret — masurat
+  { svgX: 587, svgY: 0,    lat: 47.174602,   lng: 27.619221   }, // colt dreapta-jos portret — masurat
+  { svgX: 76,  svgY: 2220, lat: 47.17439229, lng: 27.61903507 }, // masa echipei — masurat
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null; inverse: InvTransform | null } {
