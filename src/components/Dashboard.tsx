@@ -798,7 +798,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // SSR-safe defaults (must match server render to avoid hydration mismatch)
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
-  const [mapHeading, setMapHeading] = useState(0); // 0 or 180 snap based on device compass
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
@@ -811,17 +810,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     mq.addEventListener("change", handler);
     setIsPortrait(mq.matches);
     return () => mq.removeEventListener("change", handler);
-  }, []);
-
-  // Compass heading snap: 0° or 180° based on device orientation
-  useEffect(() => {
-    const handler = (e: DeviceOrientationEvent) => {
-      const alpha = e.alpha;
-      if (alpha === null) return;
-      setMapHeading((alpha > 135 && alpha < 225) ? 180 : 0);
-    };
-    window.addEventListener("deviceorientation", handler);
-    return () => window.removeEventListener("deviceorientation", handler);
   }, []);
 
   // Auto-zoom to fill container when entering/leaving portrait mode
@@ -1393,17 +1381,10 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           </div>
         )}
 
-        {/* Rotation wrapper — snap 0/180 from compass, outside pan/zoom so drag coords are unaffected */}
-        <div style={{
-          position: "absolute", inset: 0,
-          transform: `rotate(${isPortrait ? mapHeading - 90 : mapHeading}deg)`,
-          transformOrigin: "center center",
-          transition: "transform 0.4s ease",
-        }}>
         {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
           position: "absolute", inset: 0,
-          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
           transformOrigin: "center center",
           willChange: "transform",
           // Smooth when auto-following; instant when the user is dragging/pinching
@@ -1515,7 +1496,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           )}
           </svg>
         </div>
-        </div>{/* end rotation wrapper */}
         <style>{`
           @keyframes moveDash { to { stroke-dashoffset: -200; } }
           @keyframes pulse { 0%,100%{opacity:0.2} 50%{opacity:0.8} }
