@@ -173,10 +173,10 @@ function ZoneModal({ reading, onClose }: { reading: ZoneReading; onClose: () => 
               style={{ width: "100%", maxHeight: 420, objectFit: "contain", display: "block" }}
             />
           ) : (
-            /* Fallback: raw MP4 served by Astro — no YOLO boxes but video plays */
+            /* Fallback: static MP4 from public/videos/ — served by Vercel CDN */
             <video
               key={reading.zoneId}
-              src={`/api/video/${reading.zoneId}`}
+              src={`/videos/${reading.zoneId === "gate1" ? "gate" : reading.zoneId === "gate2" ? "checkin" : "disembark"}.mp4`}
               autoPlay
               loop
               muted
