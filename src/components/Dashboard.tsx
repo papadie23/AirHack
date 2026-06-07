@@ -672,6 +672,7 @@ const defaultPoints: CalPoint[] = [
   { svgX: 70,   svgY: 335, lat: 47.1746342,  lng: 27.6192034  }, // baza scări stânga
   { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // masa echipei / securitate
   { svgX: 1277, svgY: 345, lat: 47.1743648,  lng: 27.6194229  }, // centru sala — masurat real
+  { svgX: 2207, svgY: 269, lat: 47.1741572,  lng: 27.6195920  }, // capat dreapta — estimat
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
@@ -1581,6 +1582,10 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
                           </button>
                           {prevTask && (
                             <button onClick={() => {
+                              arrivedZoneRef.current = null;
+                              setAtZone(false);
+                              setTaskIdx(taskIdx - 1);
+                              setBoardingPhase("task");
                               const from = positionsRef.current[activePersonRef.current];
                               const pz = prevTask.zone;
                               if (from) setDynamicRoute(makeOrthoRoute(from, { x: pz.x, y: pz.y }));
