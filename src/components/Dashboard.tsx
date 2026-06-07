@@ -614,7 +614,7 @@ function WeatherCenter({ onLog, provider }: { onLog:(m:string,ok?:boolean)=>void
 }
 
 /* ── SVG affine calibration ── */
-const CAL_KEY = "svg_cal_v9";
+const CAL_KEY = "svg_cal_v10";
 interface CalPoint { svgX: number; svgY: number; lat: number; lng: number }
 interface CalTransform { A:number; B:number; C:number; D:number; E:number; F:number }
 
@@ -673,17 +673,20 @@ function solveInverse(pts: CalPoint[]): InvTransform | null {
   return {a,b,c,d,e,f,latMid,lngMid};
 }
 
+// X_OFFSET: correction applied after transform (measured: marker at -17, should be 70 → +87)
+const X_OFFSET = 87;
+
 function svgFromGps(_t: CalTransform, lat: number, lng: number, inv: InvTransform): {x:number;y:number} {
   const u = (lat - inv.latMid) * LAT_SCALE;
   const v = (lng - inv.lngMid) * LNG_SCALE;
-  return { x: inv.a*u + inv.b*v + inv.c, y: inv.d*u + inv.e*v + inv.f };
+  return { x: inv.a*u + inv.b*v + inv.c + X_OFFSET, y: inv.d*u + inv.e*v + inv.f };
 }
 
 const defaultPoints: CalPoint[] = [
-  { svgX: 150,  svgY: 335, lat: 47.1746342,  lng: 27.6192034  }, // baza scări stânga
-  { svgX: 932,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // masa echipei / securitate
-  { svgX: 1357, svgY: 345, lat: 47.1743648,  lng: 27.6194229  }, // centru sala
-  { svgX: 2287, svgY: 269, lat: 47.1741572,  lng: 27.6195920  }, // capat dreapta
+  { svgX: 150,  svgY: 335, lat: 47.1746342,  lng: 27.6192034  },
+  { svgX: 932,  svgY: 349, lat: 47.17439229, lng: 27.61903507 },
+  { svgX: 1357, svgY: 345, lat: 47.1743648,  lng: 27.6194229  },
+  { svgX: 2287, svgY: 269, lat: 47.1741572,  lng: 27.6195920  },
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null; inverse: InvTransform | null } {
