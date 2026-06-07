@@ -658,14 +658,41 @@ function applyTransform(t: CalTransform, svgX: number, svgY: number): {lat:numbe
   return { lat: t.A*svgX + t.B*svgY + t.C, lng: t.D*svgX + t.E*svgY + t.F };
 }
 
-function svgFromGps(t: CalTransform, lat: number, lng: number): {x:number;y:number} {
-  // Invert 2x2: [A B; D E] * [x;y] = [lat-C; lng-F]
-  const det = t.A*t.E - t.B*t.D;
-  if (Math.abs(det)<1e-20) return {x:0,y:0};
-  return {
-    x: (t.E*(lat-t.C) - t.B*(lng-t.F))/det,
-    y: (t.A*(lng-t.F) - t.D*(lat-t.C))/det,
-  };
+// GPS → SVG: solved directly via least-squares on the calibration points (numerically
+// stable — GPS coords are first converted to metre offsets from the centroid).
+const LAT_SCALE = 111320;
+const LNG_SCALE = 111320 * Math.cos(47.174 * Math.PI / 180);
+
+interface InvTransform { a:number; b:number; c:number; d:number; e:number; f:number; latMid:number; lngMid:number }
+
+function solveInverse(pts: CalPoint[]): InvTransform | null {
+  if (pts.length < 3) return null;
+  const latMid = pts.reduce((s,p) => s+p.lat, 0) / pts.length;
+  const lngMid = pts.reduce((s,p) => s+p.lng, 0) / pts.length;
+  // Normalise GPS to metres
+  const scaled = pts.map(p => ({ u: (p.lat-latMid)*LAT_SCALE, v: (p.lng-lngMid)*LNG_SCALE, sx: p.svgX, sy: p.svgY }));
+  function fit(getZ: (p: typeof scaled[0]) => number): [number,number,number] {
+    let s20=0,s11=0,s10=0,s02=0,s01=0,n=0,sz1=0,sz2=0,sz0=0;
+    for (const p of scaled) {
+      s20+=p.u**2; s11+=p.u*p.v; s10+=p.u; s02+=p.v**2; s01+=p.v; n++;
+      const z=getZ(p); sz1+=z*p.u; sz2+=z*p.v; sz0+=z;
+    }
+    const M=[[s20,s11,s10],[s11,s02,s01],[s10,s01,n]];
+    const b=[sz1,sz2,sz0];
+    const det=(m:number[][])=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+    const D=det(M);
+    if (Math.abs(D)<1e-15) return [0,0,0];
+    return [0,1,2].map(i=>{ const N=M.map(r=>[...r]); for(let r=0;r<3;r++) N[r][i]=b[r]; return det(N)/D; }) as [number,number,number];
+  }
+  const [a,b,c]=fit(p=>p.sx);
+  const [d,e,f]=fit(p=>p.sy);
+  return {a,b,c,d,e,f,latMid,lngMid};
+}
+
+function svgFromGps(_t: CalTransform, lat: number, lng: number, inv: InvTransform): {x:number;y:number} {
+  const u = (lat - inv.latMid) * LAT_SCALE;
+  const v = (lng - inv.lngMid) * LNG_SCALE;
+  return { x: inv.a*u + inv.b*v + inv.c, y: inv.d*u + inv.e*v + inv.f };
 }
 
 const defaultPoints: CalPoint[] = [
@@ -675,16 +702,19 @@ const defaultPoints: CalPoint[] = [
   { svgX: 2207, svgY: 269, lat: 47.1741572,  lng: 27.6195920  }, // capat dreapta — estimat
 ];
 
-function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
+function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null; inverse: InvTransform | null } {
   try {
     const raw = localStorage.getItem(CAL_KEY);
     if (raw) {
       const saved = JSON.parse(raw);
-      if (saved.points?.length >= 3) return saved;
+      if (saved.points?.length >= 3) {
+        // Re-solve inverse from saved points to ensure it uses the new algorithm
+        return { ...saved, inverse: solveInverse(saved.points) };
+      }
     }
   } catch { /* ignore */ }
-  if (defaultPoints.length >= 3) return { points: defaultPoints, transform: solveAffine(defaultPoints) };
-  return { points: [], transform: null };
+  if (defaultPoints.length >= 3) return { points: defaultPoints, transform: solveAffine(defaultPoints), inverse: solveInverse(defaultPoints) };
+  return { points: [], transform: null, inverse: null };
 }
 
 function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
@@ -790,6 +820,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const [calMode, setCalMode] = useState(false);
   const [calPoints, setCalPoints] = useState<CalPoint[]>([]);
   const [calTransform, setCalTransform] = useState<CalTransform|null>(null);
+  const [calInverse, setCalInverse] = useState<InvTransform|null>(null);
   const [pendingPin, setPendingPin] = useState<{svgX:number;svgY:number}|null>(null);
   const [gpsInput, setGpsInput] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
@@ -942,6 +973,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const saved = loadCalibration();
     setCalPoints(saved.points);
     setCalTransform(saved.transform);
+    setCalInverse(saved.inverse);
   }, []);
 
   // Refs so native event handlers never capture stale closures
@@ -1136,9 +1168,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const polyline = pts ? pts.map(p => `${p.x},${p.y}`).join(" ") : "";
 
   const placeOnMap = (lat: number, lng: number, personId: string) => {
-    if (!calTransform) return;
+    if (!calTransform || !calInverse) return;
     lastGps.current[personId] = { lat, lng };
-    const svgPos = svgFromGps(calTransform, lat, lng);
+    const svgPos = svgFromGps(calTransform, lat, lng, calInverse);
     setPositions(p => ({ ...p, [personId]: svgPos }));
     // Pan: landscape centers on user, portrait handled by positions effect
     const SVG_W = 2262, SVG_H = 587;
@@ -1212,14 +1244,15 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const [lat, lng] = parts;
     const newPoints = [...calPoints, { svgX: pendingPin.svgX, svgY: pendingPin.svgY, lat, lng }];
     const newTransform = solveAffine(newPoints);
-    setCalPoints(newPoints); setCalTransform(newTransform);
+    const newInverse = solveInverse(newPoints);
+    setCalPoints(newPoints); setCalTransform(newTransform); setCalInverse(newInverse);
     saveCalibration(newPoints, newTransform);
     setPendingPin(null); setGpsInput("");
     onLog(`Cal point ${newPoints.length}: (${pendingPin.svgX.toFixed(0)}, ${pendingPin.svgY.toFixed(0)}) → ${lat}, ${lng}`);
   };
 
   const clearCalibration = () => {
-    setCalPoints([]); setCalTransform(null); setPendingPin(null);
+    setCalPoints([]); setCalTransform(null); setCalInverse(null); setPendingPin(null);
     saveCalibration([], null);
   };
 
