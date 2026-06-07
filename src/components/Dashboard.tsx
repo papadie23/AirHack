@@ -1099,11 +1099,13 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const taskIdxRef = useRef(0);
   taskIdxRef.current = taskIdx;
   const arrivedZoneRef = useRef<string | null>(null); // zone id already notified
+  const [atZone, setAtZone] = useState(false); // true when user is physically in current zone
   const [showTaskPopup, setShowTaskPopup] = useState(true); // auto-show on mount
   const TASKS = ZONES.map(z => ({ zone: z, label: z.label }));
 
   const advanceTask = () => {
     arrivedZoneRef.current = null; // allow next zone to trigger popup
+    setAtZone(false);
     const next = taskIdx + 1;
     if (next >= TASKS.length) { setBoardingPhase("done"); setShowTaskPopup(true); }
     else { setTaskIdx(next); setBoardingPhase("task"); setDynamicRoute(null); setShowTaskPopup(true); }
@@ -1113,7 +1115,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const zone = TASKS[taskIdx]?.zone;
     const from = positionsRef.current[activePerson];
     if (!zone || !from) return;
-    setDynamicRoute(zone.id === "imbarcare"
+    setDynamicRoute(zone.id === "imbarcare" && from.x < SVG_GATE.x
       ? makeOrthoRouteVia(from, SVG_GATE, { x: zone.x, y: zone.y })
       : makeOrthoRoute(from, { x: zone.x, y: zone.y }));
     setShowTaskPopup(false);
@@ -1148,12 +1150,13 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     // Reroute + proximity using refs (no stale closure)
     const zone = ZONES[taskIdxRef.current];
     if (zone && boardingPhaseRef.current === "task") {
-      setDynamicRoute(zone.id === "imbarcare"
+      setDynamicRoute(zone.id === "imbarcare" && svgPos.x < SVG_GATE.x
         ? makeOrthoRouteVia(svgPos, SVG_GATE, { x: zone.x, y: zone.y })
         : makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6 && arrivedZoneRef.current !== zone.id) {
         arrivedZoneRef.current = zone.id;
+        setAtZone(true);
         setShowTaskPopup(true);
       }
     }
@@ -1558,24 +1561,48 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               {boardingPhase === "task" && TASKS[taskIdx] && (() => {
                 const task = TASKS[taskIdx];
                 const c = task.zone.color;
+                const isArrived = atZone;
+                const prevTask = taskIdx > 0 ? TASKS[taskIdx - 1] : null;
                 return (
                   <>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
                       <span style={{ background:c, color:"#000", fontWeight:800, fontSize:11, borderRadius:20, padding:"3px 12px" }}>
                         {taskIdx + 1} / {TASKS.length}
                       </span>
-                      <span style={{ fontSize:12, color:"var(--text-muted)" }}>Următor pas</span>
+                      <span style={{ fontSize:12, color:"var(--text-muted)" }}>{isArrived ? "Ai ajuns!" : "Următor pas"}</span>
                     </div>
                     <div style={{ fontSize:21, fontWeight:800, color:c, marginBottom:18 }}>{task.label}</div>
                     <div style={{ display:"flex", gap:10 }}>
-                      <button onClick={goToZone}
-                        style={{ flex:2, padding:"13px 0", background:c, border:"none", borderRadius:12, color:"#000", fontWeight:700, fontSize:14, cursor:"pointer" }}>
-                        ➜ Mergi spre {task.label}
-                      </button>
-                      <button onClick={advanceTask}
-                        style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:`1px solid ${c}`, borderRadius:12, color:c, fontWeight:600, fontSize:14, cursor:"pointer" }}>
-                        ✓ Am ajuns
-                      </button>
+                      {isArrived ? (
+                        <>
+                          <button onClick={advanceTask}
+                            style={{ flex:2, padding:"13px 0", background:c, border:"none", borderRadius:12, color:"#000", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                            ✓ Am ajuns
+                          </button>
+                          {prevTask && (
+                            <button onClick={() => {
+                              const from = positionsRef.current[activePersonRef.current];
+                              const pz = prevTask.zone;
+                              if (from) setDynamicRoute(makeOrthoRoute(from, { x: pz.x, y: pz.y }));
+                              setShowTaskPopup(false);
+                            }}
+                              style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:`1px solid ${c}`, borderRadius:12, color:c, fontWeight:600, fontSize:13, cursor:"pointer" }}>
+                              ← {prevTask.label}
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={goToZone}
+                            style={{ flex:2, padding:"13px 0", background:c, border:"none", borderRadius:12, color:"#000", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                            ➜ Mergi spre {task.label}
+                          </button>
+                          <button onClick={advanceTask}
+                            style={{ flex:1, padding:"13px 0", background:"var(--bg-hover)", border:`1px solid ${c}`, borderRadius:12, color:c, fontWeight:600, fontSize:14, cursor:"pointer" }}>
+                            ✓ Am ajuns
+                          </button>
+                        </>
+                      )}
                     </div>
                   </>
                 );
