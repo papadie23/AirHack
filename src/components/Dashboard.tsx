@@ -696,7 +696,7 @@ const SVG_GATE      = { x: 1435, y: 265 }; // destinație / dozator
 
 // Puncte de start diferite pentru fiecare persoană
 const SVG_STARTS: Record<string, {x:number;y:number}> = {
-  you:    { x: 150, y: 500 },
+  you:    { x: 1277, y: 345 },
   misu:   { x: 400, y: 480 },
   ionica: { x: 150, y: 150 },
   dorel:  { x: 400, y: 150 },
@@ -1143,8 +1143,13 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     setTaskIdx(idx => {
       const zone = ZONES[idx];
       if (!zone) return idx;
-      // Always redraw route from current GPS pos to active zone
-      setDynamicRoute(prev => prev ? makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }) : prev);
+      // Always redraw route from current GPS pos to active zone when in task phase
+      setBoardingPhase(phase => {
+        if (phase === "task") {
+          setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
+        }
+        return phase;
+      });
       // Proximity check
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
