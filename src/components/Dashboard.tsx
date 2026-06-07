@@ -923,7 +923,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   // Dead-zone: only update position if moved > DEAD_ZONE_M metres
   const lastGps = useRef<Record<string, {lat:number;lng:number}>>({});
-  const DEAD_ZONE_M = 5;
+  const DEAD_ZONE_M = 1;
 
   // Haversine distance between two GPS points (in metres)
   const haversineM = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -1140,44 +1140,24 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       }
     }
     if (personId !== "you") return;
-    // Zone proximity check — auto-advance task when entering active zone
-    // We compare SVG distance (approx 1 SVG unit ≈ 0.04m at LRIA scale)
-    // Recalculate route from current position if route is active
-    setTaskIdx(idx => {
-      setDynamicRoute(prev => {
-        if (!prev) return prev;
-        const zone = ZONES[idx];
-        if (!zone) return prev;
-        return makeOrthoRoute(svgPos, { x: zone.x, y: zone.y });
-      });
-      return idx;
-    });
-    setBoardingPhase(phase => {
-      if (phase !== "task") return phase;
-      return phase; // handled below via setState callback trick
-    });
+    // Recalculate route from current position if route is active + zone proximity check
     setTaskIdx(idx => {
       const zone = ZONES[idx];
       if (!zone) return idx;
+      // Always redraw route from current GPS pos to active zone
+      setDynamicRoute(prev => prev ? makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }) : prev);
+      // Proximity check
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
-        // entered zone — advance task, recalculate route to next zone from current position
         setTimeout(() => {
           setTaskIdx(i => {
             const next = i + 1;
-            // Return `next` even when >= ZONES.length so subsequent GPS updates see
-            // ZONES[idx] === undefined and exit early — prevents the arrival firing repeatedly.
             if (next >= ZONES.length) { setDynamicRoute(null); setBoardingPhase("done"); setShowTaskPopup(true); return next; }
             setBoardingPhase("task");
             setShowTaskPopup(true);
-            // Auto-draw route from current position to next zone
             const nextZone = ZONES[next];
             const currentPos = positionsRef.current[activePersonRef.current];
-            if (nextZone && currentPos) {
-              setDynamicRoute(makeOrthoRoute(currentPos, { x: nextZone.x, y: nextZone.y }));
-            } else {
-              setDynamicRoute(null);
-            }
+            setDynamicRoute(nextZone && currentPos ? makeOrthoRoute(currentPos, { x: nextZone.x, y: nextZone.y }) : null);
             return next;
           });
         }, 800);
@@ -1215,7 +1195,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         setLocationLoaded(true);
       },
       (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); setLocationLoaded(true); },
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
   };
 
