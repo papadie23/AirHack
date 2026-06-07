@@ -725,6 +725,10 @@ function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:
   return [from, { x: to.x, y: from.y }, to];
 }
 
+function makeOrthoRouteVia(from: {x:number;y:number}, via: {x:number;y:number}, to: {x:number;y:number}): {x:number;y:number}[] {
+  return [from, { x: via.x, y: from.y }, via, { x: to.x, y: via.y }, to];
+}
+
 function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
   const waypoints = [s, ...ZONE_WAYPOINTS];
@@ -794,6 +798,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // SSR-safe defaults (must match server render to avoid hydration mismatch)
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [mapHeading, setMapHeading] = useState(0); // degrees: angle to rotate map so route points up
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
@@ -1094,10 +1099,12 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const [taskIdx, setTaskIdx] = useState(0);
   const taskIdxRef = useRef(0);
   taskIdxRef.current = taskIdx;
+  const arrivedZoneRef = useRef<string | null>(null); // zone id already notified
   const [showTaskPopup, setShowTaskPopup] = useState(true); // auto-show on mount
   const TASKS = ZONES.map(z => ({ zone: z, label: z.label }));
 
   const advanceTask = () => {
+    arrivedZoneRef.current = null; // allow next zone to trigger popup
     const next = taskIdx + 1;
     if (next >= TASKS.length) { setBoardingPhase("done"); setShowTaskPopup(true); }
     else { setTaskIdx(next); setBoardingPhase("task"); setDynamicRoute(null); setShowTaskPopup(true); }
@@ -1107,7 +1114,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const zone = TASKS[taskIdx]?.zone;
     const from = positionsRef.current[activePerson];
     if (!zone || !from) return;
-    setDynamicRoute(makeOrthoRoute(from, { x: zone.x, y: zone.y }));
+    setDynamicRoute(zone.id === "imbarcare"
+      ? makeOrthoRouteVia(from, SVG_GATE, { x: zone.x, y: zone.y })
+      : makeOrthoRoute(from, { x: zone.x, y: zone.y }));
     setShowTaskPopup(false);
   };
 
@@ -1140,10 +1149,19 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     // Reroute + proximity using refs (no stale closure)
     const zone = ZONES[taskIdxRef.current];
     if (zone && boardingPhaseRef.current === "task") {
-      setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
+      setDynamicRoute(zone.id === "imbarcare"
+        ? makeOrthoRouteVia(svgPos, SVG_GATE, { x: zone.x, y: zone.y })
+        : makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
+      // Rotate map so direction-of-travel points up
+      const dx = zone.x - svgPos.x;
+      const dy = zone.y - svgPos.y;
+      if (Math.sqrt(dx*dx + dy*dy) > 10) {
+        // SVG: +x=right, +y=down. Angle from "up" (negative y) clockwise.
+        setMapHeading(Math.atan2(dx, -dy) * 180 / Math.PI);
+      }
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
-      if (dist < Math.max(zone.w, zone.h) * 0.6) {
-        // Just show the popup — user confirms arrival via "Am ajuns" button
+      if (dist < Math.max(zone.w, zone.h) * 0.6 && arrivedZoneRef.current !== zone.id) {
+        arrivedZoneRef.current = zone.id;
         setShowTaskPopup(true);
       }
     }
@@ -1374,7 +1392,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
           position: "absolute", inset: 0,
-          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom}) rotate(${isPortrait ? mapHeading - 90 : mapHeading}deg)`,
           transformOrigin: "center center",
           willChange: "transform",
           // Smooth when auto-following; instant when the user is dragging/pinching
@@ -1460,7 +1478,10 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
               const pos = positions[p.id];
               return (
                 <g filter="url(#glow2)">
-                  <circle cx={pos.x} cy={pos.y} r="12" fill={p.color} opacity="0.3"/>
+                  <circle cx={pos.x} cy={pos.y} r="12" fill={p.color} opacity="0.3">
+                    <animate attributeName="r" values="12;22;12" dur="1.8s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" values="0.3;0;0.3" dur="1.8s" repeatCount="indefinite"/>
+                  </circle>
                   <circle cx={pos.x} cy={pos.y} r="7" fill={p.color}/>
                   <circle cx={pos.x} cy={pos.y} r="2.5" fill="#fff"/>
                 </g>
