@@ -812,17 +812,11 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const [locationLoaded, setLocationLoaded] = useState(false);
   const watchIdRef = useRef<number|null>(null);
   const [pixelLog, setPixelLog] = useState(false);
-  const [hoverPos, setHoverPos] = useState<{x:number;y:number}|null>(null);
-  const [pixelEntries, setPixelEntries] = useState<{x:number;y:number;label:string}[]>([]);
-  const [pixelLabel, setPixelLabel] = useState("");
 
-  // Calibration state
-  const [calMode, setCalMode] = useState(false);
+  // Calibration state (points + transforms kept for GPS→SVG mapping)
   const [calPoints, setCalPoints] = useState<CalPoint[]>([]);
   const [calTransform, setCalTransform] = useState<CalTransform|null>(null);
   const [calInverse, setCalInverse] = useState<InvTransform|null>(null);
-  const [pendingPin, setPendingPin] = useState<{svgX:number;svgY:number}|null>(null);
-  const [gpsInput, setGpsInput] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Zoom / pan state (disabled in calMode / pixelLog)
@@ -977,8 +971,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   }, []);
 
   // Refs so native event handlers never capture stale closures
-  const calModeRef = useRef(calMode);
-  calModeRef.current = calMode;
   const pixelLogRef = useRef(pixelLog);
   pixelLogRef.current = pixelLog;
   const mapZoomRef = useRef(mapZoom);
@@ -990,7 +982,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const el = mapWrapRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (calModeRef.current || pixelLogRef.current) return;
+      if (pixelLogRef.current) return;
       e.preventDefault();
       isFollowingRef.current = false;
       setIsFollowing(false);
@@ -1017,7 +1009,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
 
     const onTouchStart = (e: TouchEvent) => {
-      if (calModeRef.current || pixelLogRef.current) return;
+      if (pixelLogRef.current) return;
       // Any touch = stop auto-follow
       isFollowingRef.current = false;
       setIsFollowing(false);
@@ -1048,7 +1040,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
     const onTouchMove = (e: TouchEvent) => {
       e.preventDefault();
-      if (calModeRef.current || pixelLogRef.current) return;
+      if (pixelLogRef.current) return;
       if (e.touches.length === 1 && dragRef.current) {
         const rect = el.getBoundingClientRect();
         const { startX, startY, panX, panY } = dragRef.current;
@@ -1103,7 +1095,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   }, []); // refs keep values fresh — no deps needed
 
   const startDrag = (clientX: number, clientY: number) => {
-    if (calMode || pixelLog) return;
+    if (pixelLog) return;
     dragRef.current = { startX: clientX, startY: clientY, panX: mapPan.x, panY: mapPan.y };
     setIsDragging(true);
   };
@@ -1227,35 +1219,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     );
   };
 
-  // ── Calibration handlers ──
-  const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!calMode || !svgRef.current) return;
-    const rect = svgRef.current.getBoundingClientRect();
-    const svgX = ((e.clientX - rect.left) / rect.width) * 2262;
-    const svgY = ((e.clientY - rect.top) / rect.height) * 587;
-    setPendingPin({ svgX, svgY });
-    setGpsInput("");
-  };
-
-  const confirmCalPoint = () => {
-    if (!pendingPin) return;
-    const parts = gpsInput.split(",").map(s => parseFloat(s.trim()));
-    if (parts.length !== 2 || parts.some(isNaN)) return;
-    const [lat, lng] = parts;
-    const newPoints = [...calPoints, { svgX: pendingPin.svgX, svgY: pendingPin.svgY, lat, lng }];
-    const newTransform = solveAffine(newPoints);
-    const newInverse = solveInverse(newPoints);
-    setCalPoints(newPoints); setCalTransform(newTransform); setCalInverse(newInverse);
-    saveCalibration(newPoints, newTransform);
-    setPendingPin(null); setGpsInput("");
-    onLog(`Cal point ${newPoints.length}: (${pendingPin.svgX.toFixed(0)}, ${pendingPin.svgY.toFixed(0)}) → ${lat}, ${lng}`);
-  };
-
-  const clearCalibration = () => {
-    setCalPoints([]); setCalTransform(null); setCalInverse(null); setPendingPin(null);
-    saveCalibration([], null);
-  };
-
   const userPos = positions[activePerson];
 
   return (
@@ -1274,51 +1237,25 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         }}>
           <i className={`ti ti-map-pin${locLoading?" spin":""}`}/> Localizează
         </button>
-        <button onClick={() => { setCalMode(m => !m); setPendingPin(null); }} style={{
-          padding:"6px 10px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
-          border:`1px solid ${calMode?"var(--brand)":"var(--border-color)"}`,
-          background: calMode ? "rgba(255,102,0,0.2)" : "var(--bg-hover)",
-          color: calMode ? "var(--brand)" : "var(--text-muted)",
-        }}>
-          <i className="ti ti-ruler-measure"/>
-        </button>
         <button onClick={() => { setPixelLog(m => !m); }} style={{
           padding:"6px 10px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
           border:`1px solid ${pixelLog?"#F59E0B":"var(--border-color)"}`,
           background: pixelLog ? "rgba(245,158,11,0.15)" : "var(--bg-hover)",
           color: pixelLog ? "#F59E0B" : "var(--text-muted)",
-        }} title="Pixel Logger">
+        }} title="Crosshair SVG coords">
           <i className="ti ti-crosshair"/>
         </button>
       </div>
 
-      {/* Calibration banner */}
-      {calMode && (
-        <div style={{ margin:"0 0 6px", padding:"8px 12px", background:"rgba(255,102,0,0.1)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", fontSize:12, color:"var(--brand)", display:"flex", alignItems:"center", gap:10 }}>
-          <i className="ti ti-info-circle" style={{ fontSize:16 }}/>
-          <span>Click pe hartă → introdu GPS. Minim 3 puncte.</span>
-          {calPoints.length >= 3 && (
-            <button onClick={async () => {
-              const r = await fetch("/api/save-calibration", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ points: calPoints }) });
-              const d = await r.json();
-              onLog(d.ok ? `✓ ${calPoints.length} puncte salvate în cod` : `Eroare: ${d.error}`, d.ok);
-            }} style={{ background:"var(--brand)", border:"none", borderRadius:4, color:"#fff", padding:"2px 10px", cursor:"pointer", fontSize:11 }}>
-              Salvează în cod
-            </button>
-          )}
-          <button onClick={clearCalibration} style={{ marginLeft:"auto", background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"2px 8px", cursor:"pointer", fontSize:11 }}>Resetează</button>
-        </div>
-      )}
-
-      {/* Map — zoomable/pannable (pan/wheel disabled in calMode/pixelLog) */}
+      {/* Map — zoomable/pannable */}
       <div
         ref={mapWrapRef}
         className="map-container"
         style={{
           position: "relative", flex: 1, minHeight: 0,
           borderRadius: "var(--radius-md)", overflow: "hidden",
-          border: `1px solid ${calMode?"var(--brand)":pixelLog?"#F59E0B":"var(--border-color)"}`,
-          cursor: calMode||pixelLog ? "crosshair" : (isDragging ? "grabbing" : "grab"),
+          border: `1px solid ${pixelLog?"#F59E0B":"var(--border-color)"}`,
+          cursor: isDragging ? "grabbing" : "grab",
           userSelect: "none",
         }}
         onMouseDown={e => startDrag(e.clientX, e.clientY)}
@@ -1343,8 +1280,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           </div>
         )}
 
-        {/* Zoom controls — hidden in calMode/pixelLog */}
-        {!calMode && !pixelLog && (
+        {/* Zoom controls — hidden when crosshair active */}
+        {!pixelLog && (
           <div style={{ position:"absolute", top:8, right:8, zIndex:10, display:"flex", flexDirection:"column", gap:4 }}>
             <button style={zoomBtnStyle} onClick={() => {
               isFollowingRef.current = false; setIsFollowing(false);
@@ -1401,22 +1338,32 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           </div>
         )}
 
-      {calMode && pendingPin && (
-        <div style={{ margin:"0 0 6px", padding:"8px 12px", background:"var(--bg-card)", border:"1px solid var(--brand)", borderRadius:"var(--radius-md)", display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ fontSize:12, color:"var(--text-muted)", whiteSpace:"nowrap" }}>SVG ({pendingPin.svgX.toFixed(0)}, {pendingPin.svgY.toFixed(0)})</span>
-          <input autoFocus placeholder="lat, lng" value={gpsInput} onChange={e => setGpsInput(e.target.value)} onKeyDown={e => e.key==="Enter" && confirmCalPoint()}
-            style={{ flex:1, background:"var(--bg-body)", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-main)", padding:"4px 8px", fontSize:12, outline:"none" }} />
-          <button onClick={confirmCalPoint} style={{ background:"var(--brand)", border:"none", borderRadius:4, color:"#fff", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>OK</button>
-          <button onClick={() => setPendingPin(null)} style={{ background:"transparent", border:"1px solid var(--border-color)", borderRadius:4, color:"var(--text-muted)", padding:"4px 8px", cursor:"pointer", fontSize:12 }}>✕</button>
-        </div>
-      )}
-
-        {/* Pixel logger hover coords — outside transform so it stays fixed top-left */}
-        {pixelLog && hoverPos && (
-          <div style={{ position:"absolute", top:8, left:8, zIndex:10, background:"rgba(11,17,32,0.92)", border:"1px solid #F59E0B", borderRadius:6, padding:"6px 10px", fontSize:12, color:"#F59E0B", pointerEvents:"none" }}>
-            x: <b>{hoverPos.x.toFixed(0)}</b> · y: <b>{hoverPos.y.toFixed(0)}</b>
-          </div>
-        )}
+        {/* Center crosshair — shows SVG coords of the map center */}
+        {pixelLog && (() => {
+          const { W, H } = containerSizeRef.current;
+          // Invert the CSS transform: center pixel → SVG coords
+          // transform: translate(panX, panY) scale(zoom) [rotate(-90) if portrait]
+          // center of container in transformed space:
+          const cx = W > 0 ? ((W/2 - mapPan.x) / mapZoom) : 0;
+          const cy = H > 0 ? ((H/2 - mapPan.y) / mapZoom) : 0;
+          // In portrait the SVG is rotated -90°, so swap and flip axes
+          const svgX = isPortrait ? cy : cx;
+          const svgY = isPortrait ? (2262 - cx) : cy;
+          return (
+            <>
+              {/* crosshair lines */}
+              <div style={{ position:"absolute", inset:0, zIndex:15, pointerEvents:"none" }}>
+                <div style={{ position:"absolute", top:"50%", left:0, right:0, height:1, background:"#F59E0B", opacity:0.7 }}/>
+                <div style={{ position:"absolute", left:"50%", top:0, bottom:0, width:1, background:"#F59E0B", opacity:0.7 }}/>
+                <div style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", width:16, height:16, borderRadius:"50%", border:"2px solid #F59E0B" }}/>
+              </div>
+              {/* coords badge */}
+              <div style={{ position:"absolute", top:8, left:8, zIndex:16, background:"rgba(11,17,32,0.92)", border:"1px solid #F59E0B", borderRadius:6, padding:"6px 10px", fontSize:13, color:"#F59E0B", pointerEvents:"none", fontVariantNumeric:"tabular-nums" }}>
+                x: <b>{svgX.toFixed(0)}</b> · y: <b>{svgY.toFixed(0)}</b>
+              </div>
+            </>
+          );
+        })()}
 
         {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
@@ -1431,22 +1378,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block", zIndex:1 }} />
 
           <svg ref={svgRef} viewBox="0 0 2262 587" preserveAspectRatio="xMidYMid meet"
-            onClick={e => {
-              if (pixelLog && svgRef.current) {
-                const rect = svgRef.current.getBoundingClientRect();
-                const x = ((e.clientX-rect.left)/rect.width)*2262;
-                const y = ((e.clientY-rect.top)/rect.height)*587;
-                const label = window.prompt(`SVG (${x.toFixed(0)}, ${y.toFixed(0)}) — ce este acest punct?`) ?? "";
-                if (label) setPixelEntries(prev => [...prev, {x, y, label}]);
-              } else { handleSvgClick(e); }
-            }}
-            onMouseMove={e => {
-              if (!pixelLog || !svgRef.current) { setHoverPos(null); return; }
-              const rect = svgRef.current.getBoundingClientRect();
-              setHoverPos({ x:((e.clientX-rect.left)/rect.width)*2262, y:((e.clientY-rect.top)/rect.height)*587 });
-            }}
-            onMouseLeave={() => setHoverPos(null)}
-            style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents: calMode||pixelLog ? "all" : "none", zIndex:2 }}>
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:2 }}>
             <defs>
               <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
               {ZONES.map(z => (
@@ -1460,7 +1392,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             </defs>
 
             {/* Route segments — thick arrows colored per zone */}
-            {!calMode && pts && pts.slice(1).map((pt, i) => {
+            {pts && pts.slice(1).map((pt, i) => {
               const zone = ZONES[Math.min(i, ZONES.length-1)];
               const color = zone?.color ?? person.color;
               const markerId = zone ? `arrow-${zone.id}` : "arrow-default";
@@ -1472,7 +1404,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             })}
 
             {/* Zone etape */}
-            {!calMode && ZONES.map(z => {
+            {ZONES.map(z => {
               const words = z.label.split(" ");
               const lineH = 16;
               const totalH = words.length * lineH;
@@ -1493,7 +1425,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             })}
 
             {/* Gate */}
-            {!calMode && gatePos && (
+            {gatePos && (
               <g filter="url(#glow2)">
                 <circle cx={gatePos.x - 40} cy={gatePos.y} r="14" fill="none" stroke="#10B981" strokeWidth="2"/>
                 <circle cx={gatePos.x - 40} cy={gatePos.y} r="7" fill="#10B981"/>
@@ -1501,7 +1433,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             )}
 
             {/* Active person dot — only shown after real GPS fix, never hardcoded */}
-            {!calMode && locationLoaded && (() => {
+            {locationLoaded && (() => {
               const p = PEOPLE.find(p => p.id === activePerson);
               if (!p) return null;
               const pos = positions[p.id];
@@ -1516,21 +1448,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
                 </g>
               );
             })()}
-
-          {/* Calibration points */}
-          {calMode && calPoints.map((p, i) => (
-            <g key={i}>
-              <circle cx={p.svgX} cy={p.svgY} r="7" fill="#ff6600" stroke="#fff" strokeWidth="1.5"/>
-              <text x={p.svgX+10} y={p.svgY+4} fill="#ff6600" fontSize="10">{i+1}</text>
-            </g>
-          ))}
-          {calMode && pendingPin && (
-            <g>
-              <line x1={pendingPin.svgX} y1={pendingPin.svgY-14} x2={pendingPin.svgX} y2={pendingPin.svgY+14} stroke="#ff6600" strokeWidth="2"/>
-              <line x1={pendingPin.svgX-14} y1={pendingPin.svgY} x2={pendingPin.svgX+14} y2={pendingPin.svgY} stroke="#ff6600" strokeWidth="2"/>
-              <circle cx={pendingPin.svgX} cy={pendingPin.svgY} r="5" fill="none" stroke="#ff6600" strokeWidth="2"/>
-            </g>
-          )}
           </svg>
         </div>
         <style>{`
