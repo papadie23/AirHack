@@ -794,6 +794,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // SSR-safe defaults (must match server render to avoid hydration mismatch)
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [mapHeading, setMapHeading] = useState(0); // degrees: angle to rotate map so route points up
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
@@ -1145,6 +1146,13 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const zone = ZONES[taskIdxRef.current];
     if (zone && boardingPhaseRef.current === "task") {
       setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
+      // Rotate map so direction-of-travel points up
+      const dx = zone.x - svgPos.x;
+      const dy = zone.y - svgPos.y;
+      if (Math.sqrt(dx*dx + dy*dy) > 10) {
+        // SVG: +x=right, +y=down. Angle from "up" (negative y) clockwise.
+        setMapHeading(Math.atan2(dx, -dy) * 180 / Math.PI);
+      }
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
         // Just show the popup — user confirms arrival via "Am ajuns" button
@@ -1378,7 +1386,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         {/* Transformable layer — floor plan + SVG overlay zoom/pan together */}
         <div style={{
           position: "absolute", inset: 0,
-          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})${isPortrait ? " rotate(-90deg)" : ""}`,
+          transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom}) rotate(${isPortrait ? mapHeading - 90 : mapHeading}deg)`,
           transformOrigin: "center center",
           willChange: "transform",
           // Smooth when auto-following; instant when the user is dragging/pinching
