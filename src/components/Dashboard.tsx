@@ -725,6 +725,10 @@ function makeOrthoRoute(from: {x:number;y:number}, to: {x:number;y:number}): {x:
   return [from, { x: to.x, y: from.y }, to];
 }
 
+function makeOrthoRouteVia(from: {x:number;y:number}, via: {x:number;y:number}, to: {x:number;y:number}): {x:number;y:number}[] {
+  return [from, { x: via.x, y: from.y }, via, { x: to.x, y: via.y }, to];
+}
+
 function makeRoute(personId: string): {x:number;y:number}[] {
   const s = SVG_STARTS[personId] ?? { x: 150, y: 500 };
   const waypoints = [s, ...ZONE_WAYPOINTS];
@@ -1110,7 +1114,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const zone = TASKS[taskIdx]?.zone;
     const from = positionsRef.current[activePerson];
     if (!zone || !from) return;
-    setDynamicRoute(makeOrthoRoute(from, { x: zone.x, y: zone.y }));
+    setDynamicRoute(zone.id === "imbarcare"
+      ? makeOrthoRouteVia(from, SVG_GATE, { x: zone.x, y: zone.y })
+      : makeOrthoRoute(from, { x: zone.x, y: zone.y }));
     setShowTaskPopup(false);
   };
 
@@ -1147,7 +1153,9 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     // Reroute + proximity using refs (no stale closure)
     const zone = ZONES[taskIdxRef.current];
     if (zone && boardingPhaseRef.current === "task") {
-      setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
+      setDynamicRoute(zone.id === "imbarcare"
+        ? makeOrthoRouteVia(svgPos, SVG_GATE, { x: zone.x, y: zone.y })
+        : makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
       // Rotate map so direction-of-travel points up
       const dx = zone.x - svgPos.x;
       const dy = zone.y - svgPos.y;
