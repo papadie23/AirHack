@@ -672,7 +672,7 @@ const defaultPoints: CalPoint[] = [
   { svgX: 70,   svgY: 335, lat: 47.1746342,  lng: 27.6192034  }, // baza scări (calibrat)
   { svgX: 2207, svgY: 269, lat: 47.1740641,  lng: 27.6197010  }, // baie spate (calibrat)
   { svgX: 852,  svgY: 349, lat: 47.17439229, lng: 27.61903507 }, // masa echipei / securitate
-  { svgX: 2244, svgY: 256, lat: 47.17406410, lng: 27.61970100 }, // dozator / poartă
+  { svgX: 1277, svgY: 345, lat: 47.1742709,  lng: 27.6190502  }, // centru sala — locatie test
 ];
 
 function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null } {
