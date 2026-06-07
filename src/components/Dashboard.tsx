@@ -1089,7 +1089,11 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // ── Boarding task state machine ──
   type BoardingPhase = "idle"|"confirming"|"awaiting-location"|"task"|"done";
   const [boardingPhase, setBoardingPhase] = useState<BoardingPhase>("confirming");
+  const boardingPhaseRef = useRef<BoardingPhase>("confirming");
+  boardingPhaseRef.current = boardingPhase;
   const [taskIdx, setTaskIdx] = useState(0);
+  const taskIdxRef = useRef(0);
+  taskIdxRef.current = taskIdx;
   const [showTaskPopup, setShowTaskPopup] = useState(true); // auto-show on mount
   const TASKS = ZONES.map(z => ({ zone: z, label: z.label }));
 
