@@ -1143,18 +1143,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
-        setTimeout(() => {
-          setTaskIdx(i => {
-            const next = i + 1;
-            if (next >= ZONES.length) { setDynamicRoute(null); setBoardingPhase("done"); setShowTaskPopup(true); return next; }
-            setBoardingPhase("task");
-            setShowTaskPopup(true);
-            const nextZone = ZONES[next];
-            const cur = positionsRef.current[activePersonRef.current];
-            setDynamicRoute(nextZone && cur ? makeOrthoRoute(cur, { x: nextZone.x, y: nextZone.y }) : null);
-            return next;
-          });
-        }, 800);
+        // Just show the popup — user confirms arrival via "Am ajuns" button
+        setShowTaskPopup(true);
       }
     }
   };
@@ -1178,17 +1168,16 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        placeOnMap(lat, lng, activePersonRef.current);
         onLog(`📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} ±${pos.coords.accuracy.toFixed(0)}m`);
+        placeOnMap(lat, lng, activePersonRef.current);
         setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
-        // Always re-enable following so map stays on user
         isFollowingRef.current = true;
         setIsFollowing(true);
         setLocLoading(false);
         setLocationLoaded(true);
       },
       (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); setLocationLoaded(true); },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 }
     );
   };
 
@@ -1231,7 +1220,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           <span style={{ fontSize:13, fontWeight:600, color:person.color }}>{person.name}</span>
           {flight && <span style={{ fontSize:12, color:"var(--text-muted)" }}>· {flight.flight} → {flight.dest}</span>}
         </div>
-        <button onClick={getLocation} disabled={locLoading} style={{
+        <button onClick={getLocation} style={{
           marginLeft:"auto", padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
           border:"1px solid var(--border-color)", background:"var(--bg-hover)", color:"var(--text-muted)",
           display:"flex", alignItems:"center", gap:6,
@@ -1344,19 +1333,24 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             <button style={{ ...zoomBtnStyle, fontSize:14 }} onClick={toggleFullscreen} title={isFullscreen ? "Ieși din ecran complet" : "Ecran complet"}>
               <i className={`ti ti-arrows-${isFullscreen ? "minimize" : "maximize"}`} />
             </button>
-            {/* Boarding guide re-open button — visible when guide is active but popup is dismissed */}
-            {boardingPhase !== "idle" && !showTaskPopup && (
-              <button
-                onClick={() => setShowTaskPopup(true)}
-                title="Ghid îmbarcare"
-                style={{ ...zoomBtnStyle,
-                  color: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--brand)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
-                  borderColor: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--border-color)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
-                  fontSize: 13,
-                }}>
-                <i className="ti ti-list-check" />
-              </button>
-            )}
+            {/* Boarding guide button — always visible; reopens or restarts the process */}
+            <button
+              onClick={() => {
+                if (boardingPhase === "idle") {
+                  setBoardingPhase("confirming");
+                  setTaskIdx(0);
+                  setDynamicRoute(null);
+                }
+                setShowTaskPopup(true);
+              }}
+              title="Procesul de îmbarcare"
+              style={{ ...zoomBtnStyle,
+                color: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--brand)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
+                borderColor: boardingPhase === "task" ? TASKS[taskIdx]?.zone.color ?? "var(--border-color)" : boardingPhase === "done" ? "#34D399" : "var(--brand)",
+                fontSize: 13,
+              }}>
+              <i className="ti ti-list-check" />
+            </button>
           </div>
         )}
 
