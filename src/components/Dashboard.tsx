@@ -1095,10 +1095,12 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   const [taskIdx, setTaskIdx] = useState(0);
   const taskIdxRef = useRef(0);
   taskIdxRef.current = taskIdx;
+  const arrivedZoneRef = useRef<string | null>(null); // zone id already notified
   const [showTaskPopup, setShowTaskPopup] = useState(true); // auto-show on mount
   const TASKS = ZONES.map(z => ({ zone: z, label: z.label }));
 
   const advanceTask = () => {
+    arrivedZoneRef.current = null; // allow next zone to trigger popup
     const next = taskIdx + 1;
     if (next >= TASKS.length) { setBoardingPhase("done"); setShowTaskPopup(true); }
     else { setTaskIdx(next); setBoardingPhase("task"); setDynamicRoute(null); setShowTaskPopup(true); }
@@ -1154,8 +1156,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         setMapHeading(Math.atan2(dx, -dy) * 180 / Math.PI);
       }
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
-      if (dist < Math.max(zone.w, zone.h) * 0.6) {
-        // Just show the popup — user confirms arrival via "Am ajuns" button
+      if (dist < Math.max(zone.w, zone.h) * 0.6 && arrivedZoneRef.current !== zone.id) {
+        arrivedZoneRef.current = zone.id;
         setShowTaskPopup(true);
       }
     }
