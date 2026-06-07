@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { pixelToGps, gpsToPixel, LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
+import { LOCATIONS, IMG_W, IMG_H } from "../lib/geo-transform";
 import type { WeatherProvider } from "../lib/weather";
 import { findClient, ADMIN_USERNAME, ADMIN_PASSWORD } from "../lib/mock-auth";
 import TrafficFlowCenter from "./TrafficFlowCenter";
@@ -38,12 +38,9 @@ type LiveFlight = {
   color: string; status: string; delayed: number | null;
 };
 
-// Keep backward compat: FLIGHTS is the static fallback used in ROUTE_PX / GATE_LABELS references
 const FLIGHTS = FLIGHTS_FALLBACK;
 
-// Waypoints în pixel-space al imaginii "Plan parter fluxuri ON.jpg"
-// Ruta: intrare T4 → check-in → baza scări → poartă (etaj)
-// Coordonatele % sunt relative la IMG_W x IMG_H pentru SVG overlay
+// Waypoints in percentage space relative to IMG_W x IMG_H
 const pct = (px: number, dim: number) => (px / dim) * 100;
 
 const PT = {
@@ -185,15 +182,6 @@ const ADMIN_NAV: { id: Feature; icon: string; label: string; sub: string }[] = [
   { id: "video-flow",    icon: "ti-video",          label: "CV Dispatcher",     sub: "CV + AI · IAS"              },
   { id: "admin",         icon: "ti-megaphone",      label: "Anunțuri Pasageri", sub: "Trimite notificări"         },
   { id: "settings",      icon: "ti-settings",       label: "Settings",          sub: "About · API Status"         },
-];
-const NAV = PASSENGER_NAV; // fallback
-
-const USER_NAV = [
-  { icon: "ti-user-circle",    label: "Contul meu"  },
-  { icon: "ti-plane-departure",label: "Zborul meu"  },
-  { icon: "ti-bell",           label: "Notificări"  },
-  { icon: "ti-settings",       label: "Setări"      },
-  { icon: "ti-help-circle",    label: "Ajutor"      },
 ];
 
 function LeftPanel({
@@ -654,10 +642,6 @@ function solveAffine(pts: CalPoint[]): CalTransform | null {
   return {A,B,C,D,E,F};
 }
 
-function applyTransform(t: CalTransform, svgX: number, svgY: number): {lat:number;lng:number} {
-  return { lat: t.A*svgX + t.B*svgY + t.C, lng: t.D*svgX + t.E*svgY + t.F };
-}
-
 // GPS → SVG: solved directly via least-squares on the calibration points (numerically
 // stable — GPS coords are first converted to metre offsets from the centroid).
 const LAT_SCALE = 111320;
@@ -717,12 +701,6 @@ function loadCalibration(): { points: CalPoint[]; transform: CalTransform | null
   return { points: [], transform: null, inverse: null };
 }
 
-function saveCalibration(points: CalPoint[], transform: CalTransform | null) {
-  localStorage.setItem(CAL_KEY, JSON.stringify({ points, transform }));
-}
-
-// Puncte fixe calibrate
-const SVG_SECURITY  = { x: 852,  y: 349 }; // control check / masa echipei
 const SVG_GATE      = { x: 1435, y: 265 }; // destinație / dozator
 
 // Puncte de start diferite pentru fiecare persoană
@@ -770,12 +748,6 @@ function makeRoute(personId: string): {x:number;y:number}[] {
   }
   return result;
 }
-
-const ROUTE_SVG: Record<string, { x: number; y: number }[]> = {
-  "1": makeRoute("you"), "2": makeRoute("misu"),
-  "3": makeRoute("ionica"), "4": makeRoute("dorel"),
-  "5": makeRoute("you"), "6": makeRoute("you"), "T3": makeRoute("you"),
-};
 
 /* ── People config ── */
 interface Person { id: string; name: string; flightId: string; color: string }
@@ -1581,25 +1553,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         )}
       </div>
 
-      {/* Pixel log panel */}
-      {pixelLog && pixelEntries.length > 0 && (
-        <div style={{ marginTop:8, padding:"8px 12px", background:"rgba(245,158,11,0.08)", border:"1px solid #F59E0B44", borderRadius:"var(--radius-md)", fontSize:11, flexShrink:0 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-            <span style={{ color:"#F59E0B", fontWeight:600 }}>Pixel Log</span>
-            <button onClick={() => { navigator.clipboard.writeText(pixelEntries.map(e=>`{ svgX: ${e.x.toFixed(0)}, svgY: ${e.y.toFixed(0)} } // ${e.label}`).join("\n")); }}
-              style={{ background:"transparent", border:"none", color:"#F59E0B", cursor:"pointer", fontSize:11 }}>
-              📋 Copy
-            </button>
-            <button onClick={() => setPixelEntries([])} style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"pointer", fontSize:11 }}>✕ Clear</button>
-          </div>
-          {pixelEntries.map((e,i) => (
-            <div key={i} style={{ fontFamily:"monospace", color:"var(--text-muted)", lineHeight:1.6 }}>
-              <span style={{ color:"#F59E0B" }}>({e.x.toFixed(0)}, {e.y.toFixed(0)})</span> — {e.label}
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* ETA card — shown on all screens, prominent on mobile */}
       {flight && (
         <div className="route-eta-card fade-in">
@@ -1637,15 +1590,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 }
 /* ── Heatmap center — Google Maps + Orange Population Density ── */
 
-// Zone labels mapped to geohash approximate positions on the T4 terminal
-// Used for the SVG overlay on top of the map
-const TERMINAL_ZONES = [
-  { id: "security", label: "Securitate",  lat: 47.1732, lng: 27.6215, base: 210, limit: 150 },
-  { id: "checkin",  label: "Check-in",    lat: 47.1729, lng: 27.6225, base: 85,  limit: 120 },
-  { id: "dutyfree", label: "Duty Free",   lat: 47.1735, lng: 27.6250, base: 47,  limit: 80  },
-  { id: "gateC3",   label: "Poarta C3",   lat: 47.1726, lng: 27.6265, base: 89,  limit: 60  },
-];
-
 interface DensityCell {
   geohash: string;
   dataType: string;
@@ -1657,23 +1601,6 @@ interface DensityResponse {
   timedPopulationDensityData: { startTime: string; endTime: string; cellPopulationDensityData: DensityCell[] }[];
   status: string;
   fromFixture?: boolean;
-}
-
-// Decode geohash → {lat, lng} (simple base32 decode, precision 7)
-function decodeGeohash(hash: string): { lat: number; lng: number } {
-  const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
-  let lat = [-90, 90], lng = [-180, 180];
-  let isLng = true;
-  for (const c of hash) {
-    const v = BASE32.indexOf(c);
-    for (let i = 4; i >= 0; i--) {
-      const bit = (v >> i) & 1;
-      if (isLng) { const mid = (lng[0] + lng[1]) / 2; lng[bit ? 0 : 1] = mid; }
-      else        { const mid = (lat[0] + lat[1]) / 2; lat[bit ? 0 : 1] = mid; }
-      isLng = !isLng;
-    }
-  }
-  return { lat: (lat[0] + lat[1]) / 2, lng: (lng[0] + lng[1]) / 2 };
 }
 
 function heatColor(density: number): string {
