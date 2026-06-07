@@ -1113,7 +1113,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     const zone = TASKS[taskIdx]?.zone;
     const from = positionsRef.current[activePerson];
     if (!zone || !from) return;
-    setDynamicRoute(zone.id === "imbarcare"
+    setDynamicRoute(zone.id === "imbarcare" && from.x < SVG_GATE.x
       ? makeOrthoRouteVia(from, SVG_GATE, { x: zone.x, y: zone.y })
       : makeOrthoRoute(from, { x: zone.x, y: zone.y }));
     setShowTaskPopup(false);
@@ -1152,7 +1152,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
     // Reroute + proximity using refs (no stale closure)
     const zone = ZONES[taskIdxRef.current];
     if (zone && boardingPhaseRef.current === "task") {
-      setDynamicRoute(zone.id === "imbarcare"
+      setDynamicRoute(zone.id === "imbarcare" && svgPos.x < SVG_GATE.x
         ? makeOrthoRouteVia(svgPos, SVG_GATE, { x: zone.x, y: zone.y })
         : makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
