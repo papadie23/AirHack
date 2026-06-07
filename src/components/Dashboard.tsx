@@ -1122,35 +1122,21 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const placeOnMap = (lat: number, lng: number, personId: string) => {
     if (!calTransform) return;
-    const prev = lastGps.current[personId];
-    if (prev && haversineM(prev.lat, prev.lng, lat, lng) < DEAD_ZONE_M) return;
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
-    // Pan map to keep active person centered, only if inside SVG bounds
+    // Pan: landscape centers on user, portrait handled by positions effect
     const SVG_W = 2262, SVG_H = 587;
     const inBounds = svgPos.x >= 0 && svgPos.x <= SVG_W && svgPos.y >= 0 && svgPos.y <= SVG_H;
-    // Portrait auto-follow is handled by the positions-change effect (uses correct rotated formula).
-    // Landscape: center directly with current zoom ref to avoid black-bar from stale closure.
-    if (personId === activePerson && inBounds && isFollowingRef.current && !isPortraitRef.current) {
+    if (personId === activePersonRef.current && inBounds && isFollowingRef.current && !isPortraitRef.current) {
       const { W, H } = containerSizeRef.current;
-      if (W > 0) {
-        setMapPan({ x: W / 2 - svgPos.x * mapZoomRef.current, y: H / 2 - svgPos.y * mapZoomRef.current });
-      }
+      if (W > 0) setMapPan({ x: W / 2 - svgPos.x * mapZoomRef.current, y: H / 2 - svgPos.y * mapZoomRef.current });
     }
-    if (personId !== "you") return;
-    // Recalculate route from current position if route is active + zone proximity check
-    setTaskIdx(idx => {
-      const zone = ZONES[idx];
-      if (!zone) return idx;
-      // Always redraw route from current GPS pos to active zone when in task phase
-      setBoardingPhase(phase => {
-        if (phase === "task") {
-          setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
-        }
-        return phase;
-      });
-      // Proximity check
+    if (personId !== activePersonRef.current) return;
+    // Reroute + proximity using refs (no stale closure)
+    const zone = ZONES[taskIdxRef.current];
+    if (zone && boardingPhaseRef.current === "task") {
+      setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
         setTimeout(() => {
@@ -1160,14 +1146,13 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
             setBoardingPhase("task");
             setShowTaskPopup(true);
             const nextZone = ZONES[next];
-            const currentPos = positionsRef.current[activePersonRef.current];
-            setDynamicRoute(nextZone && currentPos ? makeOrthoRoute(currentPos, { x: nextZone.x, y: nextZone.y }) : null);
+            const cur = positionsRef.current[activePersonRef.current];
+            setDynamicRoute(nextZone && cur ? makeOrthoRoute(cur, { x: nextZone.x, y: nextZone.y }) : null);
             return next;
           });
         }, 800);
       }
-      return idx;
-    });
+    }
   };
 
   // Auto-start location watching on mount — no hardcoded pin until real GPS arrives
@@ -1189,8 +1174,8 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        placeOnMap(lat, lng, activePerson);
-        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${pos.coords.accuracy.toFixed(0)}m`);
+        placeOnMap(lat, lng, activePersonRef.current);
+        onLog(`📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} ±${pos.coords.accuracy.toFixed(0)}m`);
         setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
         // Always re-enable following so map stays on user
         isFollowingRef.current = true;
