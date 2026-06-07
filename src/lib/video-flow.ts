@@ -37,12 +37,11 @@ export interface TrafficHistory {
 }
 
 // Zone metadata — static definitions for IAS airport zones
-// capacity  = displayed total capacity shown in the UI (e.g. "47 / 120")
-// softCap   = hard upper bound enforced on mock counts — never exceeded in practice
+// capacity = displayed capacity AND hard upper bound for mock counts
 const ZONE_META: Record<ZoneId, { label: string; capacity: number; softCap: number; baseCount: number }> = {
-  gate1:     { label: "Poarta",      capacity: 120, softCap: 100, baseCount: 35 },
-  gate2:     { label: "Check In",    capacity: 80,  softCap: 50,  baseCount: 20 },
-  disembark: { label: "Zona Sosiri", capacity: 200, softCap: 70,  baseCount: 45 },
+  gate1:     { label: "Poarta",      capacity: 100, softCap: 100, baseCount: 35 },
+  gate2:     { label: "Check In",    capacity: 50,  softCap: 50,  baseCount: 20 },
+  disembark: { label: "Zona Sosiri", capacity: 70,  softCap: 70,  baseCount: 45 },
 };
 
 /** Thresholds (% of capacity) that trigger alert levels */
