@@ -1186,7 +1186,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         const lng = pos.coords.longitude;
         const acc = pos.coords.accuracy;
         onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${acc.toFixed(0)}m`);
-        if (acc > 40) {
+        if (acc > 100) {
           onLog(`GPS slab: ±${acc.toFixed(0)}m — ignorat`, false);
           setLocLoading(false);
           setLocationLoaded(true);
@@ -1200,7 +1200,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         setLocationLoaded(true);
       },
       (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); setLocationLoaded(true); },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
     );
   };
 
@@ -1243,7 +1243,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           <span style={{ fontSize:13, fontWeight:600, color:person.color }}>{person.name}</span>
           {flight && <span style={{ fontSize:12, color:"var(--text-muted)" }}>· {flight.flight} → {flight.dest}</span>}
         </div>
-        <button onClick={getLocation} disabled={locLoading} style={{
+        <button onClick={getLocation} style={{
           marginLeft:"auto", padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer", fontSize:12,
           border:"1px solid var(--border-color)", background:"var(--bg-hover)", color:"var(--text-muted)",
           display:"flex", alignItems:"center", gap:6,
