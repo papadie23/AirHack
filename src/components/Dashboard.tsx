@@ -266,7 +266,7 @@ function LeftPanel({
           </button>
         </div>
 
-        {logs.length > 0 && (
+        {logs.length > 0 && !isPassenger && (
           <>
             <div className="section-title">Activitate recentă</div>
             <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
@@ -1730,7 +1730,7 @@ function generateSyntheticDensity(tick: number): { id: string; density: number; 
     const wave = Math.sin(tick * 0.08 + AIRPORT_ZONES.indexOf(z) * 1.3) * 0.15;
     const noise = (Math.sin(tick * 0.31 + AIRPORT_ZONES.indexOf(z) * 2.7) * 0.05);
     const raw = Math.max(0.05, Math.min(1, z.baseLoad + wave + noise));
-    const pax = Math.round(raw * 250);
+    const pax = Math.round(raw * 100);
     return { id: z.id, density: raw, pax };
   });
 }
@@ -2167,7 +2167,7 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
             <i className="ti ti-shield-check" style={{ color:"var(--brand)" }}/> Security Check (Masa Echipei)
           </div>
           <div style={{ fontSize:24, fontWeight:700, color:etaColor(securityETA) }}>{securityETA} min</div>
-          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>{securityDensity} pax detectați · 2 linii active</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>2 linii active</div>
           <div style={{ marginTop:6, height:4, background:"var(--bg-hover)", borderRadius:2 }}>
             <div style={{ width:`${Math.min(100,(securityDensity/250)*100)}%`, height:"100%", background:etaColor(securityETA), borderRadius:2, transition:"width 0.5s" }}/>
           </div>
@@ -2177,73 +2177,12 @@ function RouteRight({ onLog }: { onLog:(m:string,ok?:boolean)=>void }) {
             <i className="ti ti-door-enter" style={{ color:"var(--success)" }}/> Boarding Gate (Dozator)
           </div>
           <div style={{ fontSize:24, fontWeight:700, color:etaColor(boardingETA) }}>{boardingETA} min</div>
-          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>{boardingDensity} pax detectați · 3 ghișee active</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>3 ghișee active</div>
           <div style={{ marginTop:6, height:4, background:"var(--bg-hover)", borderRadius:2 }}>
             <div style={{ width:`${Math.min(100,(boardingDensity/250)*100)}%`, height:"100%", background:etaColor(boardingETA), borderRadius:2, transition:"width 0.5s" }}/>
           </div>
         </div>
       </div>
-
-      <div className="section-title">Zboruri</div>
-
-      {/* ── Header row cu ora curentă + refresh ── */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
-        <div style={{ fontSize:11, color:"var(--text-muted)", display:"flex", alignItems:"center", gap:5 }}>
-          <span className={`dot ${flightsError ? "red" : "green"}${!flightsError ? " pulse-green" : ""}`} style={{ width:6, height:6 }}/>
-          {flightsError ? "Eroare AirLabs" : `Live · IAS · ora ${currentTimeRO || "—"}`}
-        </div>
-        <button
-          onClick={fetchFlights}
-          disabled={flightsLoading}
-          title="Refresh zboruri"
-          style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"pointer", padding:"2px 4px", fontSize:13 }}
-        >
-          <i className={`ti ti-refresh${flightsLoading ? " spin" : ""}`} />
-        </button>
-      </div>
-
-      <div className="flight-list">
-        {(liveFlights.length > 0 ? liveFlights : FLIGHTS_FALLBACK).map(f => {
-          const isActive  = f.status === "active";
-          const isCancelled = f.status === "cancelled";
-          const hasDelay = f.delayed && f.delayed > 0;
-          const statusColor = isCancelled ? "var(--danger)" : isActive ? "var(--brand)" : hasDelay ? "var(--warning)" : "var(--success)";
-          const statusLabel = isCancelled ? "ANULAT" : isActive ? "ÎN AER" : hasDelay ? `+${f.delayed}min` : "LA TMP";
-          return (
-            <div key={f.id} className={`flight-item${sel===f.id?" active":""}`} onClick={() => setSel(sel===f.id?null:f.id)}>
-              <i className="ti ti-plane" style={{ color: f.color, fontSize:18, opacity: isCancelled ? 0.4 : 1 }} />
-              <div style={{ flex:1 }}>
-                <div className="flight-nr" style={{ opacity: isCancelled ? 0.5 : 1 }}>{f.flight}</div>
-                <div className="flight-dest">{f.dest}</div>
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2 }}>
-                <div className="flight-gate" style={{ color: f.color }}>
-                  {f.gate !== "—" ? `G${f.gate} · ` : ""}{f.departs}
-                </div>
-                <div style={{ fontSize:10, fontWeight:700, color: statusColor, letterSpacing:"0.5px" }}>
-                  {statusLabel}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        {liveFlights.length === 0 && !flightsLoading && !flightsError && (
-          <div style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0" }}>
-            Niciun zbor în fereastra curentă
-          </div>
-        )}
-        {flightsLoading && liveFlights.length === 0 && (
-          <div style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-            <i className="ti ti-loader-2 spin" /> Se încarcă...
-          </div>
-        )}
-      </div>
-
-      {flightsFetchedAt && (
-        <div style={{ fontSize:10, color:"var(--text-muted)", textAlign:"right", marginTop:2, marginBottom:6 }}>
-          Actualizat {new Date(flightsFetchedAt).toLocaleTimeString("ro", { hour:"2-digit", minute:"2-digit", second:"2-digit" })} · refresh auto 60s
-        </div>
-      )}
 
     </>
   );
@@ -3220,8 +3159,8 @@ function MyFlightRight({ onLog, myFlight }: { onLog:(m:string,ok?:boolean)=>void
 /* ═══════════════════════════ LOGIN MODAL ═══════════════════════════ */
 function LoginModal({ onLogin }: { onLogin: (a: AuthState) => void }) {
   const [tab, setTab] = useState<"admin" | "passenger">("passenger");
-  const [adminUser, setAdminUser] = useState("");
-  const [adminPass, setAdminPass] = useState("");
+  const [adminUser, setAdminUser] = useState("admin");
+  const [adminPass, setAdminPass] = useState("admin");
   const [phone, setPhone] = useState("+40721000001");
   const [iata, setIata] = useState("LH6381");
   const [error, setError] = useState("");
