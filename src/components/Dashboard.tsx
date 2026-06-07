@@ -1126,8 +1126,6 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
 
   const placeOnMap = (lat: number, lng: number, personId: string) => {
     if (!calTransform) return;
-    const prev = lastGps.current[personId];
-    if (prev && haversineM(prev.lat, prev.lng, lat, lng) < DEAD_ZONE_M) return;
     lastGps.current[personId] = { lat, lng };
     const svgPos = svgFromGps(calTransform, lat, lng);
     setPositions(p => ({ ...p, [personId]: svgPos }));
@@ -1184,14 +1182,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        const acc = pos.coords.accuracy;
-        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${acc.toFixed(0)}m`);
-        if (acc > 100) {
-          onLog(`GPS slab: ±${acc.toFixed(0)}m — ignorat`, false);
-          setLocLoading(false);
-          setLocationLoaded(true);
-          return;
-        }
+        onLog(`📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} ±${pos.coords.accuracy.toFixed(0)}m`);
         placeOnMap(lat, lng, activePersonRef.current);
         setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
         isFollowingRef.current = true;
@@ -1200,7 +1191,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         setLocationLoaded(true);
       },
       (err) => { onLog(`Eroare locație: ${err.message}`, false); setLocLoading(false); setLocationLoaded(true); },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 }
     );
   };
 
