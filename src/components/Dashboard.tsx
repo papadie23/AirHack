@@ -1089,7 +1089,11 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
   // ── Boarding task state machine ──
   type BoardingPhase = "idle"|"confirming"|"awaiting-location"|"task"|"done";
   const [boardingPhase, setBoardingPhase] = useState<BoardingPhase>("confirming");
+  const boardingPhaseRef = useRef<BoardingPhase>("confirming");
+  boardingPhaseRef.current = boardingPhase;
   const [taskIdx, setTaskIdx] = useState(0);
+  const taskIdxRef = useRef(0);
+  taskIdxRef.current = taskIdx;
   const [showTaskPopup, setShowTaskPopup] = useState(true); // auto-show on mount
   const TASKS = ZONES.map(z => ({ zone: z, label: z.label }));
 
@@ -1138,19 +1142,11 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
         setMapPan({ x: W / 2 - svgPos.x * mapZoomRef.current, y: H / 2 - svgPos.y * mapZoomRef.current });
       }
     }
-    if (personId !== "you") return;
-    // Recalculate route from current position if route is active + zone proximity check
-    setTaskIdx(idx => {
-      const zone = ZONES[idx];
-      if (!zone) return idx;
-      // Always redraw route from current GPS pos to active zone when in task phase
-      setBoardingPhase(phase => {
-        if (phase === "task") {
-          setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
-        }
-        return phase;
-      });
-      // Proximity check
+    if (personId !== activePersonRef.current) return;
+    // Reroute + proximity using refs (no stale closure)
+    const zone = ZONES[taskIdxRef.current];
+    if (zone && boardingPhaseRef.current === "task") {
+      setDynamicRoute(makeOrthoRoute(svgPos, { x: zone.x, y: zone.y }));
       const dist = Math.sqrt((svgPos.x - zone.x)**2 + (svgPos.y - zone.y)**2);
       if (dist < Math.max(zone.w, zone.h) * 0.6) {
         setTimeout(() => {
@@ -1166,8 +1162,7 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
           });
         }, 800);
       }
-      return idx;
-    });
+    }
   };
 
   // Auto-start location watching on mount — no hardcoded pin until real GPS arrives
@@ -1189,10 +1184,16 @@ function RouteCenter({ onLog, activePerson }: { onLog:(m:string,ok?:boolean)=>vo
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        placeOnMap(lat, lng, activePerson);
-        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${pos.coords.accuracy.toFixed(0)}m`);
+        const acc = pos.coords.accuracy;
+        onLog(`${person.name} · ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${acc.toFixed(0)}m`);
+        if (acc > 40) {
+          onLog(`GPS slab: ±${acc.toFixed(0)}m — ignorat`, false);
+          setLocLoading(false);
+          setLocationLoaded(true);
+          return;
+        }
+        placeOnMap(lat, lng, activePersonRef.current);
         setBoardingPhase(p => p === "awaiting-location" ? "task" : p);
-        // Always re-enable following so map stays on user
         isFollowingRef.current = true;
         setIsFollowing(true);
         setLocLoading(false);
