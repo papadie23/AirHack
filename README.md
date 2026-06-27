@@ -1,7 +1,8 @@
-# AirFlow Nexus — AirHack 2025
+# AirFlow Nexus
 
-**Smart Airport Operations Platform for Iași International Airport (LRIA/IAS)**  
-*Awarded 2nd Place — Team Leader: [Your Name]*
+**2nd place at AirHack 2025 — Iași International Airport (LRIA/IAS)**
+
+**Team:** Vleju Cosmin Eugen (lead), Ignat Andrei, Moisa Gabriel, Romila Nicolae
 
 ---
 
@@ -17,107 +18,53 @@
 
 ---
 
-## What It Does
+## What's this?
 
-AirFlow Nexus is a unified airport intelligence platform that combines **real-time computer vision**, **AI-powered operations dispatch**, **live flight tracking**, **aviation weather briefing**, and **indoor passenger wayfinding** into a single dashboard. Built for Iași International Airport, it gives both **airport staff** and **passengers** a real-time view of terminal activity — from crowd density and bottleneck alerts to boarding progress and weather briefings.
+We built a dashboard for Iași airport that helps both staff and passengers see what's happening in real time. It watches security cameras with YOLO to count people, pings an LLM to flag bottlenecks, shows live flights and weather, and guides passengers through the terminal on an indoor map.
 
-### For Airport Operations (Staff)
+### Staff side
 
-| Feature | Description |
-|---|---|
-| **CV Dispatcher** | YOLOv8 + ByteTrack person counting across 3 terminal zones (Gate, Check-In, Disembarkation). Real-time MJPEG video feeds with detection overlays. |
-| **AI Dispatcher (Gemini)** | Google Gemini LLM analyzes zone occupancy data and suggests operational actions — redirect staff, open additional lanes, manage queue overflow. Rule-based fallback when offline. |
-| **Population Heatmap** | Orange CAMARA integration for device-based population density across the terminal. |
-| **Live Announcements** | Admin can broadcast info/warning/danger messages to all passengers in real-time via Server-Sent Events (SSE). |
-| **Aviation Weather** | Full METAR parsing with headwind/crosswind components for runways 08/26, density altitude, fog risk assessment, and cloud layer visualization. |
+- **CV Dispatcher** — live video feeds with person detection across 3 zones (Gate, Check-In, Disembarkation). Shows occupancy, trends, and alerts.
+- **AI Dispatcher** — Gemini analyzes crowd data and suggests what to do (open another lane, redirect staff, etc.). Works offline with a rules fallback.
+- **Heatmap** — population density from Orange CAMARA device data.
+- **Announcements** — broadcast to all passengers in real time via SSE.
+- **Weather** — full METAR breakdown, headwind/crosswind for runways 08/26, density altitude, fog risk.
 
-### For Passengers
+### Passenger side
 
-| Feature | Description |
-|---|---|
-| **My Location** | GPS-calibrated indoor SVG map with ortho-routing, pinch-to-zoom, pan, and auto-follow. Guided boarding state machine (Check-In → Security → Documents → Gate → Boarding). |
-| **My Flight** | Live flight status with departure gate, schedule, and progress tracking. |
-| **Weather** | Departure and arrival airport weather from multiple providers (Open-Meteo, OpenWeatherMap, AccuWeather). |
+- **My Location** — indoor map with GPS calibration, pinch-to-zoom, and a step-by-step boarding guide (Check-In → Security → Documents → Gate → Boarding).
+- **My Flight** — live schedule, gate, and status.
+- **Weather** — departure and arrival airport weather.
 
 ---
 
-## How It Works
+## Tech used
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Video Feeds (3 zones)                                   │
-│  Gate │ Check-In │ Disembarkation                        │
-└──────────────┬──────────────────────────────────────────┘
-               │ YOLOv8 + ByteTrack
-               ▼
-┌─────────────────────────────────────────────────────────┐
-│  Person Counts → cv-output.json (every 3s)               │
-│  MJPEG Streams → Flask Server (:5001)                    │
-└──────────────┬──────────────────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────────────────┐
-│  Astro SSR Dashboard (Vercel)                            │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────────────┐ │
-│  │ Flights   │ │ Weather  │ │ AI Dispatcher (Gemini)    │ │
-│  │ AirLabs   │ │ NOAA/OWM │ │ Congestion → Suggestions  │ │
-│  └──────────┘ └──────────┘ └──────────────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────────────┐ │
-│  │ Heatmap   │ │ SSE      │ │ Indoor Map + Wayfinding  │ │
-│  │ CAMARA   │ │ Announce │ │ GPS → SVG Affine Calib   │ │
-│  └──────────┘ └──────────┘ └──────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
-```
+Astro 6, React 19, TypeScript, Tailwind CSS 4, Chart.js, Google Gemini, YOLOv8 + ByteTrack, Flask MJPEG, AirLabs, NOAA METAR, Open-Meteo, Orange CAMARA
+
+Deployed on Vercel.
 
 ---
 
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Frontend** | Astro 6 (SSR), React 19, TypeScript 6 |
-| **Styling** | Tailwind CSS 4, Custom CSS dark/light theme |
-| **Charts** | Chart.js + react-chartjs-2 |
-| **AI/LLM** | Google Gemini SDK (1.5 Flash) |
-| **Computer Vision** | YOLOv8 + ByteTrack (ultralytics), Flask MJPEG |
-| **Maps** | Google Maps JS API, custom SVG calibration |
-| **External APIs** | AirLabs (flights), NOAA (METAR), Open-Meteo, Orange CAMARA (device location/density) |
-| **Deployment** | Vercel (Astro SSR adapter) |
-
----
-
-## Running Locally
+## Running it
 
 ```bash
-# Install dependencies
 npm install
+cp .env.example .env    # USE_FIXTURES=true for demo mode (no API keys needed)
+npm run dev              # http://localhost:4321
 
-# Set up environment (optional — runs with fixtures by default)
-cp .env.example .env
-# Set USE_FIXTURES=true for demo mode
-
-# Start the dashboard
-npm run dev
-# Opens at http://localhost:4321
-
-# (Optional) Start the computer vision pipeline
+# Optional: computer vision pipeline
 cd video_analytics
 pip install ultralytics flask
-python stream_server.py &   # MJPEG streams on :5001
-python process_streams.py &  # Person counts → cv-output.json
+python stream_server.py &
+python process_streams.py &
 ```
 
 ---
 
-## Demo Mode
+## About the hackathon
 
-The entire platform runs without any API keys using bundled fixture data and rule-based AI fallbacks. Set `USE_FIXTURES=true` in `.env` for a fully functional offline demo.
-
----
-
-## About AirHack
-
-AirHack was a hackathon organized for Iași International Airport challenging teams to build solutions for smarter airport operations. This project won **2nd place**, developed under my leadership as team lead.
+AirHack was organized by Iași International Airport. We won **2nd place** — huge shoutout to the team for grinding through the weekend.
 
 ---
 
@@ -140,9 +87,3 @@ AirHack was a hackathon organized for Iași International Airport challenging te
 
 ### Mobile — Menu
 <img src="screenshots/phone_menu_with_all_functionalities.png" alt="Mobile Menu" width="300" />
-
----
-
-## License
-
-MIT
