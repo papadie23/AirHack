@@ -68,6 +68,18 @@ AirHack was organized by Iași International Airport. We won **2nd place** — h
 
 ---
 
+## Future improvements
+
+- **Multi-language (RO + EN)** — add proper i18n with a language switcher. The UI is currently all Romanian with some mixed English.
+- **Wire up Orange CAMARA APIs** — the SDK (`src/lib/orange/`) is written but not connected yet:
+  - **Device Location Retrieval** — real GPS for passenger "My Location" instead of hardcoded test coordinates
+  - **Population Density** — live heatmap data from Orange instead of synthetic generation
+  - **Number Verification** — verify passenger phone at login
+  - **SIM Swap detection** — flag suspicious account activity
+  - **Geofencing** — trigger announcements when passengers enter terminal zones
+
+---
+
 ## Screenshots
 
 ### Passenger Dashboard
